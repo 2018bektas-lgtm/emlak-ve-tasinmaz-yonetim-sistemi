@@ -6,6 +6,110 @@
 
 @push('head')
     <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
+    {{-- Esri temasından SONRA gelmeli: kurumsal koyu popup kabuğu --}}
+    <style>
+        /* Esri kabuğunu kurumsal koyu palete çevir */
+        .hrm-map .esri-view-surface { outline: none; }
+        .hrm-cursor-help .esri-view-surface { cursor: help !important; }
+
+        .hrm-shell .esri-popup__main-container {
+            background: #0e1726;
+            color: #dfe3ea;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            box-shadow: 0 12px 34px rgba(6, 11, 22, 0.45);
+            overflow: hidden;
+            min-width: 288px;
+            max-width: 340px;
+        }
+        .hrm-shell .esri-popup__header {
+            background: linear-gradient(180deg, #16223c 0%, #0e1726 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 2px 4px;
+        }
+        .hrm-shell .esri-popup__header-title {
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding: 10px 12px;
+        }
+        .hrm-shell .esri-popup__header-title:hover { background: rgba(255,255,255,0.05); }
+        .hrm-shell .esri-popup__content { margin: 0; padding: 0; color: #dfe3ea; }
+
+        /* 4.30 popup gövdesini Calcite'ın beyaz zeminlerinden arındır.
+           .esri-features ve .esri-features__content-feature koyu kabuğun üstünü boyuyor. */
+        .hrm-shell .esri-popup { color-scheme: dark; }
+        .hrm-shell .esri-features,
+        .hrm-shell .esri-features__container,
+        .hrm-shell .esri-features__content-feature,
+        .hrm-shell .esri-features__content-container,
+        .hrm-shell .esri-feature,
+        .hrm-shell .esri-feature__main-container,
+        .hrm-shell .esri-feature__size-container,
+        .hrm-shell .esri-feature-content {
+            background: transparent !important;
+            color: #dfe3ea !important;
+        }
+        /* 4.30'da başlık h2.esri-features__heading — varsayılanı koyu gri kalıyor */
+        .hrm-shell .esri-features__container-header,
+        .hrm-shell .esri-features__heading,
+        .hrm-shell .esri-widget__heading,
+        .hrm-shell .esri-popup__header-title {
+            color: #fff !important;
+            font-size: 0.82rem !important;
+            font-weight: 700;
+        }
+
+        /* Varsayılan 340px sınırı içeriği erken kırpıyor */
+        .hrm-shell .esri-popup__main-container { max-height: min(72vh, 560px) !important; }
+        .hrm-shell .esri-features__content-feature {
+            max-height: none !important;
+            overflow-y: auto !important;
+        }
+
+        /* Calcite değişkenleri — gelecekteki iç bileşenler de koyu kalsın */
+        .hrm-shell .esri-popup,
+        .hrm-shell .esri-popup__main-container {
+            --calcite-color-foreground-1: #0e1726;
+            --calcite-color-foreground-2: #16223c;
+            --calcite-color-foreground-3: #1e2c47;
+            --calcite-color-text-1: #ffffff;
+            --calcite-color-text-2: #dfe3ea;
+            --calcite-color-text-3: #8a91a1;
+            --calcite-color-border-1: rgba(255,255,255,0.10);
+            --calcite-color-border-2: rgba(255,255,255,0.08);
+            --calcite-color-border-3: rgba(255,255,255,0.06);
+        }
+
+        /* İçerik alanı kaydırma çubuğu */
+        .hrm-shell .esri-popup__content::-webkit-scrollbar,
+        .hrm-shell .esri-features__content-feature::-webkit-scrollbar { width: 8px; }
+        .hrm-shell .esri-popup__content::-webkit-scrollbar-thumb,
+        .hrm-shell .esri-features__content-feature::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.16);
+            border-radius: 4px;
+        }
+        .hrm-shell .esri-popup__pointer-direction {
+            background: #0e1726;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .hrm-shell .esri-popup__button,
+        .hrm-shell .esri-popup__icon { color: #9aa3b2; }
+        .hrm-shell .esri-popup__button:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .hrm-shell .esri-popup__footer,
+        .hrm-shell .esri-popup__navigation {
+            background: #0e1726;
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        /* Zoom (+/−) ve alttaki Google / Powered by Esri çubuğu gizlenir */
+        .hrm-shell .esri-ui-zoom,
+        .hrm-shell .esri-zoom,
+        .hrm-shell .esri-attribution {
+            display: none !important;
+        }
+    </style>
 @endpush
 
 @section('content')
@@ -95,7 +199,7 @@
                     </span>
                     <div class="hrm-katman-meta">
                         <span class="hrm-katman-ad">İmar Planı (UIP)</span>
-                        <span class="hrm-katman-alt">Ankara BB · uip_esri3 tile servisi</span>
+                        <span class="hrm-katman-alt">Ankara BB · uipSade MapServer</span>
                     </div>
                     <label class="hrm-switch" title="Katmanı aç/kapat">
                         <input type="checkbox" id="hrm-ov-imar">
@@ -116,7 +220,7 @@
                     </span>
                     <div class="hrm-katman-meta">
                         <span class="hrm-katman-ad">Parselasyon</span>
-                        <span class="hrm-katman-alt">Ankara BB CBS · Gis Proxy</span>
+                        <span class="hrm-katman-alt">Ankara BB · parselAktif (aktif kadastro)</span>
                     </div>
                     <label class="hrm-switch" title="Katmanı aç/kapat">
                         <input type="checkbox" id="hrm-ov-parselasyon">
@@ -137,7 +241,7 @@
                     </span>
                     <div class="hrm-katman-meta">
                         <span class="hrm-katman-ad">Belediye Taşınmazları</span>
-                        <span class="hrm-katman-alt">Ankara BB CBS · Gis Proxy</span>
+                        <span class="hrm-katman-alt">Tam koyu · Hisseli açık</span>
                     </div>
                     <label class="hrm-switch" title="Katmanı aç/kapat">
                         <input type="checkbox" id="hrm-ov-belediye">
@@ -148,6 +252,20 @@
                     <span class="hrm-opaklik-label">Opaklık</span>
                     <input type="range" id="hrm-ov-belediye-op" min="10" max="100" value="80" class="hrm-range">
                     <span class="hrm-opaklik-deger" data-hedef="hrm-ov-belediye-op">80%</span>
+                </div>
+                <div class="hrm-katman-lejant" aria-label="Hisse durumu lejantı">
+                    <span class="hrm-lejant-oge">
+                        <span class="hrm-lejant-swatch" style="background:rgba(140,0,98,.72);border-color:#5c0040;"></span>
+                        Tam
+                    </span>
+                    <span class="hrm-lejant-oge">
+                        <span class="hrm-lejant-swatch" style="background:rgba(255,170,224,.45);border-color:#e85aba;"></span>
+                        Hisseli
+                    </span>
+                    <span class="hrm-lejant-oge">
+                        <span class="hrm-lejant-swatch" style="background:rgba(148,163,184,.40);border-color:#64748b;"></span>
+                        Hatalı
+                    </span>
                 </div>
             </div>
             </div>
@@ -290,3 +408,19 @@
 </div>
 @endsection
 
+
+@push('scripts')
+<script src="https://js.arcgis.com/4.30/"></script>
+<script>
+    window.ETYS_HARITA = {
+        geojson:       @json(route('panel.ajax.tasinmaz-geojson')),
+        ara:           @json(route('panel.ajax.tasinmaz-ara')),
+        eimar:         @json(route('panel.ajax.eimar-identify')),
+        ilceler:       @json(url('/panel/ajax/ilceler')),
+        mahalleler:    @json(url('/panel/ajax/mahalleler')),
+        tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
+        tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
+    };
+</script>
+<script src="{{ asset('js/harita-esri.js') }}?v=7"></script>
+@endpush

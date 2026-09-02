@@ -22,6 +22,9 @@ class TkgmSenkronizeCommand extends Command
 
     private const CHUNK_SIZE = 500;
 
+    /** @var array<int, string> Ag hatasi nedeniyle atlanan kayitlar */
+    private array $atlananlar = [];
+
     public function handle(): int
     {
         $paralel = max(1, (int) $this->option('paralel'));
@@ -58,6 +61,14 @@ class TkgmSenkronizeCommand extends Command
             DB::table('mahalleler')->count(),
         ));
 
+        if ($this->atlananlar !== []) {
+            $this->warn(sprintf(
+                '%d kayit ag hatasi nedeniyle atlandi. Komutu tekrar calistirarak tamamlayabilirsiniz: %s',
+                count($this->atlananlar),
+                implode(', ', array_slice($this->atlananlar, 0, 12)),
+            ));
+        }
+
         return self::SUCCESS;
     }
 
@@ -67,6 +78,9 @@ class TkgmSenkronizeCommand extends Command
 
         $response = Http::timeout(60)->retry(3, 500)->get(self::BASE_URL.'/illiste');
         $features = $this->ozellikleriCikart($response);
+        if ($features === null) {
+            throw new \RuntimeException('TKGM il listesi alinamadi.');
+        }
 
         $simdi = now();
         $satirlar = array_map(
@@ -106,7 +120,16 @@ class TkgmSenkronizeCommand extends Command
             $simdi = now();
             $satirlar = [];
             foreach ($chunk as $tkgmIlId) {
-                $features = $this->ozellikleriCikart($yanitlar[(string) $tkgmIlId]);
+                $features = $this->ozellikleriCikartVeyaTekrarDene(
+                    $yanitlar[(string) $tkgmIlId],
+                    self::BASE_URL.'/ilceListe/'.$tkgmIlId,
+                    60
+                );
+                if ($features === null) {
+                    $this->atlananlar[] = 'il '.$tkgmIlId;
+                    $bar->advance();
+                    continue;
+                }
                 foreach ($features as $prop) {
                     $satirlar[] = [
                         'tkgm_id' => (int) $prop['id'],
@@ -156,7 +179,16 @@ class TkgmSenkronizeCommand extends Command
             $simdi = now();
             $satirlar = [];
             foreach ($chunk as $tkgmIlceId) {
-                $features = $this->ozellikleriCikart($yanitlar[(string) $tkgmIlceId]);
+                $features = $this->ozellikleriCikartVeyaTekrarDene(
+                    $yanitlar[(string) $tkgmIlceId],
+                    self::BASE_URL.'/mahalleListe/'.$tkgmIlceId,
+                    90
+                );
+                if ($features === null) {
+                    $this->atlananlar[] = 'ilce '.$tkgmIlceId;
+                    $bar->advance();
+                    continue;
+                }
                 foreach ($features as $prop) {
                     $satirlar[] = [
                         'tkgm_id' => (int) $prop['id'],
@@ -179,12 +211,38 @@ class TkgmSenkronizeCommand extends Command
     }
 
     /**
-     * @return array<array{id: int|string, text: string}>
+     * Havuzdan bos donen istegi tek seferlik senkron olarak yeniden dener.
+     *
+     * @param  mixed  $havuzYaniti
+     * @return array<array{id: int|string, text: string}>|null
      */
-    private function ozellikleriCikart(Response $response): array
+    private function ozellikleriCikartVeyaTekrarDene($havuzYaniti, string $url, int $timeout): ?array
     {
-        if ($response->failed()) {
-            throw new \RuntimeException('TKGM istek basarisiz: '.$response->status());
+        $sonuc = $this->ozellikleriCikart($havuzYaniti);
+        if ($sonuc !== null) {
+            return $sonuc;
+        }
+
+        try {
+            return $this->ozellikleriCikart(
+                Http::timeout($timeout)->retry(2, 1000)->get($url)
+            );
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Havuz sonucu Response yerine ConnectionException de olabilir; tek bir ag
+     * kesintisi tum senkronizasyonu durdurmasin diye null donulur.
+     *
+     * @param  mixed  $response
+     * @return array<array{id: int|string, text: string}>|null
+     */
+    private function ozellikleriCikart($response): ?array
+    {
+        if (! $response instanceof Response || $response->failed()) {
+            return null;
         }
 
         $features = $response->json('features') ?? [];

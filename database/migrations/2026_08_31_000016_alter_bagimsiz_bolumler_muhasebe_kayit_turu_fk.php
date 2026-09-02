@@ -13,7 +13,7 @@ return new class extends Migration
         });
 
         Schema::table('bagimsiz_bolumler', function (Blueprint $table) {
-            $table->foreignId('muhasebe_kayit_id')->nullable()->after('arsa_payi_payda')
+            $table->foreignId('muhasebe_kayit_id')->nullable()->after('cephe')
                 ->constrained('muhasebe_kayitlari')->restrictOnDelete();
             $table->foreignId('kayit_turu_id')->nullable()->after('muhasebe_kayit_id')
                 ->constrained('kayit_turleri')->restrictOnDelete();
@@ -28,7 +28,7 @@ return new class extends Migration
         });
 
         Schema::table('bagimsiz_bolumler', function (Blueprint $table) {
-            $table->string('muhasebe_niteligi', 100)->nullable()->after('arsa_payi_payda');
+            $table->string('muhasebe_niteligi', 100)->nullable()->after('cephe');
             $table->string('kayit_turu', 50)->nullable()->after('muhasebe_niteligi');
         });
     }
