@@ -4794,3 +4794,117 @@ input[type="password"] {
     font-weight: 800;
     color: #fecaca;
 }
+
+/* Yetki / kullanıcı / müdürlük yönetim tabloları */
+.adm-kart {
+    background: #fff;
+    border: 1px solid #e6e8ec;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+.adm-tablo { width: 100%; border-collapse: collapse; }
+.adm-tablo th {
+    text-align: left;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #6c7484;
+    padding: 11px 16px;
+    border-bottom: 1px solid #eef1f5;
+    background: #f8f9fb;
+}
+.adm-tablo td {
+    padding: 13px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.88rem;
+    vertical-align: middle;
+}
+.adm-tablo tr:last-child td { border-bottom: 0; }
+.adm-alt { color: #6c7484; font-size: 0.78rem; font-weight: 500; margin-top: 2px; }
+.adm-islem { display: flex; gap: 8px; justify-content: flex-end; align-items: center; white-space: nowrap; }
+.adm-islem .btn-cancel { min-height: 34px; padding: 0 12px; font-size: 0.8rem; }
+.btn-tehlike { color: #a92626; border-color: #f5cbc7; }
+.btn-tehlike:hover { color: #7f1212; border-color: #e8a8a3; }
+
+.rol-rozet {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: #eef1f5;
+    color: #445067;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.rol-rozet-admin { background: #0e1726; color: #fff; }
+.rol-rozet-yonetici { background: #e8eef8; color: #1e2c47; }
+.rol-rozet-kullanici { background: #eaf7ee; color: #1f7a3a; }
+.rol-rozet-goruntuleyici { background: #f4f5f7; color: #6c7484; }
+.durum-aktif { color: #1f7a3a; font-weight: 700; font-size: 0.82rem; }
+.durum-pasif { color: #a92626; font-weight: 700; font-size: 0.82rem; }
+
+.izin-grup { margin-bottom: 18px; }
+.izin-grup h4 {
+    margin: 0 0 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0e1726;
+}
+.izin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.izin-grid .form-check { min-height: 44px; align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.izin-grid .form-check em {
+    display: block;
+    font-style: normal;
+    font-weight: 500;
+    font-size: 0.7rem;
+    color: #6c7484;
+}
+@media (max-width: 720px) {
+    .izin-grid { grid-template-columns: 1fr; }
+}
+
+.tl-tablo [data-kolon].is-gizli { display: none; }
+
+.kolon-menu { position: relative; }
+.kolon-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    width: 280px;
+    max-height: 420px;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #e6e8ec;
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+    z-index: 50;
+    padding: 12px;
+}
+.kolon-panel-baslik {
+    margin: 0 0 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0e1726;
+}
+.kolon-liste { display: flex; flex-direction: column; gap: 2px; }
+.kolon-secim {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #0e1726;
+    cursor: pointer;
+}
+.kolon-secim:hover { background: #f4f5f7; }
+.kolon-secim-tum { border-bottom: 1px solid #eef1f5; margin-bottom: 6px; padding-bottom: 10px; }
+.kolon-panel-durum { margin: 8px 0 0; font-size: 0.72rem; color: #1f7a3a; font-weight: 600; }

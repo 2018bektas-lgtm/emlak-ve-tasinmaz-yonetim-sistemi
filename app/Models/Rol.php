@@ -50,6 +50,10 @@ class Rol extends Model
             return true;
         }
 
+        if ($this->relationLoaded('izinler')) {
+            return $this->izinler->contains('kod', $izinKodu);
+        }
+
         return $this->izinler()->where('kod', $izinKodu)->exists();
     }
 }

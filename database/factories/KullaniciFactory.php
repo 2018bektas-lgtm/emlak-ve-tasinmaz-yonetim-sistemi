@@ -2,12 +2,13 @@
 
 namespace Database\Factories;
 
+use App\Models\Kullanici;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Kullanici>
+ * @extends Factory<Kullanici>
  */
 class KullaniciFactory extends Factory
 {
@@ -22,6 +23,7 @@ class KullaniciFactory extends Factory
             'kullanici_adi' => fake()->unique()->userName(),
             'mail_dogrulama_tarihi' => now(),
             'sifre' => static::$sifre ??= Hash::make('password'),
+            'aktif_mi' => true,
             'remember_token' => Str::random(10),
         ];
     }

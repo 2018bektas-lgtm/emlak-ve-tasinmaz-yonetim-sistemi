@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\TasinmazYetkisi;
 use App\Http\Requests\StoreTasinmazHisseRequest;
-use App\Models\Tasinmaz;
 use Illuminate\Http\JsonResponse;
 
 class TasinmazHisseController extends Controller
 {
+    use TasinmazYetkisi;
+
     public function store(StoreTasinmazHisseRequest $request, int $mahalleTkgmId, string $ada, string $parsel): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $veri = $this->hisseVerisi($request);
         $veri['sira'] = (int) ($model->hisseler()->max('sira') ?? -1) + 1;
         $hisse = $model->hisseler()->create($veri);
@@ -20,7 +22,7 @@ class TasinmazHisseController extends Controller
 
     public function update(StoreTasinmazHisseRequest $request, int $mahalleTkgmId, string $ada, string $parsel, int $hisse): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $kayit = $model->hisseler()->whereKey($hisse)->firstOrFail();
         $kayit->update($this->hisseVerisi($request));
 
@@ -29,7 +31,7 @@ class TasinmazHisseController extends Controller
 
     public function destroy(int $mahalleTkgmId, string $ada, string $parsel, int $hisse): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $kayit = $model->hisseler()->whereKey($hisse)->firstOrFail();
         $kayit->delete();
 

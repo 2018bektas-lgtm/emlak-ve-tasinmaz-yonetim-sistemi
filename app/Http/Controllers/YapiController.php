@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\TasinmazYetkisi;
 use App\Http\Requests\StoreYapiRequest;
-use App\Models\Tasinmaz;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -12,9 +12,11 @@ use Illuminate\Http\JsonResponse;
  */
 class YapiController extends Controller
 {
+    use TasinmazYetkisi;
+
     public function store(StoreYapiRequest $request, int $mahalleTkgmId, string $ada, string $parsel): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $kayit = $model->yapilar()->create($request->validated());
 
         return response()->json(['yapi' => $kayit->fresh()->toFormArray()], 201);
@@ -22,7 +24,7 @@ class YapiController extends Controller
 
     public function update(StoreYapiRequest $request, int $mahalleTkgmId, string $ada, string $parsel, int $yapi): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $kayit = $model->yapilar()->whereKey($yapi)->firstOrFail();
         $kayit->update($request->validated());
 
@@ -31,7 +33,7 @@ class YapiController extends Controller
 
     public function destroy(int $mahalleTkgmId, string $ada, string $parsel, int $yapi): JsonResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $kayit = $model->yapilar()->whereKey($yapi)->firstOrFail();
         $kayit->delete();
 

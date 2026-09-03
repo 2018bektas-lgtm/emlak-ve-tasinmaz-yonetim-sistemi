@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=45">
+    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=46">
     @stack('head')
 </head>
 <body class="app-shell @yield('shellClass')">
@@ -20,9 +20,9 @@
             ],
             'Taşınmaz İşlemleri' => [
                 ['label' => 'Taşınmazlar', 'icon' => 'map', 'children' => [
-                    ['label' => 'Taşınmaz Listesi', 'route' => 'panel.tasinmazlar.index'],
-                    ['label' => 'Taşınmaz Ekle', 'route' => 'panel.tasinmazlar.olustur'],
-                    ['label' => 'Taşınmaz Haritası', 'route' => 'panel.tasinmazlar.harita'],
+                    ['label' => 'Taşınmaz Listesi', 'route' => 'panel.tasinmazlar.index', 'izin' => 'tasinmaz.goruntule'],
+                    ['label' => 'Taşınmaz Ekle', 'route' => 'panel.tasinmazlar.olustur', 'izin' => 'tasinmaz.olustur'],
+                    ['label' => 'Taşınmaz Haritası', 'route' => 'panel.tasinmazlar.harita', 'izin' => 'harita.goruntule'],
                 ]],
                 ['label' => 'Mesken Bağımsız Bölüm', 'icon' => 'home', 'children' => [
                     ['label' => 'Mesken Listesi'],
@@ -61,9 +61,10 @@
                     ['label' => 'Özel Rapor'],
                 ]],
                 ['label' => 'Kullanıcılar', 'icon' => 'users', 'children' => [
-                    ['label' => 'Kullanıcı Listesi'],
-                    ['label' => 'Yeni Kullanıcı'],
-                    ['label' => 'Yetki Grupları'],
+                    ['label' => 'Kullanıcı Listesi', 'route' => 'panel.kullanicilar.index', 'izin' => 'kullanici.goruntule'],
+                    ['label' => 'Yeni Kullanıcı', 'route' => 'panel.kullanicilar.olustur', 'izin' => 'kullanici.olustur'],
+                    ['label' => 'Roller ve İzinler', 'route' => 'panel.roller.index', 'izin' => 'rol.goruntule'],
+                    ['label' => 'Müdürlükler', 'route' => 'panel.mudurlukler.index', 'izin' => 'mudurluk.goruntule'],
                 ]],
                 ['label' => 'Ayarlar', 'icon' => 'gear', 'children' => [
                     ['label' => 'Genel Ayarlar'],
@@ -88,6 +89,7 @@
 
         $user = auth()->user();
         $initials = strtoupper(mb_substr($user->ad, 0, 1) . mb_substr($user->soyad, 0, 1));
+        $izinVar = fn (?string $izin) => ! $izin || ($user && $user->izinVarMi($izin));
     @endphp
 
     <aside class="app-sidebar" id="app-sidebar">
@@ -112,12 +114,24 @@
                     <p class="app-nav-title">{{ $groupTitle }}</p>
                     @foreach ($items as $item)
                         @php
-                            $hasChildren = ! empty($item['children']);
+                            if (isset($item['izin']) && ! $izinVar($item['izin'])) {
+                                continue;
+                            }
+                            $children = [];
+                            foreach ($item['children'] ?? [] as $child) {
+                                if (! isset($child['izin']) || $izinVar($child['izin'])) {
+                                    $children[] = $child;
+                                }
+                            }
+                            $hasChildren = $children !== [];
                             $hasRoute = isset($item['route']);
+                            if (! $hasChildren && ! $hasRoute && ($item['children'] ?? []) !== []) {
+                                continue;
+                            }
                             $active = $hasRoute && $currentRoute === $item['route'];
                             $activeChild = false;
                             if ($hasChildren) {
-                                foreach ($item['children'] as $child) {
+                                foreach ($children as $child) {
                                     if (isset($child['route']) && $currentRoute === $child['route']) {
                                         $activeChild = true;
                                         break;
@@ -140,7 +154,7 @@
                                 <div class="app-nav-submenu">
                                     <div class="app-nav-submenu-inner">
                                         <p class="app-nav-flyout-title">{{ $item['label'] }}</p>
-                                        @foreach ($item['children'] as $child)
+                                        @foreach ($children as $child)
                                             @php
                                                 $childHref = isset($child['route']) ? route($child['route']) : '#';
                                                 $childActive = isset($child['route']) && $currentRoute === $child['route'];
@@ -180,7 +194,7 @@
             <div class="app-avatar">{{ $initials }}</div>
             <div class="app-user-info">
                 <strong>{{ $user->getAdSoyad() }}</strong>
-                <span>{{ '@' . $user->kullanici_adi }}</span>
+                <span>{{ ($user->rol?->ad ?? 'Rol yok') . ' · @' . $user->kullanici_adi }}</span>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf

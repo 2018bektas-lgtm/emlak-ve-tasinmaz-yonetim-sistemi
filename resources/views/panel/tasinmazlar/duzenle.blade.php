@@ -259,6 +259,22 @@
                 @error('parsel')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
+        <div class="form-row form-row-2" style="margin-top:14px">
+            <div class="form-field {{ $errors->has('mudurluk_id') ? 'has-error' : '' }}">
+                <label for="mudurluk_id">Müdürlük</label>
+                @if ($mudurlukSecilebilir ?? false)
+                    <select id="mudurluk_id" name="mudurluk_id" class="form-select">
+                        <option value="">— Seçin —</option>
+                        @foreach ($mudurlukler ?? [] as $m)
+                            <option value="{{ $m->id }}" @selected(old('mudurluk_id', $tasinmaz->mudurluk_id) == $m->id)>{{ $m->ad }}</option>
+                        @endforeach
+                    </select>
+                @else
+                    <input type="text" class="form-input" value="{{ $tasinmaz->mudurluk->ad ?? auth()->user()->mudurluk->ad ?? '—' }}" disabled>
+                @endif
+                @error('mudurluk_id')<span class="error">{{ $message }}</span>@enderror
+            </div>
+        </div>
     </section>
 
     {{-- 03 · Fiziksel bilgiler (2 kolon) --}}

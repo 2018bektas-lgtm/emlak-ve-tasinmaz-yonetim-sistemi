@@ -16,10 +16,34 @@
         <small>Toplam {{ $toplamKayit }} kayıt · Bu sayfada {{ $tasinmazlar->count() }} · Filtre sonucu {{ $tasinmazlar->total() }}</small>
     </div>
     <div class="page-hero-actions">
-        <a href="{{ route('panel.tasinmazlar.olustur') }}" class="btn-submit">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Taşınmaz Ekle
-        </a>
+        <div class="kolon-menu" id="kolon-menu">
+            <button type="button" class="btn-cancel" id="kolon-toggle" aria-expanded="false" aria-controls="kolon-panel">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+                Kolonlar
+            </button>
+            <div class="kolon-panel" id="kolon-panel" hidden>
+                <p class="kolon-panel-baslik">Görünecek kolonlar</p>
+                <label class="kolon-secim kolon-secim-tum">
+                    <input type="checkbox" id="kolon-tumu">
+                    <span>Tümünü seç</span>
+                </label>
+                <div class="kolon-liste">
+                    @foreach ($tumKolonlar as $anahtar => $etiket)
+                        <label class="kolon-secim">
+                            <input type="checkbox" class="kolon-cb" value="{{ $anahtar }}" @checked(in_array($anahtar, $gorunurKolonlar, true))>
+                            <span>{{ $etiket }}</span>
+                        </label>
+                    @endforeach
+                </div>
+                <p class="kolon-panel-durum" id="kolon-durum" hidden></p>
+            </div>
+        </div>
+        @can('tasinmaz.olustur')
+            <a href="{{ route('panel.tasinmazlar.olustur') }}" class="btn-submit">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Taşınmaz Ekle
+            </a>
+        @endcan
     </div>
 </section>
 
@@ -280,6 +304,7 @@
         <p>{{ $filtre['q'] || $filtre['il_id'] ? 'Filtreye uygun taşınmaz yok. Filtreyi temizleyip tekrar deneyin.' : 'Henüz taşınmaz eklenmemiş. Sağ üstteki "Taşınmaz Ekle" butonu ile başlayabilirsiniz.' }}</p>
     </div>
 @else
+@php $goster = fn (string $k) => in_array($k, $gorunurKolonlar, true); @endphp
 <div class="tl-tablo-wrap tl-genis">
     <table class="tl-tablo" id="tl-tablo">
         <thead>
@@ -292,32 +317,33 @@
                 <th class="tl-sticky-sol tl-sticky-2 tl-th-id">#</th>
                 <th class="tl-sticky-sol tl-sticky-3 tl-th-islem">İşlem</th>
 
-                <th>TKGM Parsel</th>
-                <th>TAKBİS Zemin No</th>
-                <th>İlçe</th>
-                <th>Mahalle</th>
-                <th>Ada No</th>
-                <th>Parsel No</th>
-                <th>Tapu Yüzölçüm (m²)</th>
-                <th>Taşınmaz Niteliği</th>
-                <th>Hisse Durumu</th>
-                <th>Hisseye Düşen (m²)</th>
-                <th>B.Bölüm No</th>
-                <th>Blok No</th>
-                <th>Kat No</th>
-                <th>İmar Durumu</th>
-                <th>Mülkiyet Durumu</th>
-                <th>Muhasebe Niteliği</th>
-                <th>Dosya/Resim</th>
-                <th>Satış Durumu</th>
-                <th>Bina Durum</th>
-                <th>Tüm Açıklamalar</th>
-                <th>Tahsis</th>
-                <th>Üsthakkı</th>
-                <th>Kira</th>
-                <th>Meclis Satış Kararı</th>
-                <th>Geometri</th>
-                <th>Ek Rapor</th>
+                <th data-kolon="tkgm_parsel" @class(['is-gizli' => ! $goster('tkgm_parsel')])>TKGM Parsel</th>
+                <th data-kolon="takbis" @class(['is-gizli' => ! $goster('takbis')])>TAKBİS Zemin No</th>
+                <th data-kolon="ilce" @class(['is-gizli' => ! $goster('ilce')])>İlçe</th>
+                <th data-kolon="mahalle" @class(['is-gizli' => ! $goster('mahalle')])>Mahalle</th>
+                <th data-kolon="mudurluk" @class(['is-gizli' => ! $goster('mudurluk')])>Müdürlük</th>
+                <th data-kolon="ada" @class(['is-gizli' => ! $goster('ada')])>Ada No</th>
+                <th data-kolon="parsel" @class(['is-gizli' => ! $goster('parsel')])>Parsel No</th>
+                <th data-kolon="alan" @class(['is-gizli' => ! $goster('alan')])>Tapu Yüzölçüm (m²)</th>
+                <th data-kolon="nitelik" @class(['is-gizli' => ! $goster('nitelik')])>Taşınmaz Niteliği</th>
+                <th data-kolon="hisse_durumu" @class(['is-gizli' => ! $goster('hisse_durumu')])>Hisse Durumu</th>
+                <th data-kolon="hisse_m2" @class(['is-gizli' => ! $goster('hisse_m2')])>Hisseye Düşen (m²)</th>
+                <th data-kolon="bb_no" @class(['is-gizli' => ! $goster('bb_no')])>B.Bölüm No</th>
+                <th data-kolon="blok_no" @class(['is-gizli' => ! $goster('blok_no')])>Blok No</th>
+                <th data-kolon="kat_no" @class(['is-gizli' => ! $goster('kat_no')])>Kat No</th>
+                <th data-kolon="imar" @class(['is-gizli' => ! $goster('imar')])>İmar Durumu</th>
+                <th data-kolon="mulkiyet" @class(['is-gizli' => ! $goster('mulkiyet')])>Mülkiyet Durumu</th>
+                <th data-kolon="muhasebe" @class(['is-gizli' => ! $goster('muhasebe')])>Muhasebe Niteliği</th>
+                <th data-kolon="dosya" @class(['is-gizli' => ! $goster('dosya')])>Dosya/Resim</th>
+                <th data-kolon="satis" @class(['is-gizli' => ! $goster('satis')])>Satış Durumu</th>
+                <th data-kolon="bina" @class(['is-gizli' => ! $goster('bina')])>Bina Durum</th>
+                <th data-kolon="aciklama" @class(['is-gizli' => ! $goster('aciklama')])>Tüm Açıklamalar</th>
+                <th data-kolon="tahsis" @class(['is-gizli' => ! $goster('tahsis')])>Tahsis</th>
+                <th data-kolon="ust_hakki" @class(['is-gizli' => ! $goster('ust_hakki')])>Üst Hakkı</th>
+                <th data-kolon="kira" @class(['is-gizli' => ! $goster('kira')])>Kira</th>
+                <th data-kolon="meclis" @class(['is-gizli' => ! $goster('meclis')])>Meclis Satış Kararı</th>
+                <th data-kolon="geometri" @class(['is-gizli' => ! $goster('geometri')])>Geometri</th>
+                <th data-kolon="ek_rapor" @class(['is-gizli' => ! $goster('ek_rapor')])>Ek Rapor</th>
             </tr>
         </thead>
         <tbody>
@@ -333,7 +359,7 @@
                     $hisseeToplam = $aktifHisseler->sum('hisse_yuzolcum');
                     $satisOzet = $t->satisOzeti();
                     $mahalleTkgm = $t->mahalle->tkgm_id ?? null;
-                    $tkgmParsel = ($mahalleTkgm && $t->ada && $t->parsel) ? "{$mahalleTkgm}/{$t->ada}/{$t->parsel}" : '—';
+
                     $tkgmUrl = $t->tkgmSorguUrl();
                     $mulkiyet = $t->mulkiyet_durumu;
                     $geometriVar = ($t->koordinat && ! empty($t->koordinat->koordinat));
@@ -376,10 +402,13 @@
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div class="tl-dd-menu">
+                                @can('tasinmaz.duzenle')
                                 <a href="{{ $t->rota('duzenle') }}" class="tl-dd-item">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5 a2.121 2.121 0 0 1 3 3 L7 19 l-4 1 1-4z"/></svg>
                                     Düzenle
                                 </a>
+                                @endcan
+                                @can('tasinmaz.sil')
                                 <form method="POST" action="{{ $t->rota('sil') }}"
                                       onsubmit="return confirm('#{{ $t->id }} numaralı taşınmazı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.');">
                                     @csrf
@@ -389,29 +418,31 @@
                                         Sil
                                     </button>
                                 </form>
+                                @endcan
                             </div>
                         </div>
                     </td>
 
-                    <td class="tl-td-mono">
+                    <td class="tl-td-mono" data-kolon="tkgm_parsel" @class(['is-gizli' => ! $goster('tkgm_parsel')])>
                         @if ($tkgmUrl)
                             <a href="{{ $tkgmUrl }}" target="_blank" rel="noopener noreferrer"
                                class="tl-tkgm-link" title="TKGM Parsel Sorgu — yeni sekmede aç">
-                                {{ $tkgmParsel }}
+                                TKGM Parsel
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
                             </a>
                         @else
                             —
                         @endif
                     </td>
-                    <td class="tl-td-mono">{{ $t->tapu->takbis_zemin_no ?? '—' }}</td>
-                    <td>{{ $t->ilce->ad ?? '—' }}</td>
-                    <td>{{ $t->mahalle->ad ?? '—' }}</td>
-                    <td class="tl-td-mono"><span class="tl-badge">{{ $t->ada ?? '—' }}</span></td>
-                    <td class="tl-td-mono"><span class="tl-badge">{{ $t->parsel ?? '—' }}</span></td>
-                    <td class="tl-td-mono">{{ $t->alan !== null ? number_format((float) $t->alan, 2, ',', '.') : '—' }}</td>
-                    <td>{{ $t->nitelik ?? '—' }}</td>
-                    <td>
+                    <td class="tl-td-mono" data-kolon="takbis" @class(['is-gizli' => ! $goster('takbis')])>{{ $t->tapu->takbis_zemin_no ?? '—' }}</td>
+                    <td data-kolon="ilce" @class(['is-gizli' => ! $goster('ilce')])>{{ $t->ilce->ad ?? '—' }}</td>
+                    <td data-kolon="mahalle" @class(['is-gizli' => ! $goster('mahalle')])>{{ $t->mahalle->ad ?? '—' }}</td>
+                    <td data-kolon="mudurluk" @class(['is-gizli' => ! $goster('mudurluk')])>{{ $t->mudurluk->ad ?? '—' }}</td>
+                    <td class="tl-td-mono" data-kolon="ada" @class(['is-gizli' => ! $goster('ada')])><span class="tl-badge">{{ $t->ada ?? '—' }}</span></td>
+                    <td class="tl-td-mono" data-kolon="parsel" @class(['is-gizli' => ! $goster('parsel')])><span class="tl-badge">{{ $t->parsel ?? '—' }}</span></td>
+                    <td class="tl-td-mono" data-kolon="alan" @class(['is-gizli' => ! $goster('alan')])>{{ $t->alan !== null ? number_format((float) $t->alan, 2, ',', '.') : '—' }}</td>
+                    <td data-kolon="nitelik" @class(['is-gizli' => ! $goster('nitelik')])>{{ $t->nitelik ?? '—' }}</td>
+                    <td data-kolon="hisse_durumu" @class(['is-gizli' => ! $goster('hisse_durumu')])>
                         @if ($mulkiyet === 'TAM')
                             <span class="tl-pill tl-pill-ok" title="Tek aktif hisse ve pay = payda">TAM</span>
                         @elseif ($mulkiyet === 'HİSSELİ')
@@ -420,21 +451,21 @@
                             <span class="tl-pill tl-pill-mute">—</span>
                         @endif
                     </td>
-                    <td class="tl-td-mono">{{ $hisseeToplam > 0 ? number_format($hisseeToplam, 2, ',', '.') : '—' }}</td>
-                    <td class="tl-td-mono">
+                    <td class="tl-td-mono" data-kolon="hisse_m2" @class(['is-gizli' => ! $goster('hisse_m2')])>{{ $hisseeToplam > 0 ? number_format($hisseeToplam, 2, ',', '.') : '—' }}</td>
+                    <td class="tl-td-mono" data-kolon="bb_no" @class(['is-gizli' => ! $goster('bb_no')])>
                         @if ($yapilar->count() > 1)
                             {{ $bbn->bagimsiz_bolum_no }} <span class="tl-pill tl-pill-info">+{{ $yapilar->count() - 1 }}</span>
                         @else
                             {{ $bbn->bagimsiz_bolum_no ?? '—' }}
                         @endif
                     </td>
-                    <td class="tl-td-mono">{{ $bbn->blok_no ?? '—' }}</td>
-                    <td class="tl-td-mono">{{ $bbn->kat_no ?? '—' }}</td>
-                    <td>{{ $t->imar->imarDurumu->ad ?? '—' }}</td>
-                    <td>
+                    <td class="tl-td-mono" data-kolon="blok_no" @class(['is-gizli' => ! $goster('blok_no')])>{{ $bbn->blok_no ?? '—' }}</td>
+                    <td class="tl-td-mono" data-kolon="kat_no" @class(['is-gizli' => ! $goster('kat_no')])>{{ $bbn->kat_no ?? '—' }}</td>
+                    <td data-kolon="imar" @class(['is-gizli' => ! $goster('imar')])>{{ $t->imar->imarDurumu->ad ?? '—' }}</td>
+                    <td data-kolon="mulkiyet" @class(['is-gizli' => ! $goster('mulkiyet')])>
                         <span class="tl-pill tl-pill-ok">Kayıtlı</span>
                     </td>
-                    <td>
+                    <td data-kolon="muhasebe" @class(['is-gizli' => ! $goster('muhasebe')])>
                         @if ($muhasebeKayit)
                             <span title="{{ $muhasebeKayit->ad }}">{{ Str::limit($muhasebeKayit->ad, 40) }}</span>
                             @if ($muhasebeFarkli)
@@ -442,7 +473,7 @@
                             @endif
                         @else — @endif
                     </td>
-                    <td class="tl-td-center">
+                    <td class="tl-td-center" data-kolon="dosya" @class(['is-gizli' => ! $goster('dosya')])>
                         @if ($t->resimler_count > 0)
                             <span class="tl-pill tl-pill-info">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
@@ -452,21 +483,21 @@
                             <span class="tl-pill tl-pill-mute">—</span>
                         @endif
                     </td>
-                    <td>
+                    <td data-kolon="satis" @class(['is-gizli' => ! $goster('satis')])>
                         <span class="tl-pill {{ $satisOzet->pill() }}">{{ $satisOzet->etiket() }}</span>
                         @if ($yapilar->count() > 0)
                             @php $satistaSay = $yapilar->filter(fn ($y) => ($y->satis_durumu instanceof \App\Enums\SatisDurumu ? $y->satis_durumu->value : $y->satis_durumu) === 'satista')->count(); @endphp
                             <span class="tl-pill tl-pill-mute" title="Satıştaki BBN / toplam BBN">{{ $satistaSay }}/{{ $yapilar->count() }}</span>
                         @endif
                     </td>
-                    <td>{!! $binaVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td class="tl-td-metin" title="{{ $aciklamaBirlesik }}">{{ Str::limit($aciklamaBirlesik, 60) ?: '—' }}</td>
-                    <td>{!! $tahsisVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td>{!! $ustHakkiVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td>{!! $kiraVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td>{!! $meclisVar ? '<span class="tl-pill tl-pill-warn">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td>{!! $geometriVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
-                    <td class="tl-td-metin"><span class="tl-pill tl-pill-mute">—</span></td>
+                    <td data-kolon="bina" @class(['is-gizli' => ! $goster('bina')])>{!! $binaVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td class="tl-td-metin" data-kolon="aciklama" @class(['is-gizli' => ! $goster('aciklama')]) title="{{ $aciklamaBirlesik }}">{{ Str::limit($aciklamaBirlesik, 60) ?: '—' }}</td>
+                    <td data-kolon="tahsis" @class(['is-gizli' => ! $goster('tahsis')])>{!! $tahsisVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td data-kolon="ust_hakki" @class(['is-gizli' => ! $goster('ust_hakki')])>{!! $ustHakkiVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td data-kolon="kira" @class(['is-gizli' => ! $goster('kira')])>{!! $kiraVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td data-kolon="meclis" @class(['is-gizli' => ! $goster('meclis')])>{!! $meclisVar ? '<span class="tl-pill tl-pill-warn">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td data-kolon="geometri" @class(['is-gizli' => ! $goster('geometri')])>{!! $geometriVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td class="tl-td-metin" data-kolon="ek_rapor" @class(['is-gizli' => ! $goster('ek_rapor')])><span class="tl-pill tl-pill-mute">—</span></td>
                 </tr>
             @endforeach
         </tbody>
@@ -525,6 +556,89 @@
     document.addEventListener('click', () => {
         document.querySelectorAll('.tl-dd.is-acik').forEach(d => d.classList.remove('is-acik'));
     });
+})();
+
+(function () {
+    const menu = document.getElementById('kolon-menu');
+    const toggle = document.getElementById('kolon-toggle');
+    const panel = document.getElementById('kolon-panel');
+    const tumu = document.getElementById('kolon-tumu');
+    const kutular = Array.from(document.querySelectorAll('.kolon-cb'));
+    const durum = document.getElementById('kolon-durum');
+    const kaydetUrl = @json(route('panel.kolon-tercihi.kaydet'));
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (!toggle || !panel) return;
+
+    function tumuDurum() {
+        if (!tumu) return;
+        const n = kutular.filter(c => c.checked).length;
+        tumu.checked = n === kutular.length;
+        tumu.indeterminate = n > 0 && n < kutular.length;
+    }
+
+    function uygula() {
+        const secili = kutular.filter(c => c.checked).map(c => c.value);
+        document.querySelectorAll('#tl-tablo [data-kolon]').forEach(el => {
+            el.classList.toggle('is-gizli', !secili.includes(el.getAttribute('data-kolon')));
+        });
+        tumuDurum();
+    }
+
+    let kayitZamanlayici = null;
+    function kaydet() {
+        const kolonlar = kutular.filter(c => c.checked).map(c => c.value);
+        if (kolonlar.length === 0) return;
+        if (durum) { durum.hidden = false; durum.textContent = 'Kaydediliyor…'; }
+        fetch(kaydetUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrf || '',
+            },
+            body: JSON.stringify({ tablo: 'tasinmazlar', kolonlar: kolonlar }),
+        }).then(r => r.json()).then(() => {
+            if (durum) durum.textContent = 'Kaydedildi';
+            setTimeout(() => { if (durum) durum.hidden = true; }, 1400);
+        }).catch(() => {
+            if (durum) durum.textContent = 'Kaydedilemedi';
+        });
+    }
+
+    toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const acik = !panel.hidden;
+        panel.hidden = acik;
+        toggle.setAttribute('aria-expanded', acik ? 'false' : 'true');
+    });
+    panel.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => {
+        panel.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+    });
+
+    kutular.forEach(c => c.addEventListener('change', () => {
+        if (kutular.filter(x => x.checked).length === 0) {
+            c.checked = true;
+            return;
+        }
+        uygula();
+        clearTimeout(kayitZamanlayici);
+        kayitZamanlayici = setTimeout(kaydet, 350);
+    }));
+
+    if (tumu) {
+        tumu.addEventListener('change', () => {
+            kutular.forEach(c => c.checked = tumu.checked);
+            if (kutular.filter(c => c.checked).length === 0) {
+                kutular.forEach(c => c.checked = true);
+            }
+            uygula();
+            kaydet();
+        });
+    }
+
+    tumuDurum();
 })();
 </script>
 @endsection

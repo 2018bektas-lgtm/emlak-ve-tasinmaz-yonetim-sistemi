@@ -18,6 +18,7 @@ class StoreTasinmazRequest extends FormRequest
         return [
             // Lokasyon
             'mahalle_id' => ['required', 'integer', 'exists:mahalleler,id'],
+            'mudurluk_id' => ['nullable', 'integer', 'exists:mudurlukler,id'],
             'ada' => ['required', 'string', 'max:20'],
             'parsel' => ['required', 'string', 'max:20'],
 
@@ -142,11 +143,15 @@ class StoreTasinmazRequest extends FormRequest
     {
         // Kategori grubu — düz alanlarsa iç grup yapısına toparla (geriye uyumluluk)
         $kategori = $this->input('kategori');
-        if (! is_array($kategori)) $kategori = [];
+        if (! is_array($kategori)) {
+            $kategori = [];
+        }
 
         // Ekbilgi grubu — flag'leri boolean'a çevir
         $ekbilgi = $this->input('ekbilgi');
-        if (! is_array($ekbilgi)) $ekbilgi = [];
+        if (! is_array($ekbilgi)) {
+            $ekbilgi = [];
+        }
         foreach (['meclis_satis_karari_var', 'tahsis_var', 'ust_hakki_var', 'kira_var'] as $f) {
             $ekbilgi[$f] = filter_var($ekbilgi[$f] ?? false, FILTER_VALIDATE_BOOLEAN);
         }
@@ -159,14 +164,22 @@ class StoreTasinmazRequest extends FormRequest
         if (is_array($yapilar)) {
             $temiz = [];
             foreach ($yapilar as $y) {
-                if (! is_array($y)) continue;
+                if (! is_array($y)) {
+                    continue;
+                }
                 $y['brut_alan'] = $this->trNumericCevir($y['brut_alan'] ?? null);
                 $y['net_alan'] = $this->trNumericCevir($y['net_alan'] ?? null);
                 foreach (['meclis_satis_karari_var', 'tahsis_var', 'ust_hakki_var', 'kira_var'] as $flag) {
                     $y[$flag] = filter_var($y[$flag] ?? false, FILTER_VALIDATE_BOOLEAN);
                 }
-                if (empty($y['satis_durumu'])) $y['satis_durumu'] = SatisDurumu::Envanterde->value;
-                foreach ($y as $k => $v) if ($v === '') $y[$k] = null;
+                if (empty($y['satis_durumu'])) {
+                    $y['satis_durumu'] = SatisDurumu::Envanterde->value;
+                }
+                foreach ($y as $k => $v) {
+                    if ($v === '') {
+                        $y[$k] = null;
+                    }
+                }
                 $temiz[] = $y;
             }
             $yapilar = $temiz ?: null;
@@ -175,17 +188,23 @@ class StoreTasinmazRequest extends FormRequest
         }
 
         $tapu = $this->input('tapu');
-        if (! is_array($tapu)) $tapu = [];
+        if (! is_array($tapu)) {
+            $tapu = [];
+        }
 
         $hisseler = $this->input('hisseler');
         if (is_array($hisseler)) {
             $temiz = [];
             foreach ($hisseler as $h) {
-                if (! is_array($h)) continue;
+                if (! is_array($h)) {
+                    continue;
+                }
                 foreach (['hisse_pay', 'hisse_payda', 'hisse_yuzolcum', 'maliyet_bedeli', 'rayic_bedel', 'emlak_vd', 'iz_bedeli'] as $k) {
                     $h[$k] = $this->trNumericCevir($h[$k] ?? null);
                 }
-                if (collect($h)->contains(fn ($v) => filled($v))) $temiz[] = $h;
+                if (collect($h)->contains(fn ($v) => filled($v))) {
+                    $temiz[] = $h;
+                }
             }
             $hisseler = $temiz ?: null;
         } else {
@@ -206,8 +225,12 @@ class StoreTasinmazRequest extends FormRequest
 
     protected function trNumericCevir(mixed $deger): mixed
     {
-        if ($deger === null || $deger === '') return $deger;
-        if (is_int($deger) || is_float($deger)) return $deger;
+        if ($deger === null || $deger === '') {
+            return $deger;
+        }
+        if (is_int($deger) || is_float($deger)) {
+            return $deger;
+        }
         $s = preg_replace('/[\s\x{00A0}\x{202F}]/u', '', trim((string) $deger)) ?? trim((string) $deger);
         if (preg_match('/^(.+)[.,](\d{1,2})$/', $s, $m)) {
             $s = str_replace(['.', ','], '', $m[1]).'.'.$m[2];

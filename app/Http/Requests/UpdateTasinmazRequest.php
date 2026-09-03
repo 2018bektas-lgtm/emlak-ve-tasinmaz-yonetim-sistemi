@@ -18,6 +18,7 @@ class UpdateTasinmazRequest extends FormRequest
         return [
             // Lokasyon
             'mahalle_id' => ['required', 'integer', 'exists:mahalleler,id'],
+            'mudurluk_id' => ['nullable', 'integer', 'exists:mudurlukler,id'],
             'ada' => ['required', 'string', 'max:20'],
             'parsel' => ['required', 'string', 'max:20'],
 
@@ -96,10 +97,14 @@ class UpdateTasinmazRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $kategori = $this->input('kategori');
-        if (! is_array($kategori)) $kategori = [];
+        if (! is_array($kategori)) {
+            $kategori = [];
+        }
 
         $ekbilgi = $this->input('ekbilgi');
-        if (! is_array($ekbilgi)) $ekbilgi = [];
+        if (! is_array($ekbilgi)) {
+            $ekbilgi = [];
+        }
         foreach (['meclis_satis_karari_var', 'tahsis_var', 'ust_hakki_var', 'kira_var'] as $f) {
             $ekbilgi[$f] = filter_var($ekbilgi[$f] ?? false, FILTER_VALIDATE_BOOLEAN);
         }
@@ -108,7 +113,9 @@ class UpdateTasinmazRequest extends FormRequest
         }
 
         $tapu = $this->input('tapu');
-        if (! is_array($tapu)) $tapu = [];
+        if (! is_array($tapu)) {
+            $tapu = [];
+        }
 
         $this->merge([
             'uzeri_bina_var_mi' => $this->boolean('uzeri_bina_var_mi'),
@@ -122,8 +129,12 @@ class UpdateTasinmazRequest extends FormRequest
 
     protected function trNumericCevir(mixed $deger): mixed
     {
-        if ($deger === null || $deger === '') return $deger;
-        if (is_int($deger) || is_float($deger)) return $deger;
+        if ($deger === null || $deger === '') {
+            return $deger;
+        }
+        if (is_int($deger) || is_float($deger)) {
+            return $deger;
+        }
         $s = preg_replace('/[\s\x{00A0}\x{202F}]/u', '', trim((string) $deger)) ?? trim((string) $deger);
         if (preg_match('/^(.+)[.,](\d{1,2})$/', $s, $m)) {
             $s = str_replace(['.', ','], '', $m[1]).'.'.$m[2];

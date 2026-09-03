@@ -26,6 +26,7 @@ class Tasinmaz extends Model
         'il_id',
         'ilce_id',
         'mahalle_id',
+        'mudurluk_id',
         'ada',
         'parsel',
         'alan',
@@ -84,6 +85,39 @@ class Tasinmaz extends Model
     public function mahalle(): BelongsTo
     {
         return $this->belongsTo(Mahalle::class, 'mahalle_id');
+    }
+
+    public function mudurluk(): BelongsTo
+    {
+        return $this->belongsTo(Mudurluk::class, 'mudurluk_id');
+    }
+
+    /**
+     * Kullanıcının müdürlük kapsamına göre kayıtları daraltır.
+     * tasinmaz.tumunu-gor izni olanlar (ve admin) tüm kayıtları görür.
+     */
+    public function scopeMudurlukKapsami($query, ?Kullanici $kullanici = null)
+    {
+        $kullanici ??= auth()->user();
+        if (! $kullanici instanceof Kullanici || $kullanici->izinVarMi('tasinmaz.tumunu-gor')) {
+            return $query;
+        }
+
+        if (! $kullanici->mudurluk_id) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        return $query->where('mudurluk_id', $kullanici->mudurluk_id);
+    }
+
+    public function mudurlukErisilebilirMi(?Kullanici $kullanici = null): bool
+    {
+        $kullanici ??= auth()->user();
+        if (! $kullanici instanceof Kullanici) {
+            return false;
+        }
+
+        return $kullanici->tasinmazGorebilirMi($this);
     }
 
     /**
@@ -150,7 +184,7 @@ class Tasinmaz extends Model
         }
 
         return sprintf(
-            'https://parselsorgu.tkgm.gov.tr/#ara/mahalle/%d/ada/%s/parsel/%s',
+            'https://parselsorgu.tkgm.gov.tr/#ara/idari/%d/%s/%s',
             (int) $tkgm,
             rawurlencode((string) $this->ada),
             rawurlencode((string) $this->parsel),

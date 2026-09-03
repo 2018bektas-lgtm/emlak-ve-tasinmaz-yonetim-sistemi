@@ -2,10 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\Kullanici;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazYapi;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,5 +32,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Sayfalayıcı Bootstrap-5 class'ları ile render (bizim tl-pagination CSS'imize uyar)
         Paginator::useBootstrapFive();
+
+        Gate::before(function ($user, string $ability) {
+            if (! $user instanceof Kullanici) {
+                return null;
+            }
+
+            return $user->izinVarMi($ability) ?: null;
+        });
     }
 }

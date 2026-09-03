@@ -121,10 +121,15 @@ return new class extends Migration
                     // BBN'nin nitelik'inden tip türet — 'daire', 'dukkan' vs.
                     $ham = strtolower((string) ($b->nitelik ?? ''));
                     $tip = 'bbn';
-                    if (str_contains($ham, 'daire')) $tip = 'daire';
-                    elseif (str_contains($ham, 'dukk') || str_contains($ham, 'dükk')) $tip = 'dukkan';
-                    elseif (str_contains($ham, 'depo')) $tip = 'depo';
-                    elseif (str_contains($ham, 'ofis') || str_contains($ham, 'bür')) $tip = 'ofis';
+                    if (str_contains($ham, 'daire')) {
+                        $tip = 'daire';
+                    } elseif (str_contains($ham, 'dukk') || str_contains($ham, 'dükk')) {
+                        $tip = 'dukkan';
+                    } elseif (str_contains($ham, 'depo')) {
+                        $tip = 'depo';
+                    } elseif (str_contains($ham, 'ofis') || str_contains($ham, 'bür')) {
+                        $tip = 'ofis';
+                    }
 
                     $yeniId = DB::table('tasinmaz_birimler')->insertGetId([
                         'tasinmaz_id' => $b->tasinmaz_id,
@@ -159,8 +164,12 @@ return new class extends Migration
         //    ve sahip_id'yi yeni id'ye çevir.
         $polyTablolari = ['tapular', 'meclis_kararlari', 'resimler'];
         foreach ($polyTablolari as $tablo) {
-            if (! Schema::hasTable($tablo)) continue;
-            if (! Schema::hasColumn($tablo, 'sahip_type') || ! Schema::hasColumn($tablo, 'sahip_id')) continue;
+            if (! Schema::hasTable($tablo)) {
+                continue;
+            }
+            if (! Schema::hasColumn($tablo, 'sahip_type') || ! Schema::hasColumn($tablo, 'sahip_id')) {
+                continue;
+            }
 
             // Önce eski BBN sahiplerini yeni id + yeni type ile güncelle
             foreach ($bbnMap as $eski => $yeni) {
@@ -182,22 +191,41 @@ return new class extends Migration
         // 6) tasinmazlar tablosundan taşınan alanları drop et
         Schema::table('tasinmazlar', function (Blueprint $table) use ($has) {
             // Foreign key'leri önce drop et
-            if ($has('muhasebe_kayit_id')) $table->dropConstrainedForeignId('muhasebe_kayit_id');
-            if ($has('kayit_turu_id')) $table->dropConstrainedForeignId('kayit_turu_id');
+            if ($has('muhasebe_kayit_id')) {
+                $table->dropConstrainedForeignId('muhasebe_kayit_id');
+            }
+            if ($has('kayit_turu_id')) {
+                $table->dropConstrainedForeignId('kayit_turu_id');
+            }
 
             // Index'leri drop et (varsa) — throw yakalayamıyoruz, o yüzden sadece bilinen index'leri drop et
             // muhasebe_niteligi ve kayit_turu index'leri 000006 migration'da eklendi ama 000015'te FK'ya taşındı
             if ($has('meclis_satis_karari_var')) {
-                try { $table->dropIndex(['meclis_satis_karari_var']); } catch (\Throwable $e) {}
+                try {
+                    $table->dropIndex(['meclis_satis_karari_var']);
+                } catch (Throwable $e) {
+                }
             }
             if ($has('tahsis_var')) {
-                try { $table->dropIndex(['tahsis_var']); } catch (\Throwable $e) {}
+                try {
+                    $table->dropIndex(['tahsis_var']);
+                } catch (Throwable $e) {
+                }
             }
             if ($has('ust_hakki_var')) {
-                try { $table->dropIndex(['ust_hakki_var']); } catch (\Throwable $e) {}
+                try {
+                    $table->dropIndex(['ust_hakki_var']);
+                } catch (Throwable $e) {
+                }
             }
             if ($has('kira_var')) {
-                try { $table->dropIndex(['kira_var']); } catch (\Throwable $e) {}
+                try {
+                    $table->dropIndex(['kira_var']);
+                } catch (Throwable $e) {
+                }
+            }
+            if ($has('satis_durumu')) {
+                $table->dropIndex(['satis_durumu']);
             }
 
             $dropCols = array_values(array_filter([

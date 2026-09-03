@@ -45,6 +45,14 @@ class LoginController extends Controller
             ]);
         }
 
+        if (! Auth::user()?->aktif_mi) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'giris' => 'Hesabınız pasif duruma alınmış. Yöneticinizle iletişime geçin.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey($request));
 
         $request->session()->regenerate();

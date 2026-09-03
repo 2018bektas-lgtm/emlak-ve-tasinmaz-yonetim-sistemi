@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\TasinmazYetkisi;
 use App\Http\Requests\StoreTasinmazRequest;
 use App\Http\Requests\UpdateTasinmazRequest;
 use App\Models\Il;
@@ -10,9 +11,13 @@ use App\Models\ImarDurumu;
 use App\Models\KayitTuru;
 use App\Models\Mahalle;
 use App\Models\MevcutKullanimSekli;
+use App\Models\Mudurluk;
 use App\Models\MuhasebeKayit;
 use App\Models\Resim;
 use App\Models\Tasinmaz;
+use App\Support\TasinmazKolonlari;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +27,8 @@ use Illuminate\View\View;
 
 class TasinmazController extends Controller
 {
+    use TasinmazYetkisi;
+
     public function index(Request $request): View
     {
         // Serbest arama
@@ -51,10 +58,12 @@ class TasinmazController extends Controller
         $binaVarMi = $request->query('bina'); // 1 | 0 | null
 
         $sorgu = Tasinmaz::query()
+            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',
                 'mahalle:id,ad,tkgm_id,ilce_id',
+                'mudurluk:id,ad',
                 'koordinat:id,tasinmaz_id,lat,lng,koordinat',
                 'imar:id,tasinmaz_id,imar_durumu_id,emsal,yenaz_yencok,imar_notu',
                 'imar.imarDurumu:id,ad',
@@ -80,7 +89,7 @@ class TasinmazController extends Controller
             ->when($satisDurumu, function ($s) use ($satisDurumu) {
                 $s->where(function ($w) use ($satisDurumu) {
                     $w->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu))
-                      ->orWhereHas('yapilar', fn ($y) => $y->where('satis_durumu', $satisDurumu));
+                        ->orWhereHas('yapilar', fn ($y) => $y->where('satis_durumu', $satisDurumu));
                 });
             })
             // Bayraklar: ekbilgi'de VEYA yapıda varsa yeter (=1); yokta hiçbir yerde olmasın (=0)
@@ -89,11 +98,11 @@ class TasinmazController extends Controller
                     if ($deger === 1) {
                         $s->where(function ($w) use ($alan) {
                             $w->whereHas('ekbilgi', fn ($e) => $e->where($alan, true))
-                              ->orWhereHas('yapilar', fn ($y) => $y->where($alan, true));
+                                ->orWhereHas('yapilar', fn ($y) => $y->where($alan, true));
                         });
                     } else {
                         $s->whereDoesntHave('ekbilgi', fn ($e) => $e->where($alan, true))
-                          ->whereDoesntHave('yapilar', fn ($y) => $y->where($alan, true));
+                            ->whereDoesntHave('yapilar', fn ($y) => $y->where($alan, true));
                     }
                 }
             })
@@ -101,7 +110,7 @@ class TasinmazController extends Controller
             ->when($mulkiyet === 'TAM', function ($s) {
                 $s->whereHas('hisseler', function ($h) {
                     $h->where('hisse_durum', 'aktif')
-                      ->whereColumn('hisse_pay', 'hisse_payda');
+                        ->whereColumn('hisse_pay', 'hisse_payda');
                 }, '=', 1)->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1);
             })
             ->when($mulkiyet === 'HISSELI', function ($s) {
@@ -109,27 +118,27 @@ class TasinmazController extends Controller
                     // Birden fazla aktif hisse
                     $w->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '>', 1)
                       // Ya da tek aktif ama pay != payda
-                      ->orWhere(function ($ww) {
-                          $ww->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1)
-                             ->whereDoesntHave('hisseler', function ($h) {
-                                 $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
-                             });
-                      });
+                        ->orWhere(function ($ww) {
+                            $ww->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1)
+                                ->whereDoesntHave('hisseler', function ($h) {
+                                    $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
+                                });
+                        });
                 });
             })
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ada', 'like', "%{$q}%")
-                      ->orWhere('parsel', 'like', "%{$q}%")
-                      ->orWhere('nitelik', 'like', "%{$q}%")
-                      ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
-                      ->orWhereHas('ekbilgi', fn ($e) => $e->where('aciklama', 'like', "%{$q}%"))
-                      ->orWhereHas('yapilar', function ($y) use ($q) {
-                          $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%")
-                            ->orWhere('aciklama', 'like', "%{$q}%")
-                            ->orWhere('bagimsiz_bolum_no', 'like', "%{$q}%");
-                      })
-                      ->orWhereHas('tapu', fn ($tp) => $tp->where('takbis_zemin_no', 'like', "%{$q}%"));
+                        ->orWhere('parsel', 'like', "%{$q}%")
+                        ->orWhere('nitelik', 'like', "%{$q}%")
+                        ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
+                        ->orWhereHas('ekbilgi', fn ($e) => $e->where('aciklama', 'like', "%{$q}%"))
+                        ->orWhereHas('yapilar', function ($y) use ($q) {
+                            $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%")
+                                ->orWhere('aciklama', 'like', "%{$q}%")
+                                ->orWhere('bagimsiz_bolum_no', 'like', "%{$q}%");
+                        })
+                        ->orWhereHas('tapu', fn ($tp) => $tp->where('takbis_zemin_no', 'like', "%{$q}%"));
                 });
             })
             ->orderByDesc('id');
@@ -154,7 +163,9 @@ class TasinmazController extends Controller
                 'mulkiyet' => $mulkiyet,
                 'bina' => $binaVarMi,
             ], array_map(fn ($v) => (string) $v, $bayrakFiltreleri)),
-            'toplamKayit' => Tasinmaz::count(),
+            'toplamKayit' => Tasinmaz::query()->mudurlukKapsami()->count(),
+            'tumKolonlar' => TasinmazKolonlari::katalog(),
+            'gorunurKolonlar' => TasinmazKolonlari::kullaniciIcin(auth()->user()),
         ]);
     }
 
@@ -168,6 +179,7 @@ class TasinmazController extends Controller
         $parsel = trim((string) $request->query('parsel', ''));
 
         $sorgu = Tasinmaz::query()
+            ->mudurlukKapsami()
             ->with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'koordinat'])
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
@@ -177,10 +189,10 @@ class TasinmazController extends Controller
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ada', 'like', "%{$q}%")
-                      ->orWhere('parsel', 'like', "%{$q}%")
-                      ->orWhere('nitelik', 'like', "%{$q}%")
-                      ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
-                      ->orWhereHas('yapilar', fn ($y) => $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%"));
+                        ->orWhere('parsel', 'like', "%{$q}%")
+                        ->orWhere('nitelik', 'like', "%{$q}%")
+                        ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
+                        ->orWhereHas('yapilar', fn ($y) => $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%"));
                 });
             })
             ->orderByDesc('id')
@@ -208,7 +220,7 @@ class TasinmazController extends Controller
 
     public function destroy(int $mahalleTkgmId, string $ada, string $parsel): RedirectResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $id = $model->id;
         $model->delete();
 
@@ -221,6 +233,8 @@ class TasinmazController extends Controller
     {
         return view('panel.tasinmazlar.olustur', [
             'iller' => Il::orderBy('ad')->get(['id', 'ad', 'tkgm_id']),
+            'mudurlukler' => Mudurluk::query()->aktif()->orderBy('sira')->get(['id', 'ad']),
+            'mudurlukSecilebilir' => auth()->user()?->izinVarMi('tasinmaz.tumunu-gor') ?? false,
             'muhasebeKayitlari' => $this->hiyerarsikSecenekler(MuhasebeKayit::query()),
             'kayitTurleri' => $this->hiyerarsikSecenekler(KayitTuru::query()),
             'mevcutKullanimSekilleri' => MevcutKullanimSekli::where('aktif_mi', true)
@@ -269,6 +283,8 @@ class TasinmazController extends Controller
             $veri['hisseler'],
         );
 
+        $veri = $this->mudurlukIdUygula($veri);
+
         $tasinmaz = DB::transaction(function () use ($veri, $koordinatVeri, $imarVeri, $kategoriVeri, $ekbilgiVeri, $yapilar, $tapu, $resimler, $hisseler) {
             $tasinmaz = Tasinmaz::create($veri);
 
@@ -303,7 +319,9 @@ class TasinmazController extends Controller
                 foreach (array_values($yapilar) as $sira => $y) {
                     $y['sira'] = $sira;
                     foreach ($y as $k => $v) {
-                        if ($v === '') $y[$k] = null;
+                        if ($v === '') {
+                            $y[$k] = null;
+                        }
                     }
                     $tasinmaz->yapilar()->create($y);
                 }
@@ -324,9 +342,13 @@ class TasinmazController extends Controller
                     $h['sira'] = $sira;
                     // Bos alanlari null yap (form'dan bos string gelir)
                     foreach ($h as $k => $v) {
-                        if ($v === '') $h[$k] = null;
+                        if ($v === '') {
+                            $h[$k] = null;
+                        }
                     }
-                    if (empty($h['hisse_durum'])) $h['hisse_durum'] = 'aktif';
+                    if (empty($h['hisse_durum'])) {
+                        $h['hisse_durum'] = 'aktif';
+                    }
                     $tasinmaz->hisseler()->create($h);
                 }
             }
@@ -356,8 +378,8 @@ class TasinmazController extends Controller
 
     public function edit(int $mahalleTkgmId, string $ada, string $parsel): View
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel)
-            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel)
+            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle', 'mudurluk']);
 
         // Cascade dropdown'lar icin il seciliyse ilceleri, ilce seciliyse mahalleleri onceden yukle
         $ilceler = $model->il_id
@@ -370,6 +392,8 @@ class TasinmazController extends Controller
         return view('panel.tasinmazlar.duzenle', [
             'tasinmaz' => $model,
             'iller' => Il::orderBy('ad')->get(['id', 'ad', 'tkgm_id']),
+            'mudurlukler' => Mudurluk::query()->orderBy('sira')->get(['id', 'ad']),
+            'mudurlukSecilebilir' => auth()->user()?->izinVarMi('tasinmaz.tumunu-gor') ?? false,
             'ilcelerOnceden' => $ilceler,
             'mahallelerOnceden' => $mahalleler,
             'muhasebeKayitlari' => $this->hiyerarsikSecenekler(MuhasebeKayit::query()),
@@ -385,10 +409,10 @@ class TasinmazController extends Controller
 
     public function update(UpdateTasinmazRequest $request, int $mahalleTkgmId, string $ada, string $parsel): RedirectResponse
     {
-        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel)
+        $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel)
             ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
 
-        $veri = $request->validated();
+        $veri = $this->mudurlukIdUygula($request->validated(), true);
         $koordinatVeri = [
             'lat' => $veri['lat'] ?? null,
             'lng' => $veri['lng'] ?? null,
@@ -513,6 +537,7 @@ class TasinmazController extends Controller
     public function geojson(): JsonResponse
     {
         $kayitlar = Tasinmaz::query()
+            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',
@@ -564,7 +589,7 @@ class TasinmazController extends Controller
      * Parametrik hiyerarsik tabloyu tree-select icin duzler.
      * Etiket sadece "[KOD] Ad" — indent'i frontend (aselect tree-mode) yapar.
      *
-     * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $sorgu
+     * @param  Builder<Model>  $sorgu
      * @return array<int, array{id:int, parent_id:?int, seviye:int, kod:?string, ad:string, etiket:string}>
      */
     private function hiyerarsikSecenekler($sorgu): array
