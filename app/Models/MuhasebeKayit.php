@@ -42,8 +42,8 @@ class MuhasebeKayit extends Model
         return $this->hasMany(Tasinmaz::class, 'muhasebe_kayit_id');
     }
 
-    public function bagimsizBolumler(): HasMany
+    public function birimler(): HasMany
     {
-        return $this->hasMany(BagimsizBolum::class, 'muhasebe_kayit_id');
+        return $this->hasMany(TasinmazBirim::class, 'muhasebe_kayit_id');
     }
 }

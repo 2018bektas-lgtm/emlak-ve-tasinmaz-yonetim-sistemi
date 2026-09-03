@@ -42,8 +42,8 @@ class KayitTuru extends Model
         return $this->hasMany(Tasinmaz::class, 'kayit_turu_id');
     }
 
-    public function bagimsizBolumler(): HasMany
+    public function birimler(): HasMany
     {
-        return $this->hasMany(BagimsizBolum::class, 'kayit_turu_id');
+        return $this->hasMany(TasinmazBirim::class, 'kayit_turu_id');
     }
 }

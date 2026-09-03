@@ -24,10 +24,31 @@ class TasinmazController extends Controller
 {
     public function index(Request $request): View
     {
+        // Serbest arama
         $q = trim((string) $request->query('q', ''));
+
+        // Cascade lokasyon
         $ilId = $request->query('il_id');
         $ilceId = $request->query('ilce_id');
         $mahalleId = $request->query('mahalle_id');
+
+        // Kadastral
+        $nitelik = trim((string) $request->query('nitelik', ''));
+
+        // Durum
+        $satisDurumu = $request->query('satis_durumu'); // envanterde|hazirlik|satista|satildi|iptal
+        $mulkiyet = $request->query('mulkiyet'); // TAM | HISSELI (aktif hisse üzerinden)
+
+        // Bayrak filtreleri — 1 = zorunlu var, 0 = zorunlu yok, boş = önemsiz
+        $bayrakAlanlari = ['kira_var', 'tahsis_var', 'ust_hakki_var', 'meclis_satis_karari_var'];
+        $bayrakFiltreleri = [];
+        foreach ($bayrakAlanlari as $f) {
+            $val = $request->query($f);
+            if ($val === '1' || $val === '0') {
+                $bayrakFiltreleri[$f] = (int) $val;
+            }
+        }
+        $binaVarMi = $request->query('bina'); // 1 | 0 | null
 
         $sorgu = Tasinmaz::query()
             ->with([
@@ -38,22 +59,77 @@ class TasinmazController extends Controller
                 'imar:id,tasinmaz_id,imar_durumu_id,emsal,yenaz_yencok,imar_notu',
                 'imar.imarDurumu:id,ad',
                 'tapu',
-                'muhasebeKayit:id,ad,kod',
-                'kayitTuru:id,ad,kod',
-                'hisseler:id,tasinmaz_id,hisse_no,hisse_yuzolcum,hisse_durum,islem_tipi',
-                'bagimsizBolumler:id,tasinmaz_id,blok_no,kat_no,bagimsiz_bolum_no',
+                'hisseler:id,tasinmaz_id,hisse_no,hisse_pay,hisse_payda,hisse_yuzolcum,hisse_durum,islem_tipi',
+                'kategori',
+                'kategori.muhasebeKayit:id,ad,kod',
+                'kategori.kayitTuru:id,ad,kod',
+                'ekbilgi',
+                'yapilar',
+                'yapilar.muhasebeKayit:id,ad,kod',
+                'yapilar.kayitTuru:id,ad,kod',
                 'resimler',
             ])
             ->withCount('resimler')
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
+            ->when($nitelik !== '', fn ($s) => $s->where('nitelik', 'like', "%{$nitelik}%"))
+            ->when($binaVarMi === '1', fn ($s) => $s->where('uzeri_bina_var_mi', true))
+            ->when($binaVarMi === '0', fn ($s) => $s->where('uzeri_bina_var_mi', false))
+            // Satış durumu: ekbilgi VEYA herhangi bir yapıda o durum varsa
+            ->when($satisDurumu, function ($s) use ($satisDurumu) {
+                $s->where(function ($w) use ($satisDurumu) {
+                    $w->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu))
+                      ->orWhereHas('yapilar', fn ($y) => $y->where('satis_durumu', $satisDurumu));
+                });
+            })
+            // Bayraklar: ekbilgi'de VEYA yapıda varsa yeter (=1); yokta hiçbir yerde olmasın (=0)
+            ->when(! empty($bayrakFiltreleri), function ($s) use ($bayrakFiltreleri) {
+                foreach ($bayrakFiltreleri as $alan => $deger) {
+                    if ($deger === 1) {
+                        $s->where(function ($w) use ($alan) {
+                            $w->whereHas('ekbilgi', fn ($e) => $e->where($alan, true))
+                              ->orWhereHas('yapilar', fn ($y) => $y->where($alan, true));
+                        });
+                    } else {
+                        $s->whereDoesntHave('ekbilgi', fn ($e) => $e->where($alan, true))
+                          ->whereDoesntHave('yapilar', fn ($y) => $y->where($alan, true));
+                    }
+                }
+            })
+            // Mülkiyet: aktif hisse sayısı 1 & pay==payda → TAM, aksi HİSSELİ
+            ->when($mulkiyet === 'TAM', function ($s) {
+                $s->whereHas('hisseler', function ($h) {
+                    $h->where('hisse_durum', 'aktif')
+                      ->whereColumn('hisse_pay', 'hisse_payda');
+                }, '=', 1)->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1);
+            })
+            ->when($mulkiyet === 'HISSELI', function ($s) {
+                $s->where(function ($w) {
+                    // Birden fazla aktif hisse
+                    $w->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '>', 1)
+                      // Ya da tek aktif ama pay != payda
+                      ->orWhere(function ($ww) {
+                          $ww->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1)
+                             ->whereDoesntHave('hisseler', function ($h) {
+                                 $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
+                             });
+                      });
+                });
+            })
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ada', 'like', "%{$q}%")
                       ->orWhere('parsel', 'like', "%{$q}%")
                       ->orWhere('nitelik', 'like', "%{$q}%")
-                      ->orWhere('mevcut_kullanim_sekli', 'like', "%{$q}%");
+                      ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
+                      ->orWhereHas('ekbilgi', fn ($e) => $e->where('aciklama', 'like', "%{$q}%"))
+                      ->orWhereHas('yapilar', function ($y) use ($q) {
+                          $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%")
+                            ->orWhere('aciklama', 'like', "%{$q}%")
+                            ->orWhere('bagimsiz_bolum_no', 'like', "%{$q}%");
+                      })
+                      ->orWhereHas('tapu', fn ($tp) => $tp->where('takbis_zemin_no', 'like', "%{$q}%"));
                 });
             })
             ->orderByDesc('id');
@@ -61,12 +137,23 @@ class TasinmazController extends Controller
         return view('panel.tasinmazlar.index', [
             'tasinmazlar' => $sorgu->paginate(20)->withQueryString(),
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
-            'filtre' => [
+            // Cascade için: seçili il varsa ilçeler, seçili ilçe varsa mahalleler
+            'ilceler' => $ilId
+                ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad'])
+                : collect(),
+            'mahalleler' => $ilceId
+                ? Mahalle::where('ilce_id', $ilceId)->orderBy('ad')->get(['id', 'ad'])
+                : collect(),
+            'filtre' => array_merge([
                 'q' => $q,
                 'il_id' => $ilId,
                 'ilce_id' => $ilceId,
                 'mahalle_id' => $mahalleId,
-            ],
+                'nitelik' => $nitelik,
+                'satis_durumu' => $satisDurumu,
+                'mulkiyet' => $mulkiyet,
+                'bina' => $binaVarMi,
+            ], array_map(fn ($v) => (string) $v, $bayrakFiltreleri)),
             'toplamKayit' => Tasinmaz::count(),
         ]);
     }
@@ -92,7 +179,8 @@ class TasinmazController extends Controller
                     $w->where('ada', 'like', "%{$q}%")
                       ->orWhere('parsel', 'like', "%{$q}%")
                       ->orWhere('nitelik', 'like', "%{$q}%")
-                      ->orWhere('mevcut_kullanim_sekli', 'like', "%{$q}%");
+                      ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
+                      ->orWhereHas('yapilar', fn ($y) => $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%"));
                 });
             })
             ->orderByDesc('id')
@@ -113,14 +201,14 @@ class TasinmazController extends Controller
                 'lat' => $t->koordinat->lat ?? null,
                 'lng' => $t->koordinat->lng ?? null,
                 'geometry' => $t->koordinat->koordinat ?? null,
-                'duzenle' => route('panel.tasinmazlar.duzenle', $t->id),
+                'duzenle' => $t->rota('duzenle'),
             ])->values(),
         ]);
     }
 
-    public function destroy(int $tasinmaz): RedirectResponse
+    public function destroy(int $mahalleTkgmId, string $ada, string $parsel): RedirectResponse
     {
-        $model = Tasinmaz::findOrFail($tasinmaz);
+        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel);
         $id = $model->id;
         $model->delete();
 
@@ -158,7 +246,9 @@ class TasinmazController extends Controller
             'yenaz_yencok' => $veri['yenaz_yencok'] ?? null,
             'imar_notu' => $veri['imar_notu'] ?? null,
         ];
-        $bbn = $veri['bagimsiz_bolum'] ?? null;
+        $kategoriVeri = $veri['kategori'] ?? [];
+        $ekbilgiVeri = $veri['ekbilgi'] ?? [];
+        $yapilar = $veri['yapilar'] ?? [];
         $tapu = $veri['tapu'] ?? null;
         $resimler = $request->file('images') ?? [];
         $hisseler = $veri['hisseler'] ?? [];
@@ -171,13 +261,15 @@ class TasinmazController extends Controller
             $veri['emsal'],
             $veri['yenaz_yencok'],
             $veri['imar_notu'],
-            $veri['bagimsiz_bolum'],
+            $veri['kategori'],
+            $veri['ekbilgi'],
+            $veri['yapilar'],
             $veri['tapu'],
             $veri['images'],
             $veri['hisseler'],
         );
 
-        $tasinmaz = DB::transaction(function () use ($veri, $koordinatVeri, $imarVeri, $bbn, $tapu, $resimler, $hisseler) {
+        $tasinmaz = DB::transaction(function () use ($veri, $koordinatVeri, $imarVeri, $kategoriVeri, $ekbilgiVeri, $yapilar, $tapu, $resimler, $hisseler) {
             $tasinmaz = Tasinmaz::create($veri);
 
             // Sadece harita uzerinden lat/lng verilmisse koordinat kaydi olustur
@@ -188,8 +280,33 @@ class TasinmazController extends Controller
             // Imar bilgisi zorunlu — her zaman kaydedilir
             $tasinmaz->imar()->create($imarVeri);
 
-            if (is_array($bbn) && filled($bbn['kat_no'] ?? null) && filled($bbn['bagimsiz_bolum_no'] ?? null) && filled($bbn['nitelik'] ?? null)) {
-                $tasinmaz->bagimsizBolumler()->create($bbn);
+            // Kategori (arsa seviyesi sınıflandırma) — her taşınmazda tek satır
+            $tasinmaz->kategori()->create(array_merge([
+                'muhasebe_kayit_id' => null,
+                'kayit_turu_id' => null,
+                'mevcut_kullanim_sekli' => null,
+            ], $kategoriVeri));
+
+            // Ekbilgi (arsa seviyesi durum) — her taşınmazda tek satır
+            $tasinmaz->ekbilgi()->create(array_merge([
+                'isgal_durumu' => null,
+                'satis_durumu' => 'envanterde',
+                'meclis_satis_karari_var' => false,
+                'tahsis_var' => false,
+                'ust_hakki_var' => false,
+                'kira_var' => false,
+                'aciklama' => null,
+            ], $ekbilgiVeri));
+
+            // Yapılar (BBN'ler) — üzerinde bina varsa 1+ satır
+            if (! empty($yapilar)) {
+                foreach (array_values($yapilar) as $sira => $y) {
+                    $y['sira'] = $sira;
+                    foreach ($y as $k => $v) {
+                        if ($v === '') $y[$k] = null;
+                    }
+                    $tasinmaz->yapilar()->create($y);
+                }
             }
 
             if (is_array($tapu)) {
@@ -237,16 +354,10 @@ class TasinmazController extends Controller
             ->with('basari', 'Taşınmaz #'.$tasinmaz->id.' başarıyla oluşturuldu.');
     }
 
-    public function edit(int $tasinmaz): View
+    public function edit(int $mahalleTkgmId, string $ada, string $parsel): View
     {
-        $model = Tasinmaz::with([
-            'koordinat',
-            'imar',
-            'tapu',
-            'resimler',
-            'hisseler',
-            'bagimsizBolumler',
-        ])->findOrFail($tasinmaz);
+        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel)
+            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
 
         // Cascade dropdown'lar icin il seciliyse ilceleri, ilce seciliyse mahalleleri onceden yukle
         $ilceler = $model->il_id
@@ -272,10 +383,10 @@ class TasinmazController extends Controller
         ]);
     }
 
-    public function update(UpdateTasinmazRequest $request, int $tasinmaz): RedirectResponse
+    public function update(UpdateTasinmazRequest $request, int $mahalleTkgmId, string $ada, string $parsel): RedirectResponse
     {
-        $model = Tasinmaz::with(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'bagimsizBolumler'])
-            ->findOrFail($tasinmaz);
+        $model = Tasinmaz::slugIleBul($mahalleTkgmId, $ada, $parsel)
+            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
 
         $veri = $request->validated();
         $koordinatVeri = [
@@ -289,20 +400,21 @@ class TasinmazController extends Controller
             'yenaz_yencok' => $veri['yenaz_yencok'] ?? null,
             'imar_notu' => $veri['imar_notu'] ?? null,
         ];
-        $bbn = $veri['bagimsiz_bolum'] ?? null;
+        $kategoriVeri = $veri['kategori'] ?? [];
+        $ekbilgiVeri = $veri['ekbilgi'] ?? [];
         $tapu = $veri['tapu'] ?? null;
         $resimler = $request->file('images') ?? [];
         $silinenResimIdleri = $veri['silinen_resimler'] ?? [];
-        $hisseler = $veri['hisseler'] ?? [];
 
         unset(
             $veri['lat'], $veri['lng'], $veri['koordinat'],
             $veri['imar_durumu_id'], $veri['emsal'], $veri['yenaz_yencok'], $veri['imar_notu'],
-            $veri['bagimsiz_bolum'], $veri['tapu'], $veri['images'],
+            $veri['kategori'], $veri['ekbilgi'], $veri['yapilar'],
+            $veri['tapu'], $veri['images'],
             $veri['silinen_resimler'], $veri['hisseler'],
         );
 
-        DB::transaction(function () use ($model, $veri, $koordinatVeri, $imarVeri, $bbn, $tapu, $resimler, $silinenResimIdleri, $hisseler) {
+        DB::transaction(function () use ($model, $veri, $koordinatVeri, $imarVeri, $kategoriVeri, $ekbilgiVeri, $tapu, $resimler, $silinenResimIdleri) {
             $model->update($veri);
 
             // Koordinat — updateOrCreate (harita güncellenirse yenilen)
@@ -315,42 +427,46 @@ class TasinmazController extends Controller
             // Imar — her zaman zorunlu, updateOrCreate
             $model->imar()->updateOrCreate(['tasinmaz_id' => $model->id], $imarVeri);
 
-            // Bagimsiz bolum — form'da tek satirdir. Once mevcutu sil, sonra dolu ise ekle.
-            if (is_array($bbn) && filled($bbn['kat_no'] ?? null) && filled($bbn['bagimsiz_bolum_no'] ?? null) && filled($bbn['nitelik'] ?? null)) {
-                $mevcut = $model->bagimsizBolumler()->first();
-                if ($mevcut) {
-                    $mevcut->update($bbn);
-                } else {
-                    $model->bagimsizBolumler()->create($bbn);
-                }
-            }
+            // Kategori (arsa seviyesi) — updateOrCreate
+            $model->kategori()->updateOrCreate(['tasinmaz_id' => $model->id], array_merge([
+                'muhasebe_kayit_id' => null,
+                'kayit_turu_id' => null,
+                'mevcut_kullanim_sekli' => null,
+            ], $kategoriVeri));
 
-            // Tapu — updateOrCreate. PDF yalnizca yeni yuklenirse guncelle.
+            // Ekbilgi (arsa seviyesi) — updateOrCreate
+            $model->ekbilgi()->updateOrCreate(['tasinmaz_id' => $model->id], array_merge([
+                'isgal_durumu' => null,
+                'satis_durumu' => 'envanterde',
+                'meclis_satis_karari_var' => false,
+                'tahsis_var' => false,
+                'ust_hakki_var' => false,
+                'kira_var' => false,
+                'aciklama' => null,
+            ], $ekbilgiVeri));
+
+            // Yapılar (BBN'ler) modalden AJAX ile kaydedilir; ana form dokunmaz.
+
+            // Tapu — morphOne zaten sahip_type/id baglar. updateOrCreate'e
+            // Tasinmaz::class vermek morph map alias'i (`tasinmaz`) ile
+            // cakisir: kayit bulunamaz, insert unique'e takilir.
             if (is_array($tapu)) {
                 $pdf = $tapu['tapu_kaydi_pdf'] ?? null;
                 unset($tapu['tapu_kaydi_pdf']);
                 if ($pdf) {
-                    // Eski PDF varsa sil
                     if ($model->tapu && $model->tapu->tapu_kaydi_pdf) {
                         Storage::disk('public')->delete($model->tapu->tapu_kaydi_pdf);
                     }
                     $tapu['tapu_kaydi_pdf'] = $pdf->store('tapular/'.now()->format('Y/m'), 'public');
                 }
-                $model->tapu()->updateOrCreate(['sahip_type' => Tasinmaz::class, 'sahip_id' => $model->id], $tapu);
-            }
-
-            // Hisseler — mevcut hepsini sil, gelen listesini bastan olustur (basit ve tutarli)
-            $model->hisseler()->delete();
-            if (! empty($hisseler)) {
-                foreach (array_values($hisseler) as $sira => $h) {
-                    $h['sira'] = $sira;
-                    foreach ($h as $k => $v) {
-                        if ($v === '') $h[$k] = null;
-                    }
-                    if (empty($h['hisse_durum'])) $h['hisse_durum'] = 'aktif';
-                    $model->hisseler()->create($h);
+                if ($model->tapu) {
+                    $model->tapu->update($tapu);
+                } else {
+                    $model->tapu()->create($tapu);
                 }
             }
+
+            // Hisseler modalden AJAX ile kaydedilir; ana form guncellemesi dokunmaz.
 
             // Silinecek resimler
             if (! empty($silinenResimIdleri)) {
@@ -379,8 +495,11 @@ class TasinmazController extends Controller
             }
         });
 
+        // ada/parsel/mahalle değişmiş olabilir — model'i yenile ki yeni slug hesaplansın
+        $model->refresh()->load('mahalle');
+
         return redirect()
-            ->route('panel.tasinmazlar.duzenle', $model->id)
+            ->route('panel.tasinmazlar.duzenle', $model->duzenleParams())
             ->with('basari', 'Taşınmaz #'.$model->id.' başarıyla güncellendi.');
     }
 
@@ -430,7 +549,7 @@ class TasinmazController extends Controller
                     'mahalle' => $t->mahalle?->ad,
                     'mahalle_tkgm_id' => $t->mahalle?->tkgm_id,
                     'imar' => $t->imar?->imarDurumu?->ad,
-                    'duzenle' => route('panel.tasinmazlar.duzenle', $t->id, false),
+                    'duzenle' => $t->rota('duzenle'),
                 ],
             ];
         }

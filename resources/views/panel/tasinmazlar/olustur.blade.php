@@ -6,6 +6,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
 @endpush
 
+@push('scripts')
+    <script src="{{ asset('js/hisse-tablo.js') }}?v=2"></script>
+    <script src="{{ asset('js/yapi-tablo.js') }}?v=1"></script>
+@endpush
+
 @section('content')
 @if (session('basari'))
     <div class="flash-success" role="status">
@@ -357,185 +362,164 @@
         </div>
     </section>
 
-    {{-- 05 · Sınıflandırma (parametrik + serbest) --}}
+    {{-- 05 · Sınıflandırma (kategori — arsa seviyesi) --}}
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">05</span>
             <div class="form-section-head-text">
                 <h3>Sınıflandırma</h3>
-                <small>Muhasebe kaydı, kayıt türü ve mevcut kullanım bilgileri.</small>
+                <small>Arsanın muhasebe/kayıt türü/kullanım bilgisi. Üzerinde bağımsız bölüm varsa her BBN kendi ayrı sınıflandırmasını Bölüm 07'de taşır.</small>
             </div>
         </div>
 
         <div class="form-row form-row-2">
-            <div class="form-field {{ $errors->has('muhasebe_kayit_id') ? 'has-error' : '' }}">
-                <label for="muhasebe_kayit_id">Muhasebe Kaydı <span class="required">*</span></label>
-                <select id="muhasebe_kayit_id" name="muhasebe_kayit_id" class="form-select" data-tree="1" required>
+            <div class="form-field {{ $errors->has('kategori.muhasebe_kayit_id') ? 'has-error' : '' }}">
+                <label for="kategori-muhasebe">Muhasebe Kaydı <span class="required">*</span></label>
+                <select id="kategori-muhasebe" name="kategori[muhasebe_kayit_id]" class="form-select" data-tree="1" required>
                     <option value="">— Seçilmedi —</option>
                     @foreach ($muhasebeKayitlari as $mk)
                         <option value="{{ $mk['id'] }}"
                                 data-parent-id="{{ $mk['parent_id'] ?? '' }}"
                                 data-seviye="{{ $mk['seviye'] }}"
-                                @selected(old('muhasebe_kayit_id') == $mk['id'])>{{ $mk['etiket'] }}</option>
+                                @selected(old('kategori.muhasebe_kayit_id') == $mk['id'])>{{ $mk['etiket'] }}</option>
                     @endforeach
                 </select>
-                <span class="hint">Türkiye devlet muhasebe hesap planı hiyerarşisi.</span>
-                @error('muhasebe_kayit_id')<span class="error">{{ $message }}</span>@enderror
+                @error('kategori.muhasebe_kayit_id')<span class="error">{{ $message }}</span>@enderror
             </div>
 
-            <div class="form-field {{ $errors->has('kayit_turu_id') ? 'has-error' : '' }}">
-                <label for="kayit_turu_id">Kayıt Türü <span class="required">*</span></label>
-                <select id="kayit_turu_id" name="kayit_turu_id" class="form-select" data-tree="1" required>
+            <div class="form-field {{ $errors->has('kategori.kayit_turu_id') ? 'has-error' : '' }}">
+                <label for="kategori-kayit-turu">Kayıt Türü <span class="required">*</span></label>
+                <select id="kategori-kayit-turu" name="kategori[kayit_turu_id]" class="form-select" data-tree="1" required>
                     <option value="">— Seçilmedi —</option>
                     @foreach ($kayitTurleri as $kt)
                         <option value="{{ $kt['id'] }}"
                                 data-parent-id="{{ $kt['parent_id'] ?? '' }}"
                                 data-seviye="{{ $kt['seviye'] }}"
-                                @selected(old('kayit_turu_id') == $kt['id'])>{{ $kt['etiket'] }}</option>
+                                @selected(old('kategori.kayit_turu_id') == $kt['id'])>{{ $kt['etiket'] }}</option>
                     @endforeach
                 </select>
-                <span class="hint">Tapu kayıt sınıflandırması.</span>
-                @error('kayit_turu_id')<span class="error">{{ $message }}</span>@enderror
+                @error('kategori.kayit_turu_id')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
 
         <div class="form-row form-row-2">
-            <div class="form-field">
-                <label for="mevcut_kullanim_sekli">Mevcut Kullanım Şekli <span class="required">*</span></label>
+            <div class="form-field {{ $errors->has('kategori.mevcut_kullanim_sekli') ? 'has-error' : '' }}">
+                <label for="kategori-kullanim">Mevcut Kullanım Şekli <span class="required">*</span></label>
                 <div class="mks-alan">
-                    <select id="mevcut_kullanim_sekli" name="mevcut_kullanim_sekli" class="form-select" required>
+                    <select id="kategori-kullanim" name="kategori[mevcut_kullanim_sekli]" class="form-select" required>
                         <option value="">— Seçiniz —</option>
                         @foreach ($mevcutKullanimSekilleri as $mks)
-                            <option value="{{ $mks->ad }}" @selected(old('mevcut_kullanim_sekli') === $mks->ad)>{{ $mks->ad }}</option>
+                            <option value="{{ $mks->ad }}" @selected(old('kategori.mevcut_kullanim_sekli') === $mks->ad)>{{ $mks->ad }}</option>
                         @endforeach
                     </select>
                     <button type="button" class="mks-ekle-btn" id="mks-ekle-btn" title="Yeni kullanım şekli ekle">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
                 </div>
-                <span class="hint">Listede yoksa <strong>+</strong> butonuyla yeni ekleyebilirsiniz.</span>
+                @error('kategori.mevcut_kullanim_sekli')<span class="error">{{ $message }}</span>@enderror
             </div>
 
-            <div class="form-field">
-                <label for="isgal_durumu">İşgal Durumu <span class="required">*</span></label>
-                <select id="isgal_durumu" name="isgal_durumu" class="form-select" required>
-                    <option value="">— Seçiniz —</option>
-                    <option value="yok" @selected(old('isgal_durumu') === 'yok')>Yok</option>
-                    <option value="var" @selected(old('isgal_durumu') === 'var')>Var</option>
-                    <option value="kismi" @selected(old('isgal_durumu') === 'kismi')>Kısmi</option>
-                </select>
-                @error('isgal_durumu')<span class="error">{{ $message }}</span>@enderror
-            </div>
-        </div>
-
-        <div class="form-row form-row-2">
             <div class="form-field">
                 <label>Bina Durumu</label>
                 <label class="form-check">
                     <input type="hidden" name="uzeri_bina_var_mi" value="0">
                     <input type="checkbox" name="uzeri_bina_var_mi" value="1" @checked(old('uzeri_bina_var_mi'))>
-                    <span>Üzerinde bina var</span>
-                </label>
-            </div>
-
-            <div class="form-field">
-                <label>Meclis Satış Kararı</label>
-                <label class="form-check">
-                    <input type="hidden" name="meclis_satis_karari_var" value="0">
-                    <input type="checkbox" name="meclis_satis_karari_var" value="1" @checked(old('meclis_satis_karari_var'))>
-                    <span>Meclis satış kararı var</span>
+                    <span>Arsa üzerinde bina var</span>
                 </label>
             </div>
         </div>
     </section>
 
-    {{-- 06 · Bağımsız bölüm --}}
+    {{-- 06 · Ek Bilgi (ekbilgi — arsa seviyesi durum) --}}
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">06</span>
             <div class="form-section-head-text">
-                <h3>Bağımsız Bölüm</h3>
-                <small>Kat mülkiyet birimi — daire, dükkan, depo. İsteğe bağlı, en fazla bir kayıt.</small>
-            </div>
-        </div>
-
-        @php
-            $bbn = old('bagimsiz_bolum', []);
-            $nitelikler = ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'];
-        @endphp
-
-        <div class="form-row form-row-4">
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.blok_no') ? 'has-error' : '' }}">
-                <label for="bbn_blok_no">Blok No</label>
-                <input id="bbn_blok_no" type="text" class="form-input" name="bagimsiz_bolum[blok_no]" value="{{ $bbn['blok_no'] ?? '' }}" maxlength="20" placeholder="A · B · —" autocomplete="off">
-            </div>
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.kat_no') ? 'has-error' : '' }}">
-                <label for="bbn_kat_no">Kat No</label>
-                <input id="bbn_kat_no" type="text" class="form-input" name="bagimsiz_bolum[kat_no]" value="{{ $bbn['kat_no'] ?? '' }}" maxlength="10" placeholder="Zemin · 1 · B1" autocomplete="off">
-                @error('bagimsiz_bolum.kat_no')<span class="error">{{ $message }}</span>@enderror
-            </div>
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.bagimsiz_bolum_no') ? 'has-error' : '' }}">
-                <label for="bbn_no">Bölüm No</label>
-                <input id="bbn_no" type="text" class="form-input" name="bagimsiz_bolum[bagimsiz_bolum_no]" value="{{ $bbn['bagimsiz_bolum_no'] ?? '' }}" maxlength="20" placeholder="12" autocomplete="off">
-                @error('bagimsiz_bolum.bagimsiz_bolum_no')<span class="error">{{ $message }}</span>@enderror
-            </div>
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.nitelik') ? 'has-error' : '' }}">
-                <label for="bbn_nitelik">Nitelik</label>
-                <select id="bbn_nitelik" class="form-select" name="bagimsiz_bolum[nitelik]">
-                    <option value="">— Seçiniz —</option>
-                    @foreach ($nitelikler as $n)
-                        <option value="{{ $n }}" @selected(($bbn['nitelik'] ?? '') === $n)>{{ $n }}</option>
-                    @endforeach
-                </select>
-                @error('bagimsiz_bolum.nitelik')<span class="error">{{ $message }}</span>@enderror
-            </div>
-        </div>
-
-        <div class="form-row form-row-4">
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.brut_alan') ? 'has-error' : '' }}">
-                <label for="bbn_brut_alan">Brüt Alan (m²)</label>
-                <input id="bbn_brut_alan" type="text" class="form-input" name="bagimsiz_bolum[brut_alan]" value="{{ $bbn['brut_alan'] ?? '' }}" inputmode="decimal" placeholder="120,50" autocomplete="off">
-            </div>
-            <div class="form-field {{ $errors->has('bagimsiz_bolum.net_alan') ? 'has-error' : '' }}">
-                <label for="bbn_net_alan">Net Alan (m²)</label>
-                <input id="bbn_net_alan" type="text" class="form-input" name="bagimsiz_bolum[net_alan]" value="{{ $bbn['net_alan'] ?? '' }}" inputmode="decimal" placeholder="98,00" autocomplete="off">
-            </div>
-            <div class="form-field">
-                <label for="bbn_oda">Oda Sayısı</label>
-                <input id="bbn_oda" type="text" class="form-input" name="bagimsiz_bolum[oda_sayisi]" value="{{ $bbn['oda_sayisi'] ?? '' }}" maxlength="10" placeholder="3+1" autocomplete="off">
-            </div>
-            <div class="form-field">
-                <label for="bbn_cephe">Cephe</label>
-                <input id="bbn_cephe" type="text" class="form-input" name="bagimsiz_bolum[cephe]" value="{{ $bbn['cephe'] ?? '' }}" maxlength="50" placeholder="Kuzey, Doğu" autocomplete="off">
+                <h3>Ek Bilgi (Durum)</h3>
+                <small>İşgal / satış / meclis kararı / tahsis / üst hakkı / kira gibi durum bayrakları — arsa için. BBN'lerin kendi durumu Bölüm 07'de.</small>
             </div>
         </div>
 
         <div class="form-row form-row-2">
-            <div class="form-field">
-                <label for="bbn_kullanim">Mevcut Kullanım Şekli</label>
-                <select id="bbn_kullanim" class="form-select" name="bagimsiz_bolum[mevcut_kullanim_sekli]">
+            <div class="form-field {{ $errors->has('ekbilgi.isgal_durumu') ? 'has-error' : '' }}">
+                <label for="ekbilgi-isgal">İşgal Durumu <span class="required">*</span></label>
+                <select id="ekbilgi-isgal" name="ekbilgi[isgal_durumu]" class="form-select" required>
                     <option value="">— Seçiniz —</option>
-                    @foreach ($mevcutKullanimSekilleri as $mks)
-                        <option value="{{ $mks->ad }}" @selected(($bbn['mevcut_kullanim_sekli'] ?? '') === $mks->ad)>{{ $mks->ad }}</option>
+                    <option value="yok" @selected(old('ekbilgi.isgal_durumu') === 'yok')>Yok</option>
+                    <option value="var" @selected(old('ekbilgi.isgal_durumu') === 'var')>Var</option>
+                    <option value="kismi" @selected(old('ekbilgi.isgal_durumu') === 'kismi')>Kısmi</option>
+                </select>
+                @error('ekbilgi.isgal_durumu')<span class="error">{{ $message }}</span>@enderror
+            </div>
+            <div class="form-field">
+                <label for="ekbilgi-satis">Satış Durumu <span class="required">*</span></label>
+                <select id="ekbilgi-satis" name="ekbilgi[satis_durumu]" class="form-select">
+                    @foreach (\App\Enums\SatisDurumu::cases() as $sd)
+                        <option value="{{ $sd->value }}" @selected(old('ekbilgi.satis_durumu', 'envanterde') === $sd->value)>{{ $sd->etiket() }}</option>
                     @endforeach
                 </select>
             </div>
+        </div>
+
+        <div class="form-row form-row-4">
             <div class="form-field">
-                <label for="bbn_isgal">İşgal Durumu</label>
-                <select id="bbn_isgal" class="form-select" name="bagimsiz_bolum[isgal_durumu]">
-                    <option value="">— Belirtilmedi —</option>
-                    <option value="yok" @selected(($bbn['isgal_durumu'] ?? '') === 'yok')>Yok</option>
-                    <option value="var" @selected(($bbn['isgal_durumu'] ?? '') === 'var')>Var</option>
-                    <option value="kismi" @selected(($bbn['isgal_durumu'] ?? '') === 'kismi')>Kısmi</option>
-                </select>
+                <label>Meclis Satış Kararı</label>
+                <label class="form-check">
+                    <input type="hidden" name="ekbilgi[meclis_satis_karari_var]" value="0">
+                    <input type="checkbox" name="ekbilgi[meclis_satis_karari_var]" value="1" @checked(old('ekbilgi.meclis_satis_karari_var'))>
+                    <span>Karar var</span>
+                </label>
+            </div>
+            <div class="form-field">
+                <label>Tahsis</label>
+                <label class="form-check">
+                    <input type="hidden" name="ekbilgi[tahsis_var]" value="0">
+                    <input type="checkbox" name="ekbilgi[tahsis_var]" value="1" @checked(old('ekbilgi.tahsis_var'))>
+                    <span>Tahsis var</span>
+                </label>
+            </div>
+            <div class="form-field">
+                <label>Üst Hakkı</label>
+                <label class="form-check">
+                    <input type="hidden" name="ekbilgi[ust_hakki_var]" value="0">
+                    <input type="checkbox" name="ekbilgi[ust_hakki_var]" value="1" @checked(old('ekbilgi.ust_hakki_var'))>
+                    <span>Üst hakkı var</span>
+                </label>
+            </div>
+            <div class="form-field">
+                <label>Kira</label>
+                <label class="form-check">
+                    <input type="hidden" name="ekbilgi[kira_var]" value="0">
+                    <input type="checkbox" name="ekbilgi[kira_var]" value="1" @checked(old('ekbilgi.kira_var'))>
+                    <span>Kirada</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-field">
+                <label for="ekbilgi-aciklama">Açıklama</label>
+                <textarea id="ekbilgi-aciklama" name="ekbilgi[aciklama]" class="form-textarea" rows="3" maxlength="5000" placeholder="Ek notlar, gözlemler, durum açıklaması...">{{ old('ekbilgi.aciklama') }}</textarea>
             </div>
         </div>
     </section>
 
-    {{-- 07 · Tapu --}}
+    {{-- 07 · Bağımsız Bölümler (yapı) — opsiyonel --}}
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">07</span>
+            <div class="form-section-head-text">
+                <h3>Bağımsız Bölümler</h3>
+                <small>Arsa üzerine bina/daire/dükkan/depo varsa buradan ekleyin. Her BBN kendi muhasebe / satış / kira / tahsis / açıklama bilgisini bağımsız olarak taşır.</small>
+            </div>
+        </div>
+        @include('panel.tasinmazlar._yapi-panel', ['yapiEski' => old('yapilar', [])])
+    </section>
+
+    {{-- 08 · Tapu --}}
+    <section class="form-section">
+        <div class="form-section-head">
+            <span class="form-section-num">08</span>
             <div class="form-section-head-text">
                 <h3>Tapu Bilgileri</h3>
                 <small>TAKBİS zemin, cilt / sayfa ve tapu kaydı. İsteğe bağlı.</small>
@@ -589,130 +573,61 @@
         </div>
     </section>
 
-    {{-- 08 · Açıklama --}}
-    <section class="form-section">
-        <div class="form-section-head">
-            <span class="form-section-num">08</span>
-            <div class="form-section-head-text">
-                <h3>Açıklama</h3>
-                <small>Serbest metin — 5000 karaktere kadar not / açıklama.</small>
-            </div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-field {{ $errors->has('aciklama') ? 'has-error' : '' }}">
-                <label for="aciklama" class="sr-only">Notlar</label>
-                <textarea id="aciklama" name="aciklama" class="form-textarea" rows="4" maxlength="5000" placeholder="Ek notlar, gözlemler veya önemli bilgiler...">{{ old('aciklama') }}</textarea>
-                @error('aciklama')<span class="error">{{ $message }}</span>@enderror
-            </div>
-        </div>
-    </section>
-
     {{-- 09 · Hisse bilgileri --}}
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">09</span>
             <div class="form-section-head-text">
                 <h3>Hisse Bilgileri</h3>
-                <small>Bir taşınmaz üzerinde birden fazla hisse tanımlanabilir. Her hisse için ayrı bedel ve edinme bilgisi girilebilir.</small>
+                <small>Hisseleri tabloda tarayın; ekleme ve düzenleme modalda yapılır. Aktif hisselerin toplamı taşınmaz alanını aşarsa uyarı görünür.</small>
             </div>
         </div>
 
         <div class="hisse-shell" id="hisse-shell" data-eski='@json(old("hisseler", []))'>
-            <div class="hisse-liste" id="hisse-liste">
-                {{-- Hisse kartları JS ile eklenir --}}
+            <div class="hisse-tablo-kabuk">
+                <table class="hisse-tablo" id="hisse-tablo">
+                    <thead>
+                        <tr>
+                            <th class="hisse-th-no">#</th>
+                            <th>Pay / Payda</th>
+                            <th>Hisseye Düşen (m²)</th>
+                            <th>Durum</th>
+                            <th>İşlem</th>
+                            <th>Edinme Tarihi</th>
+                            <th class="hisse-th-eylem" aria-label="Eylemler"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="hisse-tablo-body"></tbody>
+                </table>
+                <div class="hisse-tablo-bos" id="hisse-tablo-bos">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+                    <span>Henüz hisse eklenmedi. Aşağıdaki butonla ekleyebilirsiniz.</span>
+                </div>
             </div>
+
+            {{-- Aktif hisse toplam + limit uyarısı — JS canlı günceller --}}
+            <div class="hisse-toplam-bar" id="hisse-toplam-bar" hidden>
+                <div class="hisse-toplam-satir">
+                    <span class="hisse-toplam-etiket">Aktif Hisseler Toplamı</span>
+                    <strong class="hisse-toplam-deger" id="hisse-toplam-deger">0,00</strong>
+                    <span class="hisse-toplam-ayrac">/</span>
+                    <span class="hisse-toplam-taban" id="hisse-toplam-taban">— m²</span>
+                    <span class="hisse-toplam-oran" id="hisse-toplam-oran"></span>
+                </div>
+                <div class="hisse-toplam-uyari" id="hisse-toplam-uyari" hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                    <span>Aktif hisselerin toplamı taşınmaz alanını aşıyor. Pay/payda değerlerini kontrol edin.</span>
+                </div>
+            </div>
+
             <button type="button" class="hisse-ekle-btn" id="hisse-ekle-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Hisse Ekle
             </button>
-            <span class="hint">Boş bırakılan hisse satırları kaydedilmez. En az bir alan doldurun.</span>
+
+            {{-- Backend'e gönderilecek hidden inputlar (JS state'ten sync eder) --}}
+            <div id="hisse-hidden-alan" hidden aria-hidden="true"></div>
         </div>
-
-        {{-- Kart şablonu (JS klonlar) --}}
-        <template id="hisse-tpl">
-            <div class="hisse-kart" data-idx="__IDX__">
-                <div class="hisse-kart-head">
-                    <span class="hisse-kart-baslik">Hisse <strong class="hisse-kart-no">#__NO__</strong></span>
-                    <button type="button" class="hisse-kart-sil" title="Bu hisseyi kaldır">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                </div>
-                <div class="hisse-kart-body">
-                    <div class="form-row form-row-4">
-                        <div class="form-field">
-                            <label>Hisse No</label>
-                            <input type="number" name="hisseler[__IDX__][hisse_no]" class="form-input" min="1" placeholder="1">
-                        </div>
-                        <div class="form-field">
-                            <label>Hisse Yüzölçümü (m²)</label>
-                            <input type="text" name="hisseler[__IDX__][hisse_yuzolcum]" class="form-input hisse-tr-alan" inputmode="decimal" placeholder="1.234,56">
-                        </div>
-                        <div class="form-field">
-                            <label>Yevmiye No</label>
-                            <input type="number" name="hisseler[__IDX__][yevmiye_no]" class="form-input" min="0" placeholder="12345">
-                        </div>
-                        <div class="form-field">
-                            <label>Edinme Tarihi</label>
-                            <input type="date" name="hisseler[__IDX__][edinme_tarihi]" class="form-input">
-                        </div>
-                    </div>
-
-                    <div class="form-row form-row-3">
-                        <div class="form-field">
-                            <label>Edinme Şekli</label>
-                            <input type="text" name="hisseler[__IDX__][edinme_sekli]" class="form-input" maxlength="100" placeholder="Satın alma, İntikal, Bağış...">
-                        </div>
-                        <div class="form-field">
-                            <label>Hisse Durumu</label>
-                            <select name="hisseler[__IDX__][hisse_durum]" class="form-select">
-                                <option value="aktif">Aktif</option>
-                                <option value="pasif">Pasif</option>
-                            </select>
-                        </div>
-                        <div class="form-field">
-                            <label>İşlem Tipi</label>
-                            <select name="hisseler[__IDX__][islem_tipi]" class="form-select">
-                                <option value="">— Seçilmedi —</option>
-                                <option value="alis">Alış</option>
-                                <option value="satis">Satış</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-row form-row-2">
-                        <div class="form-field">
-                            <label>Kayıtlardan Çıkış Sebebi</label>
-                            <input type="text" name="hisseler[__IDX__][kayitlardan_cikis]" class="form-input" maxlength="150" placeholder="Terkin, satış vb.">
-                        </div>
-                        <div class="form-field">
-                            <label>Kayıtlardan Çıkış Tarihi</label>
-                            <input type="date" name="hisseler[__IDX__][kayitlardan_cikistarihi]" class="form-input">
-                        </div>
-                    </div>
-
-                    <div class="hisse-bedel-baslik">Bedel Bilgileri</div>
-                    <div class="form-row form-row-4">
-                        <div class="form-field">
-                            <label>Maliyet Bedeli</label>
-                            <input type="text" name="hisseler[__IDX__][maliyet_bedeli]" class="form-input hisse-tr-alan" inputmode="decimal" placeholder="0,00">
-                        </div>
-                        <div class="form-field">
-                            <label>Rayiç Bedel</label>
-                            <input type="text" name="hisseler[__IDX__][rayic_bedel]" class="form-input hisse-tr-alan" inputmode="decimal" placeholder="0,00">
-                        </div>
-                        <div class="form-field">
-                            <label>Emlak Vergi Değeri</label>
-                            <input type="text" name="hisseler[__IDX__][emlak_vd]" class="form-input hisse-tr-alan" inputmode="decimal" placeholder="0,00">
-                        </div>
-                        <div class="form-field">
-                            <label>İz Bedeli</label>
-                            <input type="text" name="hisseler[__IDX__][iz_bedeli]" class="form-input hisse-tr-alan" inputmode="decimal" placeholder="0,00">
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </template>
     </section>
 
     {{-- 10 · Resimler --}}
@@ -762,6 +677,120 @@
         </button>
     </div>
 </form>
+
+{{-- Hisse Ekle/Düzenle Modal --}}
+<div class="modal-backdrop" id="hisse-modal" hidden>
+    <div class="modal-shell modal-shell-lg" role="dialog" aria-labelledby="hisse-modal-baslik" aria-modal="true">
+        <div class="modal-head">
+            <h4 id="hisse-modal-baslik">Hisse Ekle</h4>
+            <button type="button" class="modal-close" data-hisse-modal-kapat aria-label="Kapat">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-govde">
+            <div class="modal-mesaj" id="hisse-modal-mesaj" hidden></div>
+            <div class="form-row form-row-3">
+                <div class="form-field">
+                    <label>Hisse No</label>
+                    <input type="number" data-fld="hisse_no" class="form-input" min="1" placeholder="1">
+                </div>
+                <div class="form-field">
+                    <label>Pay</label>
+                    <input type="text" data-fld="hisse_pay" class="form-input" inputmode="decimal" placeholder="1">
+                </div>
+                <div class="form-field">
+                    <label>Payda</label>
+                    <input type="text" data-fld="hisse_payda" class="form-input" inputmode="decimal" placeholder="2">
+                </div>
+            </div>
+
+            <div class="hisse-hesap-bar">
+                <span class="hisse-hesap-etiket">Hisseye Düşen Alan</span>
+                <strong class="hisse-hesap-deger" data-modal-hesap>—</strong>
+                <span class="hisse-hesap-birim">m²</span>
+                <span class="hisse-hesap-formul" title="pay / payda × taşınmaz alanı">= pay / payda × alan</span>
+            </div>
+            <div class="hisse-modal-etki" data-modal-etki hidden>
+                <span class="hisse-modal-etki-etiket">Aktif toplam (bu hisse dahil)</span>
+                <strong data-modal-etki-deger>0,00</strong>
+                <span class="hisse-modal-etki-ayrac">/</span>
+                <span data-modal-etki-taban>— m²</span>
+                <span class="hisse-modal-etki-uyari" data-modal-etki-uyari hidden>Alan aşılıyor</span>
+            </div>
+
+            <div class="form-row form-row-2">
+                <div class="form-field">
+                    <label>Yevmiye No</label>
+                    <input type="number" data-fld="yevmiye_no" class="form-input" min="0" placeholder="12345">
+                </div>
+                <div class="form-field">
+                    <label>Edinme Tarihi</label>
+                    <input type="date" data-fld="edinme_tarihi" class="form-input">
+                </div>
+            </div>
+
+            <div class="form-row form-row-3">
+                <div class="form-field">
+                    <label>Edinme Şekli</label>
+                    <input type="text" data-fld="edinme_sekli" class="form-input" maxlength="100" placeholder="Satın alma, İntikal, Bağış...">
+                </div>
+                <div class="form-field">
+                    <label>Hisse Durumu</label>
+                    <select data-fld="hisse_durum" class="form-select">
+                        <option value="aktif">Aktif</option>
+                        <option value="pasif">Pasif</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label>İşlem Tipi</label>
+                    <select data-fld="islem_tipi" class="form-select">
+                        <option value="">— Seçilmedi —</option>
+                        <option value="alis">Alış</option>
+                        <option value="satis">Satış</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row form-row-2">
+                <div class="form-field">
+                    <label>Kayıtlardan Çıkış Sebebi</label>
+                    <input type="text" data-fld="kayitlardan_cikis" class="form-input" maxlength="150" placeholder="Terkin, satış vb.">
+                </div>
+                <div class="form-field">
+                    <label>Kayıtlardan Çıkış Tarihi</label>
+                    <input type="date" data-fld="kayitlardan_cikistarihi" class="form-input">
+                </div>
+            </div>
+
+            <div class="hisse-bedel-baslik">Bedel Bilgileri</div>
+            <div class="form-row form-row-4">
+                <div class="form-field">
+                    <label>Maliyet Bedeli</label>
+                    <input type="text" data-fld="maliyet_bedeli" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
+                </div>
+                <div class="form-field">
+                    <label>Rayiç Bedel</label>
+                    <input type="text" data-fld="rayic_bedel" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
+                </div>
+                <div class="form-field">
+                    <label>Emlak Vergi Değeri</label>
+                    <input type="text" data-fld="emlak_vd" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
+                </div>
+                <div class="form-field">
+                    <label>İz Bedeli</label>
+                    <input type="text" data-fld="iz_bedeli" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
+                </div>
+            </div>
+        </div>
+        <div class="modal-alt">
+            <button type="button" class="btn-cancel" data-hisse-modal-kapat>Vazgeç</button>
+            <button type="button" class="btn-submit" id="hisse-modal-kaydet">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                <span data-modal-btn>Ekle</span>
+            </button>
+        </div>
+    </div>
+</div>
 
 {{-- Modal: Yeni "İmar Durumu" ekle --}}
 <div class="modal-backdrop" id="imar-modal" hidden>
@@ -1103,98 +1132,6 @@
 
 <script>
 /* --------------------------------------------------
- * HİSSE REPEATER — dinamik ekle / sil / TR alan
- * -------------------------------------------------- */
-(function () {
-    const shell = document.getElementById('hisse-shell');
-    const liste = document.getElementById('hisse-liste');
-    const ekleBtn = document.getElementById('hisse-ekle-btn');
-    const tpl = document.getElementById('hisse-tpl');
-    if (!shell || !liste || !ekleBtn || !tpl) return;
-
-    let sonrakiIdx = 0;
-
-    function trFormat(n) {
-        if (!Number.isFinite(n)) return '';
-        return n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    function trParse(s) {
-        if (s == null || s === '') return null;
-        s = String(s).trim().replace(/\s/g, '');
-        s = s.includes('.') && s.includes(',')
-            ? s.replace(/\./g, '').replace(',', '.')
-            : s.replace(',', '.');
-        const n = parseFloat(s);
-        return Number.isFinite(n) ? n : null;
-    }
-
-    function baglaTRAlanlar(kart) {
-        kart.querySelectorAll('.hisse-tr-alan').forEach(inp => {
-            inp.addEventListener('blur', () => {
-                const n = trParse(inp.value);
-                if (n !== null) inp.value = trFormat(n);
-            });
-        });
-    }
-
-    function numaralariGuncelle() {
-        liste.querySelectorAll('.hisse-kart').forEach((k, i) => {
-            const noEl = k.querySelector('.hisse-kart-no');
-            if (noEl) noEl.textContent = '#' + (i + 1);
-        });
-    }
-
-    function kartEkle(veri = {}) {
-        const html = tpl.innerHTML
-            .replace(/__IDX__/g, sonrakiIdx)
-            .replace(/__NO__/g, (liste.children.length + 1));
-        const wrap = document.createElement('div');
-        wrap.innerHTML = html.trim();
-        const kart = wrap.firstElementChild;
-        liste.appendChild(kart);
-
-        // Eski veriyi doldur
-        for (const [alan, deger] of Object.entries(veri)) {
-            const el = kart.querySelector(`[name="hisseler[${sonrakiIdx}][${alan}]"]`);
-            if (!el || deger == null) continue;
-            if (['hisse_yuzolcum','maliyet_bedeli','rayic_bedel','emlak_vd','iz_bedeli'].includes(alan)) {
-                const n = trParse(String(deger).replace('.', ',')) ?? trParse(deger);
-                el.value = n !== null ? trFormat(n) : deger;
-            } else {
-                el.value = deger;
-            }
-        }
-
-        // Yeni eklenen select'leri aselect ile enhance et (bir sonraki tick'te)
-        if (window.aselectRefreshAll) setTimeout(window.aselectRefreshAll, 0);
-
-        baglaTRAlanlar(kart);
-
-        kart.querySelector('.hisse-kart-sil').addEventListener('click', () => {
-            kart.remove();
-            numaralariGuncelle();
-        });
-
-        sonrakiIdx++;
-        return kart;
-    }
-
-    ekleBtn.addEventListener('click', () => {
-        kartEkle();
-    });
-
-    // Validation hatası sonrası eski değerleri geri yükle
-    try {
-        const eskiler = JSON.parse(shell.dataset.eski || '[]');
-        if (Array.isArray(eskiler) && eskiler.length) {
-            eskiler.forEach(h => kartEkle(h || {}));
-        }
-    } catch (e) { /* yut */ }
-})();
-</script>
-
-<script>
-/* --------------------------------------------------
  * MEVCUT KULLANIM ŞEKLİ — Modal + dinamik ekleme
  * -------------------------------------------------- */
 (function () {
@@ -1307,6 +1244,8 @@
         if (sel.multiple || sel.size > 1) return;
         // Harita ada/parsel paneli: native select (aselect iç içe dropdown'da kesiliyor)
         if (sel.closest('.hrt-dropdown-menu')) return;
+        // Modal içi: native select (overflow-y panel kesmesin)
+        if (sel.closest('.modal-shell')) return;
         sel.dataset.aselectDone = '1';
 
         const wrap = document.createElement('div');

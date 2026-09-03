@@ -18,6 +18,7 @@
         'esri/views/MapView',
         'esri/layers/WebTileLayer',
         'esri/layers/MapImageLayer',
+        'esri/layers/BaseDynamicLayer',
         'esri/layers/GraphicsLayer',
         'esri/Graphic',
         'esri/geometry/Polygon',
@@ -25,7 +26,7 @@
         'esri/geometry/Extent',
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
-    ], function (EsriMap, Basemap, MapView, WebTileLayer, MapImageLayer, GraphicsLayer,
+    ], function (EsriMap, Basemap, MapView, WebTileLayer, MapImageLayer, BaseDynamicLayer, GraphicsLayer,
                  Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils) {
 
         /* =========================================================
@@ -131,19 +132,89 @@
             visible: false,
         });
 
+        /* ---------------------------------------------------------
+         * Ankara BB · CBS Proxy (abbcbs) — /export?bbox=... görüntüsü
+         * Her katman ayrı gissrv.org servis GUID'si üzerinden gelir.
+         * abbcbs proxy'si `?<upstream-url>` biçimi bekliyor ama Esri
+         * getImageUrl dönüşünü yeniden encode ettiği için doğrudan
+         * çağrı bozuluyor. Bu nedenle Laravel tarafına köprü koyduk:
+         *   /panel/ajax/abb-proxy?service=<hash>&layer=<id>&bbox=...&size=...
+         * --------------------------------------------------------- */
+        const AbbProxyLayer = BaseDynamicLayer.createSubclass({
+            properties: {
+                serviceHash: null,   // gissrv.org alt alanı (GUID base64)
+                layerId: 0,          // layers=show:<id>
+            },
+            getImageUrl: function (extent, width, height) {
+                const bbox = [extent.xmin, extent.ymin, extent.xmax, extent.ymax]
+                    .map(function (v) { return Number(v).toFixed(6); }).join(',');
+                const w = Math.max(1, Math.round(width));
+                const h = Math.max(1, Math.round(height));
+                const qs = new URLSearchParams({
+                    service: this.serviceHash,
+                    layer: String(this.layerId),
+                    bbox: bbox,
+                    size: w + ',' + h,
+                });
+                return API.abbProxy + '?' + qs.toString();
+            },
+        });
+
+        const abbIlceKatman = new AbbProxyLayer({
+            title: 'ABB · İlçe Sınırı',
+            serviceHash: 'NWQ2YzVhZjYtOTA3OC00ZGU1LWJkNjYtYTFkOTkwNzliN2Zi',
+            layerId: 4,
+            opacity: 0.80,
+            visible: false,
+        });
+
+        const abbMahalleKatman = new AbbProxyLayer({
+            title: 'ABB · Mahalle Sınırı',
+            serviceHash: 'ZDFmYzE1MmEtZGE3Ny00ZjAwLWI5NDEtNTg2NWMyYjFmMzU1',
+            layerId: 3,
+            opacity: 0.80,
+            visible: false,
+        });
+
+        const abbYapiKatman = new AbbProxyLayer({
+            title: 'ABB · Yapı',
+            serviceHash: 'OGY0ZGE3M2ItNjFmYi00NDRlLWEyZWEtNmQ2ZmMwMDc3ODA5',
+            layerId: 2,
+            opacity: 0.85,
+            visible: false,
+        });
+
+        const abbNumaratajKatman = new AbbProxyLayer({
+            title: 'ABB · Numarataj',
+            serviceHash: 'MzEzZjBjMWEtODA3Zi00NjllLTliYzctNjE2MzRlM2I0ZDZj',
+            layerId: 0,
+            opacity: 0.90,
+            visible: false,
+        });
+
         const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
 
         const harita = new EsriMap({
             basemap: altlikBasemap(aktifAltlikId),
-            layers: [imarKatman, parselasyonKatman, belediyeKatman, parselKatman, sorguKatman],
+            layers: [
+                imarKatman,
+                parselasyonKatman,
+                belediyeKatman,
+                abbIlceKatman,
+                abbMahalleKatman,
+                abbYapiKatman,
+                abbNumaratajKatman,
+                parselKatman,
+                sorguKatman,
+            ],
         });
 
         const view = new MapView({
             container: 'hrm-map',
             map: harita,
-            center: [35.0, 39.0],
-            zoom: 6,
+            center: [32.85, 39.92],
+            zoom: 12,
             constraints: { rotationEnabled: false },
             ui: { components: [] },
             popup: {
@@ -339,12 +410,66 @@
 
         /* =========================================================
          * 6) VERİ KATMANI AÇ/KAPAT + OPAKLIK
+         *    - localStorage'da görünürlük ve opaklık kalıcı
+         *    - Grup master switch + aktif sayaç
+         *    - Katman arama kutusu + "Hepsini Kapat"
+         *    - Opaklık "varsayılana döndür"
          * ========================================================= */
+        const KATMAN_ONBELLEK_ANAHTAR = 'etys-harita-katman-v1';
+        function katmanTercihOku() {
+            try { return JSON.parse(localStorage.getItem(KATMAN_ONBELLEK_ANAHTAR)) || {}; }
+            catch (e) { return {}; }
+        }
+        function katmanTercihYaz(obj) {
+            try { localStorage.setItem(KATMAN_ONBELLEK_ANAHTAR, JSON.stringify(obj)); }
+            catch (e) { /* sessiz */ }
+        }
+        const katmanTercih = katmanTercihOku();
+
+        // katmanKayit: kart id → { kutu, kaydirici, kart, katman, deger, grup }
+        const katmanKayit = {};
+
+        function grupDurumGuncelle(grup) {
+            const kartlar = Object.values(katmanKayit).filter(function (k) { return k.grup === grup; });
+            if (!kartlar.length) return;
+            const acik = kartlar.filter(function (k) { return k.kutu.checked; }).length;
+
+            const sayacEl = document.querySelector('[data-grup-sayac="' + grup + '"]');
+            if (sayacEl) {
+                sayacEl.textContent = acik + '/' + kartlar.length;
+                sayacEl.classList.toggle('is-aktif', acik > 0);
+                sayacEl.classList.toggle('is-tam', acik === kartlar.length && acik > 0);
+            }
+
+            const master = document.querySelector('.hrm-grup-master[data-grup="' + grup + '"]');
+            if (master) {
+                master.checked = acik > 0;
+                master.indeterminate = acik > 0 && acik < kartlar.length;
+            }
+        }
+
+        function katmanRangeArkaplan(kaydirici) {
+            const v = parseInt(kaydirici.value, 10);
+            kaydirici.style.setProperty('--val', v + '%');
+        }
+
         function katmanKontrolKur(kutuId, kaydiriciId, katman) {
             const kutu = document.getElementById(kutuId);
             const kaydirici = document.getElementById(kaydiriciId);
             const kart = kutu ? kutu.closest('.hrm-katman-kart') : null;
+            const kartId = kart ? kart.dataset.katmanKart : null;
+            const grup = kart ? kart.dataset.grup : null;
             const deger = document.querySelector('.hrm-opaklik-deger[data-hedef="' + kaydiriciId + '"]');
+            const sifirla = document.querySelector('.hrm-opaklik-sifirla[data-hedef="' + kaydiriciId + '"]');
+
+            // Kayıtlı tercihi uygula (yalnızca ilk kurulumda)
+            if (kartId && katmanTercih[kartId]) {
+                const t = katmanTercih[kartId];
+                if (kutu && typeof t.aktif === 'boolean') kutu.checked = t.aktif;
+                if (kaydirici && typeof t.opaklik === 'number' && t.opaklik >= 10 && t.opaklik <= 100) {
+                    kaydirici.value = String(t.opaklik);
+                }
+            }
 
             if (kutu) {
                 katman.visible = kutu.checked;
@@ -352,15 +477,37 @@
                 kutu.addEventListener('change', function () {
                     katman.visible = kutu.checked;
                     if (kart) kart.dataset.aktif = kutu.checked ? '1' : '0';
+                    if (kartId) {
+                        katmanTercih[kartId] = Object.assign({}, katmanTercih[kartId], { aktif: kutu.checked });
+                        katmanTercihYaz(katmanTercih);
+                    }
+                    if (grup) grupDurumGuncelle(grup);
                 });
             }
             if (kaydirici) {
                 katman.opacity = kaydirici.value / 100;
                 if (deger) deger.textContent = kaydirici.value + '%';
+                katmanRangeArkaplan(kaydirici);
                 kaydirici.addEventListener('input', function () {
                     katman.opacity = kaydirici.value / 100;
                     if (deger) deger.textContent = kaydirici.value + '%';
+                    katmanRangeArkaplan(kaydirici);
+                    if (kartId) {
+                        katmanTercih[kartId] = Object.assign({}, katmanTercih[kartId], { opaklik: parseInt(kaydirici.value, 10) });
+                        katmanTercihYaz(katmanTercih);
+                    }
                 });
+            }
+            if (sifirla && kaydirici) {
+                sifirla.addEventListener('click', function () {
+                    const varsayilan = parseInt(sifirla.dataset.varsayilan || '100', 10);
+                    kaydirici.value = String(varsayilan);
+                    kaydirici.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+            }
+
+            if (kartId) {
+                katmanKayit[kartId] = { kutu: kutu, kaydirici: kaydirici, kart: kart, katman: katman, deger: deger, grup: grup };
             }
         }
 
@@ -368,6 +515,100 @@
         katmanKontrolKur('hrm-ov-imar', 'hrm-ov-imar-op', imarKatman);
         katmanKontrolKur('hrm-ov-parselasyon', 'hrm-ov-parselasyon-op', parselasyonKatman);
         katmanKontrolKur('hrm-ov-belediye', 'hrm-ov-belediye-op', belediyeKatman);
+        katmanKontrolKur('hrm-ov-abb-ilce', 'hrm-ov-abb-ilce-op', abbIlceKatman);
+        katmanKontrolKur('hrm-ov-abb-mahalle', 'hrm-ov-abb-mahalle-op', abbMahalleKatman);
+        katmanKontrolKur('hrm-ov-abb-yapi', 'hrm-ov-abb-yapi-op', abbYapiKatman);
+        katmanKontrolKur('hrm-ov-abb-numarataj', 'hrm-ov-abb-numarataj-op', abbNumaratajKatman);
+
+        /* --- Grup master switch --- */
+        document.querySelectorAll('.hrm-grup-master').forEach(function (master) {
+            // Summary'nin details toggle davranışını tetiklememeli
+            const kabuk = master.closest('.hrm-grup-master-wrap');
+            if (kabuk) {
+                ['click', 'mousedown', 'pointerdown', 'keydown'].forEach(function (ev) {
+                    kabuk.addEventListener(ev, function (e) { e.stopPropagation(); });
+                });
+            }
+            master.addEventListener('change', function () {
+                const grup = master.dataset.grup;
+                const acilacak = master.checked;
+                Object.values(katmanKayit)
+                    .filter(function (k) { return k.grup === grup; })
+                    .forEach(function (k) {
+                        if (!k.kutu || k.kutu.checked === acilacak) return;
+                        k.kutu.checked = acilacak;
+                        k.kutu.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+                grupDurumGuncelle(grup);
+            });
+        });
+
+        // İlk sayaç durumunu bas
+        ['sistem', 'abb-imar', 'abb-detay'].forEach(grupDurumGuncelle);
+
+        /* --- "Hepsini Kapat" hızlı eylemi --- */
+        const hepsiKapaBtn = document.getElementById('hrm-katman-hepsi-kapa');
+        if (hepsiKapaBtn) {
+            hepsiKapaBtn.addEventListener('click', function () {
+                Object.values(katmanKayit).forEach(function (k) {
+                    if (!k.kutu || !k.kutu.checked) return;
+                    k.kutu.checked = false;
+                    k.kutu.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+        }
+
+        /* --- Katman arama filtresi --- */
+        const araInput = document.getElementById('hrm-katman-ara');
+        const araTemizle = document.getElementById('hrm-katman-ara-temizle');
+        const araBosEl = document.getElementById('hrm-katman-bos');
+
+        function turkceKucult(s) {
+            return String(s || '')
+                .toLocaleLowerCase('tr-TR')
+                .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c')
+                .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o');
+        }
+
+        function katmanFiltrele() {
+            const q = araInput ? turkceKucult(araInput.value.trim()) : '';
+            const filtreli = !!q;
+            if (araTemizle) araTemizle.hidden = !filtreli;
+
+            let toplamGorunur = 0;
+            document.querySelectorAll('.hrm-grup').forEach(function (grup) {
+                let grupGorunur = 0;
+                grup.querySelectorAll('.hrm-katman-kart').forEach(function (kart) {
+                    const ad = turkceKucult(kart.dataset.ad || kart.textContent);
+                    const eslesir = !filtreli || ad.indexOf(q) !== -1;
+                    kart.hidden = !eslesir;
+                    if (eslesir) grupGorunur++;
+                });
+                grup.hidden = filtreli && grupGorunur === 0;
+                if (filtreli && grupGorunur > 0 && !grup.open) grup.open = true;
+                toplamGorunur += grupGorunur;
+            });
+
+            if (araBosEl) araBosEl.hidden = !(filtreli && toplamGorunur === 0);
+        }
+
+        if (araInput) {
+            araInput.addEventListener('input', katmanFiltrele);
+            araInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && araInput.value) {
+                    araInput.value = '';
+                    katmanFiltrele();
+                }
+            });
+        }
+        if (araTemizle) {
+            araTemizle.addEventListener('click', function () {
+                if (!araInput) return;
+                araInput.value = '';
+                katmanFiltrele();
+                araInput.focus();
+            });
+        }
 
         /* =========================================================
          * 7) SİSTEM PARSELLERİ (GeoJSON)
@@ -423,7 +664,9 @@
             });
 
             sayiEl.textContent = String(parselKatman.graphics.length);
-            if (tumExtent && parselKatman.graphics.length) {
+            // Sadece katman AÇIK ise auto-zoom yap; kapalıyken kullanıcının
+            // ayarladığı görünümü bozma. Manuel "Sığdır" butonu her durumda çalışır.
+            if (tumExtent && parselKatman.graphics.length && parselKatman.visible) {
                 view.goTo(tumExtent.expand(1.25)).catch(function () {});
             }
         }

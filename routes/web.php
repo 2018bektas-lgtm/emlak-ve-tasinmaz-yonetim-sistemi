@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AbbProxyController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EimarController;
@@ -7,6 +8,8 @@ use App\Http\Controllers\ImarDurumuController;
 use App\Http\Controllers\LokasyonController;
 use App\Http\Controllers\MevcutKullanimSekliController;
 use App\Http\Controllers\TasinmazController;
+use App\Http\Controllers\YapiController;
+use App\Http\Controllers\TasinmazHisseController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -32,12 +35,45 @@ Route::middleware('auth')->prefix('panel')->name('panel.')->group(function () {
         Route::get('harita', [TasinmazController::class, 'harita'])->name('harita');
         Route::get('olustur', [TasinmazController::class, 'create'])->name('olustur');
         Route::post('olustur', [TasinmazController::class, 'store'])->name('store');
-        Route::get('{tasinmaz}/duzenle', [TasinmazController::class, 'edit'])
-            ->whereNumber('tasinmaz')->name('duzenle');
-        Route::put('{tasinmaz}', [TasinmazController::class, 'update'])
-            ->whereNumber('tasinmaz')->name('guncelle');
-        Route::delete('{tasinmaz}', [TasinmazController::class, 'destroy'])
-            ->whereNumber('tasinmaz')->name('sil');
+
+        // Yeni: TKGM mahalle id + ada + parsel tabanlı rotalar
+        $slugKisit = [
+            'mahalleTkgmId' => '\d+',
+            'ada' => '[\w-]+',
+            'parsel' => '[\w-]+',
+        ];
+        Route::get('{mahalleTkgmId}/{ada}/{parsel}/duzenle', [TasinmazController::class, 'edit'])
+            ->where($slugKisit)->name('duzenle');
+        Route::put('{mahalleTkgmId}/{ada}/{parsel}', [TasinmazController::class, 'update'])
+            ->where($slugKisit)->name('guncelle');
+        Route::delete('{mahalleTkgmId}/{ada}/{parsel}', [TasinmazController::class, 'destroy'])
+            ->where($slugKisit)->name('sil');
+
+        Route::post('{mahalleTkgmId}/{ada}/{parsel}/hisseler', [TasinmazHisseController::class, 'store'])
+            ->where($slugKisit)->name('hisseler.store');
+        Route::put('{mahalleTkgmId}/{ada}/{parsel}/hisseler/{hisse}', [TasinmazHisseController::class, 'update'])
+            ->where($slugKisit)->whereNumber('hisse')->name('hisseler.update');
+        Route::delete('{mahalleTkgmId}/{ada}/{parsel}/hisseler/{hisse}', [TasinmazHisseController::class, 'destroy'])
+            ->where($slugKisit)->whereNumber('hisse')->name('hisseler.destroy');
+
+        Route::post('{mahalleTkgmId}/{ada}/{parsel}/yapilar', [YapiController::class, 'store'])
+            ->where($slugKisit)->name('yapi.store');
+        Route::put('{mahalleTkgmId}/{ada}/{parsel}/yapilar/{yapi}', [YapiController::class, 'update'])
+            ->where($slugKisit)->whereNumber('yapi')->name('yapi.update');
+        Route::delete('{mahalleTkgmId}/{ada}/{parsel}/yapilar/{yapi}', [YapiController::class, 'destroy'])
+            ->where($slugKisit)->whereNumber('yapi')->name('yapi.destroy');
+
+        // Eski (legacy) id-tabanlı GET rotası — sadece 301 redirect.
+        // PUT/DELETE legacy tutulmaz; formlar zaten yeni URL'ye submit ediyor.
+        Route::get('{tasinmaz}/duzenle', function (int $tasinmaz) {
+            $t = \App\Models\Tasinmaz::with('mahalle:id,tkgm_id')->findOrFail($tasinmaz);
+            $slug = $t->duzenleParams();
+            if (isset($slug['tasinmaz'])) {
+                abort(404, 'Bu kayıtta mahalle TKGM id / ada / parsel eksik.');
+            }
+
+            return redirect()->route('panel.tasinmazlar.duzenle', $slug, 301);
+        })->whereNumber('tasinmaz')->name('duzenle-legacy');
     });
 
     Route::prefix('ajax')->name('ajax.')->group(function () {
@@ -68,5 +104,7 @@ Route::middleware('auth')->prefix('panel')->name('panel.')->group(function () {
             ->name('tasinmaz-ara');
         Route::get('eimar-identify', [EimarController::class, 'identify'])
             ->name('eimar-identify');
+        Route::get('abb-proxy', [AbbProxyController::class, 'katman'])
+            ->name('abb-proxy');
     });
 });

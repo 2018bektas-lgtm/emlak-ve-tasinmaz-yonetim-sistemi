@@ -154,6 +154,22 @@
             </button>
         </div>
 
+        <div class="hrm-katman-eylem-satir">
+            <div class="hrm-katman-ara-wrap">
+                <svg class="hrm-katman-ara-ikon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="search" id="hrm-katman-ara" class="hrm-katman-ara" placeholder="Katman ara..." autocomplete="off">
+                <button type="button" class="hrm-katman-ara-temizle" id="hrm-katman-ara-temizle" aria-label="Aramayı temizle" hidden>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <button type="button" class="hrm-katman-hepsi-kapa" id="hrm-katman-hepsi-kapa" title="Tüm veri katmanlarını kapat">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/></svg>
+                <span>Hepsi</span>
+            </button>
+        </div>
+
+        <div class="hrm-panel-scroll">
+
         <details class="hrm-details" open>
             <summary class="hrm-summary">
                 <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
@@ -164,14 +180,19 @@
             </div>
         </details>
 
-        <details class="hrm-details" open>
-            <summary class="hrm-summary">
+        <details class="hrm-details hrm-grup" open data-grup="sistem">
+            <summary class="hrm-grup-summary">
                 <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-                <span>Veri Katmanları</span>
+                <span class="hrm-grup-ad">Sistem</span>
+                <span class="hrm-grup-sayac" data-grup-sayac="sistem" title="Aktif / Toplam">0/0</span>
+                <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                    <input type="checkbox" class="hrm-grup-master" data-grup="sistem">
+                    <span class="hrm-switch-slider"></span>
+                </label>
             </summary>
-            <div class="hrm-details-icerik">
+            <div class="hrm-details-icerik" data-grup-icerik="sistem">
 
-            <div class="hrm-katman-kart" data-aktif="1">
+            <div class="hrm-katman-kart" data-katman-kart="parsel" data-grup="sistem" data-ad="taşınmaz parselleri sistem parsel">
                 <div class="hrm-katman-ust">
                     <span class="hrm-katman-ikon" style="background:#f59e0b;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 L12 3 L20 8 L18 20 L6 20 z"/></svg>
@@ -189,10 +210,26 @@
                     <span class="hrm-opaklik-label">Opaklık</span>
                     <input type="range" id="hrm-ov-parsel-op" min="10" max="100" value="70" class="hrm-range">
                     <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parsel-op">70%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-parsel-op" title="Varsayılana döndür">↺</button>
                 </div>
             </div>
 
-            <div class="hrm-katman-kart">
+            </div>
+        </details>
+
+        <details class="hrm-details hrm-grup" open data-grup="abb-imar">
+            <summary class="hrm-grup-summary">
+                <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="hrm-grup-ad">Ankara BB · İmar & Kadastro</span>
+                <span class="hrm-grup-sayac" data-grup-sayac="abb-imar" title="Aktif / Toplam">0/0</span>
+                <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                    <input type="checkbox" class="hrm-grup-master" data-grup="abb-imar">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </summary>
+            <div class="hrm-details-icerik" data-grup-icerik="abb-imar">
+
+            <div class="hrm-katman-kart" data-katman-kart="imar" data-grup="abb-imar" data-ad="imar planı uip ankara bb uipsade">
                 <div class="hrm-katman-ust">
                     <span class="hrm-katman-ikon" style="background:#ec4899;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 h4 v-4 h4 v4 h4 v-4 h4 v4 h2 M3 12 v6 h18 v-6"/></svg>
@@ -210,10 +247,11 @@
                     <span class="hrm-opaklik-label">Opaklık</span>
                     <input type="range" id="hrm-ov-imar-op" min="10" max="100" value="75" class="hrm-range">
                     <span class="hrm-opaklik-deger" data-hedef="hrm-ov-imar-op">75%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="75" data-hedef="hrm-ov-imar-op" title="Varsayılana döndür">↺</button>
                 </div>
             </div>
 
-            <div class="hrm-katman-kart">
+            <div class="hrm-katman-kart" data-katman-kart="parselasyon" data-grup="abb-imar" data-ad="parselasyon kadastro parselaktif">
                 <div class="hrm-katman-ust">
                     <span class="hrm-katman-ikon" style="background:#8b5cf6;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16 M4 12h16 M4 18h16 M9 3v18 M15 3v18"/></svg>
@@ -231,10 +269,11 @@
                     <span class="hrm-opaklik-label">Opaklık</span>
                     <input type="range" id="hrm-ov-parselasyon-op" min="10" max="100" value="80" class="hrm-range">
                     <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parselasyon-op">80%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-parselasyon-op" title="Varsayılana döndür">↺</button>
                 </div>
             </div>
 
-            <div class="hrm-katman-kart">
+            <div class="hrm-katman-kart" data-katman-kart="belediye" data-grup="abb-imar" data-ad="belediye taşınmazları hisseli tam">
                 <div class="hrm-katman-ust">
                     <span class="hrm-katman-ikon" style="background:#16a34a;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21 h18 M5 21 V9 l7-5 7 5 v12 M9 21 v-6 h6 v6"/></svg>
@@ -252,6 +291,7 @@
                     <span class="hrm-opaklik-label">Opaklık</span>
                     <input type="range" id="hrm-ov-belediye-op" min="10" max="100" value="80" class="hrm-range">
                     <span class="hrm-opaklik-deger" data-hedef="hrm-ov-belediye-op">80%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-belediye-op" title="Varsayılana döndür">↺</button>
                 </div>
                 <div class="hrm-katman-lejant" aria-label="Hisse durumu lejantı">
                     <span class="hrm-lejant-oge">
@@ -268,8 +308,115 @@
                     </span>
                 </div>
             </div>
+
             </div>
         </details>
+
+        <details class="hrm-details hrm-grup" open data-grup="abb-detay">
+            <summary class="hrm-grup-summary">
+                <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                <span class="hrm-grup-ad">Ankara BB · Sınır & Detay</span>
+                <span class="hrm-grup-sayac" data-grup-sayac="abb-detay" title="Aktif / Toplam">0/0</span>
+                <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                    <input type="checkbox" class="hrm-grup-master" data-grup="abb-detay">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </summary>
+            <div class="hrm-details-icerik" data-grup-icerik="abb-detay">
+
+            <div class="hrm-katman-kart" data-katman-kart="abb-ilce" data-grup="abb-detay" data-ad="ilçe sınırı ankara">
+                <div class="hrm-katman-ust">
+                    <span class="hrm-katman-ikon" style="background:#0ea5e9;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z"/></svg>
+                    </span>
+                    <div class="hrm-katman-meta">
+                        <span class="hrm-katman-ad">İlçe Sınırı</span>
+                        <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 4)</span>
+                    </div>
+                    <label class="hrm-switch" title="Katmanı aç/kapat">
+                        <input type="checkbox" id="hrm-ov-abb-ilce">
+                        <span class="hrm-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="hrm-katman-alt-satir">
+                    <span class="hrm-opaklik-label">Opaklık</span>
+                    <input type="range" id="hrm-ov-abb-ilce-op" min="10" max="100" value="80" class="hrm-range">
+                    <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-ilce-op">80%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-abb-ilce-op" title="Varsayılana döndür">↺</button>
+                </div>
+            </div>
+
+            <div class="hrm-katman-kart" data-katman-kart="abb-mahalle" data-grup="abb-detay" data-ad="mahalle sınırı ankara">
+                <div class="hrm-katman-ust">
+                    <span class="hrm-katman-ikon" style="background:#14b8a6;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L12 3 L21 12 M5 10 v10 h14 V10"/></svg>
+                    </span>
+                    <div class="hrm-katman-meta">
+                        <span class="hrm-katman-ad">Mahalle Sınırı</span>
+                        <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 3)</span>
+                    </div>
+                    <label class="hrm-switch" title="Katmanı aç/kapat">
+                        <input type="checkbox" id="hrm-ov-abb-mahalle">
+                        <span class="hrm-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="hrm-katman-alt-satir">
+                    <span class="hrm-opaklik-label">Opaklık</span>
+                    <input type="range" id="hrm-ov-abb-mahalle-op" min="10" max="100" value="80" class="hrm-range">
+                    <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-mahalle-op">80%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-abb-mahalle-op" title="Varsayılana döndür">↺</button>
+                </div>
+            </div>
+
+            <div class="hrm-katman-kart" data-katman-kart="abb-yapi" data-grup="abb-detay" data-ad="yapı bina ankara">
+                <div class="hrm-katman-ust">
+                    <span class="hrm-katman-ikon" style="background:#f97316;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21 V7 h6 V3 h10 v18 M9 11h2 M13 11h2 M9 15h2 M13 15h2 M9 19h2 M13 19h2"/></svg>
+                    </span>
+                    <div class="hrm-katman-meta">
+                        <span class="hrm-katman-ad">Yapı</span>
+                        <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 2)</span>
+                    </div>
+                    <label class="hrm-switch" title="Katmanı aç/kapat">
+                        <input type="checkbox" id="hrm-ov-abb-yapi">
+                        <span class="hrm-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="hrm-katman-alt-satir">
+                    <span class="hrm-opaklik-label">Opaklık</span>
+                    <input type="range" id="hrm-ov-abb-yapi-op" min="10" max="100" value="85" class="hrm-range">
+                    <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-yapi-op">85%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="85" data-hedef="hrm-ov-abb-yapi-op" title="Varsayılana döndür">↺</button>
+                </div>
+            </div>
+
+            <div class="hrm-katman-kart" data-katman-kart="abb-numarataj" data-grup="abb-detay" data-ad="numarataj adres kapı ankara">
+                <div class="hrm-katman-ust">
+                    <span class="hrm-katman-ikon" style="background:#ef4444;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22 s-7-7-7-13 a7 7 0 0 1 14 0 c0 6-7 13-7 13z"/><circle cx="12" cy="9" r="2.6"/></svg>
+                    </span>
+                    <div class="hrm-katman-meta">
+                        <span class="hrm-katman-ad">Numarataj</span>
+                        <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 0)</span>
+                    </div>
+                    <label class="hrm-switch" title="Katmanı aç/kapat">
+                        <input type="checkbox" id="hrm-ov-abb-numarataj">
+                        <span class="hrm-switch-slider"></span>
+                    </label>
+                </div>
+                <div class="hrm-katman-alt-satir">
+                    <span class="hrm-opaklik-label">Opaklık</span>
+                    <input type="range" id="hrm-ov-abb-numarataj-op" min="10" max="100" value="90" class="hrm-range">
+                    <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-numarataj-op">90%</span>
+                    <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="90" data-hedef="hrm-ov-abb-numarataj-op" title="Varsayılana döndür">↺</button>
+                </div>
+            </div>
+
+            </div>
+        </details>
+
+        <div class="hrm-katman-bos" id="hrm-katman-bos" hidden>Aramanıza uyan katman bulunamadı.</div>
+        </div>
 
         <div class="hrm-panel-alt">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>
@@ -416,11 +563,12 @@
         geojson:       @json(route('panel.ajax.tasinmaz-geojson')),
         ara:           @json(route('panel.ajax.tasinmaz-ara')),
         eimar:         @json(route('panel.ajax.eimar-identify')),
+        abbProxy:      @json(route('panel.ajax.abb-proxy')),
         ilceler:       @json(url('/panel/ajax/ilceler')),
         mahalleler:    @json(url('/panel/ajax/mahalleler')),
         tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
         tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=7"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=15"></script>
 @endpush
