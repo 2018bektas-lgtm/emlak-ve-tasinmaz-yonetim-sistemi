@@ -113,6 +113,14 @@
 @endpush
 
 @section('content')
+@if (! empty($secilenIdler))
+    <div class="hrm-filtre-bar" role="status">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></svg>
+        <span><strong>{{ count($secilenIdler) }}</strong> taşınmaz haritada filtreli gösteriliyor.</span>
+        <a href="{{ route('panel.tasinmazlar.harita') }}" class="hrm-filtre-temizle">Tümünü göster</a>
+    </div>
+@endif
+
 <div class="hrm-shell" id="hrm-shell">
     <div class="hrm-toolbar" role="toolbar" aria-label="Harita araç çubuğu">
         <a class="hrm-tool" href="{{ route('panel.tasinmazlar.index') }}" title="Listeye dön">
@@ -559,8 +567,14 @@
 @push('scripts')
 <script src="https://js.arcgis.com/4.30/"></script>
 <script>
+    @php
+        $geojsonUrl = route('panel.ajax.tasinmaz-geojson');
+        if (! empty($secilenIdler)) {
+            $geojsonUrl .= '?ids='.implode(',', $secilenIdler);
+        }
+    @endphp
     window.ETYS_HARITA = {
-        geojson:       @json(route('panel.ajax.tasinmaz-geojson')),
+        geojson:       @json($geojsonUrl),
         ara:           @json(route('panel.ajax.tasinmaz-ara')),
         eimar:         @json(route('panel.ajax.eimar-identify')),
         abbProxy:      @json(route('panel.ajax.abb-proxy')),
@@ -568,6 +582,7 @@
         mahalleler:    @json(url('/panel/ajax/mahalleler')),
         tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
         tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
+        secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
 <script src="{{ asset('js/harita-esri.js') }}?v=15"></script>

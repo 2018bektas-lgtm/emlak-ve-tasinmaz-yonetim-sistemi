@@ -17,6 +17,7 @@ class YetkiSeeder extends Seeder
             ['kod' => 'tasinmaz.duzenle', 'grup' => 'tasinmaz', 'ad' => 'Taşınmaz düzenle', 'aciklama' => null],
             ['kod' => 'tasinmaz.sil', 'grup' => 'tasinmaz', 'ad' => 'Taşınmaz sil', 'aciklama' => null],
             ['kod' => 'tasinmaz.tumunu-gor', 'grup' => 'tasinmaz', 'ad' => 'Tüm müdürlüklerin taşınmazlarını gör', 'aciklama' => 'Müdürlük kapsamı olmadan tüm kayıtları listeler.'],
+            ['kod' => 'tasinmaz.toplu-islem', 'grup' => 'tasinmaz', 'ad' => 'Toplu içe aktarım (Excel)', 'aciklama' => 'Excel/CSV üzerinden çoklu taşınmaz ve hisse yükleme.'],
 
             ['kod' => 'hisse.goruntule', 'grup' => 'hisse', 'ad' => 'Hisseleri görüntüle', 'aciklama' => null],
             ['kod' => 'hisse.olustur', 'grup' => 'hisse', 'ad' => 'Hisse ekle', 'aciklama' => null],
@@ -44,6 +45,21 @@ class YetkiSeeder extends Seeder
             ['kod' => 'mudurluk.sil', 'grup' => 'mudurluk', 'ad' => 'Müdürlük sil', 'aciklama' => null],
 
             ['kod' => 'rapor.goruntule', 'grup' => 'rapor', 'ad' => 'Raporları görüntüle', 'aciklama' => null],
+
+            ['kod' => 'hisse-satisi.goruntule', 'grup' => 'hisse-satisi', 'ad' => 'Hisse satışlarını görüntüle', 'aciklama' => 'Başvuru listesi, detay ve tebligatları okur.'],
+            ['kod' => 'hisse-satisi.olustur', 'grup' => 'hisse-satisi', 'ad' => 'Yeni başvuru oluştur', 'aciklama' => null],
+            ['kod' => 'hisse-satisi.duzenle', 'grup' => 'hisse-satisi', 'ad' => 'Başvuru/tebligat düzenle', 'aciklama' => null],
+            ['kod' => 'hisse-satisi.sil', 'grup' => 'hisse-satisi', 'ad' => 'Başvuru/tebligat sil', 'aciklama' => null],
+
+            ['kod' => 'ecrimisil.goruntule', 'grup' => 'ecrimisil', 'ad' => 'Ecrimisil kayıtlarını görüntüle', 'aciklama' => 'İşgalci listesi, tutanak ve resimleri okur.'],
+            ['kod' => 'ecrimisil.olustur', 'grup' => 'ecrimisil', 'ad' => 'Yeni işgal kaydı oluştur', 'aciklama' => null],
+            ['kod' => 'ecrimisil.duzenle', 'grup' => 'ecrimisil', 'ad' => 'İşgal/tutanak/resim düzenle', 'aciklama' => null],
+            ['kod' => 'ecrimisil.sil', 'grup' => 'ecrimisil', 'ad' => 'İşgal/tutanak/resim sil', 'aciklama' => null],
+
+            ['kod' => 'lojman.goruntule', 'grup' => 'lojman', 'ad' => 'Lojman kayıtlarını görüntüle', 'aciklama' => 'Lojman listesi, başvuru, tahsis ve evrakları okur.'],
+            ['kod' => 'lojman.olustur', 'grup' => 'lojman', 'ad' => 'Yeni lojman/başvuru oluştur', 'aciklama' => null],
+            ['kod' => 'lojman.duzenle', 'grup' => 'lojman', 'ad' => 'Lojman/başvuru/tahsis/evrak düzenle', 'aciklama' => null],
+            ['kod' => 'lojman.sil', 'grup' => 'lojman', 'ad' => 'Lojman/başvuru/tahsis/evrak sil', 'aciklama' => null],
         ];
 
         $izinIdleri = [];
@@ -99,6 +115,12 @@ class YetkiSeeder extends Seeder
                     'yapi.duzenle',
                     'harita.goruntule',
                     'rapor.goruntule',
+                    'ecrimisil.goruntule',
+                    'ecrimisil.olustur',
+                    'ecrimisil.duzenle',
+                    'lojman.goruntule',
+                    'lojman.olustur',
+                    'lojman.duzenle',
                 ],
             ],
             [
@@ -113,6 +135,8 @@ class YetkiSeeder extends Seeder
                     'yapi.goruntule',
                     'harita.goruntule',
                     'rapor.goruntule',
+                    'ecrimisil.goruntule',
+                    'lojman.goruntule',
                 ],
             ],
         ];

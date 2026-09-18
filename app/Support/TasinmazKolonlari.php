@@ -45,6 +45,43 @@ class TasinmazKolonlari
         return array_keys(self::katalog());
     }
 
+    /**
+     * Kolonları anlamlı gruplara ayır — kolon seçim panelinde kullanılır.
+     *
+     * @return array<string, array{ikon:string, kolonlar:array<string,string>}>
+     */
+    public static function gruplar(): array
+    {
+        $k = self::katalog();
+
+        return [
+            'Kimlik & Konum' => [
+                'ikon' => 'pin',
+                'kolonlar' => array_intersect_key($k, array_flip(['tkgm_parsel', 'takbis', 'mudurluk', 'ilce', 'mahalle', 'ada', 'parsel'])),
+            ],
+            'Alan & Nitelik' => [
+                'ikon' => 'ruler',
+                'kolonlar' => array_intersect_key($k, array_flip(['alan', 'nitelik', 'hisse_durumu', 'hisse_m2', 'mulkiyet'])),
+            ],
+            'Bağımsız Bölüm' => [
+                'ikon' => 'building',
+                'kolonlar' => array_intersect_key($k, array_flip(['bb_no', 'blok_no', 'kat_no', 'bina'])),
+            ],
+            'İmar & Muhasebe' => [
+                'ikon' => 'layers',
+                'kolonlar' => array_intersect_key($k, array_flip(['imar', 'muhasebe', 'ek_rapor'])),
+            ],
+            'Durum Bayrakları' => [
+                'ikon' => 'flag',
+                'kolonlar' => array_intersect_key($k, array_flip(['satis', 'tahsis', 'ust_hakki', 'kira', 'meclis'])),
+            ],
+            'Belge & Diğer' => [
+                'ikon' => 'file',
+                'kolonlar' => array_intersect_key($k, array_flip(['dosya', 'geometri', 'aciklama'])),
+            ],
+        ];
+    }
+
     public static function varsayilan(): array
     {
         return self::anahtarlar();

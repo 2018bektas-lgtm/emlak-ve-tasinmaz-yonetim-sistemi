@@ -33,6 +33,7 @@ class StoreTasinmazRequest extends FormRequest
             'imar_notu' => ['nullable', 'string', 'max:5000'],
 
             'uzeri_bina_var_mi' => ['sometimes', 'boolean'],
+            'kayit_tipi' => ['required', 'in:bos_parsel,kat_mulkiyetli,kat_mulkiyetsiz_bina'],
 
             // Kategori (arsa seviyesi — hasOne)
             'kategori' => ['nullable', 'array'],
@@ -50,7 +51,26 @@ class StoreTasinmazRequest extends FormRequest
             'ekbilgi.kira_var' => ['sometimes', 'boolean'],
             'ekbilgi.aciklama' => ['nullable', 'string', 'max:5000'],
 
-            // Yapılar (BBN'ler — hasMany, opsiyonel; modaldan da AJAX ile eklenebilir)
+            // Meclis Satış Kararı — ekbilgi.meclis_satis_karari_var işaretliyken zorunlu.
+            'meclis_karari' => ['nullable', 'array'],
+            'meclis_karari.karar_no' => ['required_if_accepted:ekbilgi.meclis_satis_karari_var', 'nullable', 'string', 'max:50'],
+            'meclis_karari.karar_tarihi' => ['required_if_accepted:ekbilgi.meclis_satis_karari_var', 'nullable', 'date'],
+            'meclis_karari.karar_ozeti' => ['nullable', 'string', 'max:2000'],
+            'meclis_karari.karar_pdf' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
+
+            // Yapı — tek BBN (kat_mulkiyetli tipinde). Yalnızca fiziksel alanlar.
+            'yapi' => ['nullable', 'array'],
+            'yapi.blok_no' => ['nullable', 'string', 'max:20'],
+            'yapi.kat_no' => ['nullable', 'string', 'max:10'],
+            'yapi.bagimsiz_bolum_no' => ['nullable', 'string', 'max:20'],
+            'yapi.nitelik' => ['nullable', 'string', 'max:50'],
+            'yapi.brut_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
+            'yapi.net_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
+            'yapi.oda_sayisi' => ['nullable', 'string', 'max:10'],
+            'yapi.cephe' => ['nullable', 'string', 'max:50'],
+            'yapi.aciklama' => ['nullable', 'string', 'max:500'],
+
+            // Yapılar — çoklu BBN (kat_mulkiyetsiz_bina tipinde)
             'yapilar' => ['nullable', 'array'],
             'yapilar.*.blok_no' => ['nullable', 'string', 'max:20'],
             'yapilar.*.kat_no' => ['nullable', 'string', 'max:10'],
@@ -60,16 +80,7 @@ class StoreTasinmazRequest extends FormRequest
             'yapilar.*.net_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
             'yapilar.*.oda_sayisi' => ['nullable', 'string', 'max:10'],
             'yapilar.*.cephe' => ['nullable', 'string', 'max:50'],
-            'yapilar.*.muhasebe_kayit_id' => ['nullable', 'integer', 'exists:muhasebe_kayitlari,id'],
-            'yapilar.*.kayit_turu_id' => ['nullable', 'integer', 'exists:kayit_turleri,id'],
-            'yapilar.*.mevcut_kullanim_sekli' => ['nullable', 'string', 'max:150'],
-            'yapilar.*.isgal_durumu' => ['nullable', 'in:yok,var,kismi'],
-            'yapilar.*.satis_durumu' => ['nullable', Rule::enum(SatisDurumu::class)],
-            'yapilar.*.meclis_satis_karari_var' => ['sometimes', 'boolean'],
-            'yapilar.*.tahsis_var' => ['sometimes', 'boolean'],
-            'yapilar.*.ust_hakki_var' => ['sometimes', 'boolean'],
-            'yapilar.*.kira_var' => ['sometimes', 'boolean'],
-            'yapilar.*.aciklama' => ['nullable', 'string', 'max:5000'],
+            'yapilar.*.aciklama' => ['nullable', 'string', 'max:500'],
 
             // Tapu
             'tapu' => ['required', 'array'],
@@ -159,9 +170,27 @@ class StoreTasinmazRequest extends FormRequest
             $ekbilgi['satis_durumu'] = SatisDurumu::Envanterde->value;
         }
 
-        // Yapılar
+        $kayitTipi = $this->input('kayit_tipi');
+
+        // Yapı — tek BBN. Sadece kat_mulkiyetli tipinde geçerli, aksi halde null.
+        $yapi = $this->input('yapi');
+        if ($kayitTipi === 'kat_mulkiyetli' && is_array($yapi)) {
+            $yapi['brut_alan'] = $this->trNumericCevir($yapi['brut_alan'] ?? null);
+            $yapi['net_alan'] = $this->trNumericCevir($yapi['net_alan'] ?? null);
+            foreach ($yapi as $k => $v) {
+                if ($v === '') {
+                    $yapi[$k] = null;
+                }
+            }
+            $anlamli = collect($yapi)->contains(fn ($v) => filled($v));
+            $yapi = $anlamli ? $yapi : null;
+        } else {
+            $yapi = null;
+        }
+
+        // Yapılar — çoklu BBN. Sadece kat_mulkiyetsiz_bina tipinde geçerli.
         $yapilar = $this->input('yapilar');
-        if (is_array($yapilar)) {
+        if ($kayitTipi === 'kat_mulkiyetsiz_bina' && is_array($yapilar)) {
             $temiz = [];
             foreach ($yapilar as $y) {
                 if (! is_array($y)) {
@@ -169,23 +198,22 @@ class StoreTasinmazRequest extends FormRequest
                 }
                 $y['brut_alan'] = $this->trNumericCevir($y['brut_alan'] ?? null);
                 $y['net_alan'] = $this->trNumericCevir($y['net_alan'] ?? null);
-                foreach (['meclis_satis_karari_var', 'tahsis_var', 'ust_hakki_var', 'kira_var'] as $flag) {
-                    $y[$flag] = filter_var($y[$flag] ?? false, FILTER_VALIDATE_BOOLEAN);
-                }
-                if (empty($y['satis_durumu'])) {
-                    $y['satis_durumu'] = SatisDurumu::Envanterde->value;
-                }
                 foreach ($y as $k => $v) {
                     if ($v === '') {
                         $y[$k] = null;
                     }
                 }
-                $temiz[] = $y;
+                if (collect($y)->contains(fn ($v) => filled($v))) {
+                    $temiz[] = $y;
+                }
             }
             $yapilar = $temiz ?: null;
         } else {
             $yapilar = null;
         }
+
+        // uzeri_bina_var_mi — kayit_tipi'nden türet (form hidden ile geliyor ama emin ol)
+        $uzeriBinaVarMi = $kayitTipi && $kayitTipi !== 'bos_parsel';
 
         $tapu = $this->input('tapu');
         if (! is_array($tapu)) {
@@ -211,15 +239,30 @@ class StoreTasinmazRequest extends FormRequest
             $hisseler = null;
         }
 
+        // Meclis kararı — checkbox işaretli değilse alanları temizle
+        $meclisKarari = $this->input('meclis_karari');
+        if (! is_array($meclisKarari) || ! ($ekbilgi['meclis_satis_karari_var'] ?? false)) {
+            $meclisKarari = null;
+        } else {
+            foreach ($meclisKarari as $k => $v) {
+                if ($v === '') {
+                    $meclisKarari[$k] = null;
+                }
+            }
+        }
+
         $this->merge([
-            'uzeri_bina_var_mi' => $this->boolean('uzeri_bina_var_mi'),
+            'uzeri_bina_var_mi' => $uzeriBinaVarMi,
+            'kayit_tipi' => $kayitTipi,
             'alan' => $this->trNumericCevir($this->input('alan')),
             'emsal' => $this->trNumericCevir($this->input('emsal')),
             'kategori' => $kategori,
             'ekbilgi' => $ekbilgi,
+            'yapi' => $yapi,
             'yapilar' => $yapilar,
             'tapu' => $tapu,
             'hisseler' => $hisseler,
+            'meclis_karari' => $meclisKarari,
         ]);
     }
 

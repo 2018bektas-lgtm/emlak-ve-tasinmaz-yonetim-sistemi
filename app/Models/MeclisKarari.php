@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class MeclisKarari extends Model
@@ -60,13 +61,22 @@ class MeclisKarari extends Model
             return;
         }
 
+        $tablo = (new $sahipModelClass)->getTable();
+
+        // Bayrak sahibin kendi tablosunda değil (ör. Tasinmaz'da flag
+        // tasinmaz_ekbilgi'de tutulur) — bu durumda sync no-op; flag'i
+        // ilgili form/servis kendisi yazar.
+        if (! Schema::hasColumn($tablo, 'meclis_satis_karari_var')) {
+            return;
+        }
+
         $satisVarMi = self::query()
             ->where('sahip_type', $karar->sahip_type)
             ->where('sahip_id', $karar->sahip_id)
             ->where('karar_tipi', 'satis')
             ->exists();
 
-        DB::table((new $sahipModelClass)->getTable())
+        DB::table($tablo)
             ->where('id', $karar->sahip_id)
             ->update(['meclis_satis_karari_var' => $satisVarMi]);
     }

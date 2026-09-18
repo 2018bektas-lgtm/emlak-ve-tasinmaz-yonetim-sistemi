@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=46">
+    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=97">
+    <script src="{{ asset('js/ozel-select.js') }}?v=3" defer></script>
     @stack('head')
 </head>
 <body class="app-shell @yield('shellClass')">
@@ -23,52 +24,41 @@
                     ['label' => 'Taşınmaz Listesi', 'route' => 'panel.tasinmazlar.index', 'izin' => 'tasinmaz.goruntule'],
                     ['label' => 'Taşınmaz Ekle', 'route' => 'panel.tasinmazlar.olustur', 'izin' => 'tasinmaz.olustur'],
                     ['label' => 'Taşınmaz Haritası', 'route' => 'panel.tasinmazlar.harita', 'izin' => 'harita.goruntule'],
+                    ['label' => 'Toplu İşlem (Excel)', 'route' => 'panel.tasinmazlar.toplu-islem', 'izin' => 'tasinmaz.toplu-islem'],
+                    ['label' => 'Sayıştay Raporları', 'children' => [
+                        ['label' => 'Kayıtlı (EK-2)', 'route' => 'panel.sayistay-rapor.kayitli', 'izin' => 'rapor.goruntule'],
+                        ['label' => 'Kayıtsız (EK-3)', 'route' => 'panel.sayistay-rapor.kayitsiz', 'izin' => 'rapor.goruntule'],
+                        ['label' => 'Orta Malları (EK-4)', 'route' => 'panel.sayistay-rapor.ortamallari', 'izin' => 'rapor.goruntule'],
+                        ['label' => 'Genel Hizmet (EK-5)', 'route' => 'panel.sayistay-rapor.genelhizmet', 'izin' => 'rapor.goruntule'],
+                    ]],
                 ]],
-                ['label' => 'Mesken Bağımsız Bölüm', 'icon' => 'home', 'children' => [
-                    ['label' => 'Mesken Listesi'],
-                    ['label' => 'Yeni Mesken'],
-                    ['label' => 'Kat Mülkiyeti'],
+            ],
+            'Satış İşlemleri' => [
+                ['label' => 'Hisse Satışı', 'icon' => 'coin', 'children' => [
+                    ['label' => 'Başvuru Listesi', 'route' => 'panel.hisse-satisi.liste', 'izin' => 'hisse-satisi.goruntule'],
+                    ['label' => 'Yeni Başvuru', 'route' => 'panel.hisse-satisi.index', 'izin' => 'hisse-satisi.olustur'],
+                    ['label' => 'Harita', 'route' => 'panel.hisse-satisi.harita', 'izin' => 'hisse-satisi.goruntule'],
+                    ['label' => 'Arşiv', 'route' => 'panel.hisse-satisi.arsiv', 'izin' => 'hisse-satisi.goruntule'],
                 ]],
-                ['label' => 'İmar Planları', 'icon' => 'layers', 'children' => [
-                    ['label' => 'Plan Listesi'],
-                    ['label' => 'Yeni Plan'],
-                    ['label' => 'Plan Tadilatları'],
+                ['label' => 'Ecrimisil', 'icon' => 'clipboard', 'children' => [
+                    ['label' => 'İşgal Kayıtları', 'route' => 'panel.ecrimisil.index', 'izin' => 'ecrimisil.goruntule'],
+                    ['label' => 'Yeni Kayıt', 'route' => 'panel.ecrimisil.olustur', 'izin' => 'ecrimisil.olustur'],
+                    ['label' => 'Harita', 'route' => 'panel.ecrimisil.harita', 'izin' => 'ecrimisil.goruntule'],
                 ]],
-                ['label' => 'Parselasyon', 'icon' => 'plot', 'children' => [
-                    ['label' => 'Parselasyon İşlemleri'],
-                    ['label' => 'İfraz'],
-                    ['label' => 'Tevhid'],
-                ]],
-                ['label' => 'Tahsis', 'icon' => 'assign', 'children' => [
-                    ['label' => 'Aktif Tahsisler'],
-                    ['label' => 'Yeni Tahsis'],
-                    ['label' => 'Tahsis Geçmişi'],
-                ]],
-                ['label' => 'Tapu İşlemleri', 'icon' => 'deed', 'children' => [
-                    ['label' => 'Tapu Kayıtları'],
-                    ['label' => 'Tapu Devir'],
-                    ['label' => 'Şerh İşlemleri'],
+                ['label' => 'Lojman', 'icon' => 'building', 'children' => [
+                    ['label' => 'Lojmanlar', 'route' => 'panel.lojman.index', 'izin' => 'lojman.goruntule'],
+                    ['label' => 'Yeni Lojman', 'route' => 'panel.lojman.olustur', 'izin' => 'lojman.olustur'],
+                    ['label' => 'Başvurular', 'route' => 'panel.lojman.basvurular', 'izin' => 'lojman.goruntule'],
+                    ['label' => 'Yeni Başvuru', 'route' => 'panel.lojman.basvuru.olustur', 'izin' => 'lojman.olustur'],
+                    ['label' => 'Tahsis Excel', 'route' => 'panel.lojman.tahsis.excel', 'izin' => 'lojman.goruntule'],
                 ]],
             ],
             'Sistem' => [
-                ['label' => 'Envanter', 'icon' => 'box', 'children' => [
-                    ['label' => 'Genel Envanter'],
-                    ['label' => 'Kategoriler'],
-                ]],
-                ['label' => 'Raporlar', 'icon' => 'chart', 'children' => [
-                    ['label' => 'Aylık Rapor'],
-                    ['label' => 'Yıllık Rapor'],
-                    ['label' => 'Özel Rapor'],
-                ]],
                 ['label' => 'Kullanıcılar', 'icon' => 'users', 'children' => [
                     ['label' => 'Kullanıcı Listesi', 'route' => 'panel.kullanicilar.index', 'izin' => 'kullanici.goruntule'],
                     ['label' => 'Yeni Kullanıcı', 'route' => 'panel.kullanicilar.olustur', 'izin' => 'kullanici.olustur'],
                     ['label' => 'Roller ve İzinler', 'route' => 'panel.roller.index', 'izin' => 'rol.goruntule'],
                     ['label' => 'Müdürlükler', 'route' => 'panel.mudurlukler.index', 'izin' => 'mudurluk.goruntule'],
-                ]],
-                ['label' => 'Ayarlar', 'icon' => 'gear', 'children' => [
-                    ['label' => 'Genel Ayarlar'],
-                    ['label' => 'Sistem Ayarları'],
                 ]],
             ],
         ];
@@ -85,6 +75,9 @@
             'chart'  => '<path d="M4 20 V10 M10 20 V4 M16 20 V13 M22 20 H2"/>',
             'users'  => '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20 c1-4 4-6 6.5-6 s5.5 2 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15 14 c3 0 5 2 6 6"/>',
             'gear'   => '<circle cx="12" cy="12" r="3"/><path d="M12 2 v3 M12 19 v3 M4.2 4.2 l2.1 2.1 M17.7 17.7 l2.1 2.1 M2 12 h3 M19 12 h3 M4.2 19.8 l2.1-2.1 M17.7 6.3 l2.1-2.1"/>',
+            'coin'   => '<circle cx="12" cy="12" r="9"/><path d="M15 9.5 c-0.5-1-1.5-1.5-3-1.5 c-1.7 0-3 1-3 2 c0 2.5 6 1.5 6 4 c0 1-1.3 2-3 2 c-1.5 0-2.5-0.5-3-1.5 M12 6 v2 M12 16 v2"/>',
+            'clipboard' => '<rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 11 h6 M9 15 h4"/>',
+            'building'  => '<path d="M3 21 h18 M5 21 V6 a2 2 0 0 1 2-2 h10 a2 2 0 0 1 2 2 v15"/><path d="M9 8 h1 M14 8 h1 M9 12 h1 M14 12 h1 M9 16 h1 M14 16 h1"/>',
         ];
 
         $user = auth()->user();
@@ -104,6 +97,11 @@
             <button type="button" class="app-collapse-btn" data-collapse-toggle aria-label="Menüyü daralt">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 6 L8 12 L14 18"/>
+                </svg>
+            </button>
+            <button type="button" class="app-sidebar-close" data-sidebar-toggle aria-label="Menüyü kapat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 6 L18 18 M18 6 L6 18"/>
                 </svg>
             </button>
         </div>
@@ -156,16 +154,59 @@
                                         <p class="app-nav-flyout-title">{{ $item['label'] }}</p>
                                         @foreach ($children as $child)
                                             @php
+                                                $childGrandchildren = [];
+                                                foreach ($child['children'] ?? [] as $gc) {
+                                                    if (! isset($gc['izin']) || $izinVar($gc['izin'])) {
+                                                        $childGrandchildren[] = $gc;
+                                                    }
+                                                }
+                                                $childHasChildren = $childGrandchildren !== [];
                                                 $childHref = isset($child['route']) ? route($child['route']) : '#';
                                                 $childActive = isset($child['route']) && $currentRoute === $child['route'];
-                                                $childDisabled = ! isset($child['route']);
+                                                $childActiveGrandchild = false;
+                                                if ($childHasChildren) {
+                                                    foreach ($childGrandchildren as $gc) {
+                                                        if (isset($gc['route']) && $currentRoute === $gc['route']) {
+                                                            $childActiveGrandchild = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                $childDisabled = ! isset($child['route']) && ! $childHasChildren;
                                             @endphp
-                                            <a href="{{ $childHref }}"
-                                               class="app-nav-subitem {{ $childActive ? 'is-active' : '' }} {{ $childDisabled ? 'is-disabled' : '' }}"
-                                               @if ($childDisabled) aria-disabled="true" title="Yakında" @endif>
-                                                <span class="app-nav-dot" aria-hidden="true"></span>
-                                                <span>{{ $child['label'] }}</span>
-                                            </a>
+                                            @if ($childHasChildren)
+                                                <div class="app-nav-subgroup {{ $childActiveGrandchild ? 'is-open' : '' }}">
+                                                    <button type="button" class="app-nav-subitem app-nav-subitem-toggle" data-nested-toggle aria-expanded="{{ $childActiveGrandchild ? 'true' : 'false' }}">
+                                                        <span class="app-nav-dot" aria-hidden="true"></span>
+                                                        <span>{{ $child['label'] }}</span>
+                                                        <svg class="app-nav-sub-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            <path d="M6 9l6 6 6-6"/>
+                                                        </svg>
+                                                    </button>
+                                                    <div class="app-nav-subgroup-icerik">
+                                                        @foreach ($childGrandchildren as $gc)
+                                                            @php
+                                                                $gcHref = isset($gc['route']) ? route($gc['route']) : '#';
+                                                                $gcActive = isset($gc['route']) && $currentRoute === $gc['route'];
+                                                                $gcDisabled = ! isset($gc['route']);
+                                                            @endphp
+                                                            <a href="{{ $gcHref }}"
+                                                               class="app-nav-sub-subitem {{ $gcActive ? 'is-active' : '' }} {{ $gcDisabled ? 'is-disabled' : '' }}"
+                                                               @if ($gcDisabled) aria-disabled="true" title="Yakında" @endif>
+                                                                <span class="app-nav-dot" aria-hidden="true"></span>
+                                                                <span>{{ $gc['label'] }}</span>
+                                                            </a>
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                            @else
+                                                <a href="{{ $childHref }}"
+                                                   class="app-nav-subitem {{ $childActive ? 'is-active' : '' }} {{ $childDisabled ? 'is-disabled' : '' }}"
+                                                   @if ($childDisabled) aria-disabled="true" title="Yakında" @endif>
+                                                    <span class="app-nav-dot" aria-hidden="true"></span>
+                                                    <span>{{ $child['label'] }}</span>
+                                                </a>
+                                            @endif
                                         @endforeach
                                     </div>
                                 </div>
@@ -248,7 +289,7 @@
             </div>
 
             <div class="app-header-main">
-                <button class="app-menu-toggle" type="button" aria-label="Menüyü aç" data-sidebar-toggle>
+                <button class="app-menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false" aria-controls="app-sidebar" data-sidebar-toggle>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
                         <path d="M4 7 h16 M4 12 h16 M4 17 h16"/>
                     </svg>
@@ -285,12 +326,6 @@
                             <path d="M12 17.5 v0.5"/>
                         </svg>
                     </button>
-                    <button class="app-primary-btn" type="button">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                            <path d="M12 5 v14 M5 12 h14"/>
-                        </svg>
-                        <span>Yeni Kayıt</span>
-                    </button>
                 </div>
             </div>
         </header>
@@ -307,31 +342,69 @@
             const shell = document.body;
             const sidebar = document.getElementById('app-sidebar');
             const scrim = document.querySelector('.app-scrim');
+            const menuToggle = document.querySelector('.app-menu-toggle');
+            const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
 
-            // Restore collapsed state
-            if (localStorage.getItem('etys-sidebar-collapsed') === '1') {
+            function setNavOpen(open) {
+                sidebar.classList.toggle('is-open', open);
+                if (scrim) scrim.classList.toggle('is-open', open);
+                shell.classList.toggle('is-nav-open', open);
+                if (menuToggle) {
+                    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                    menuToggle.setAttribute('aria-label', open ? 'Menüyü kapat' : 'Menüyü aç');
+                }
+            }
+
+            if (!isMobile() && localStorage.getItem('etys-sidebar-collapsed') === '1') {
                 shell.classList.add('is-collapsed');
             }
 
             document.querySelectorAll('[data-sidebar-toggle]').forEach(el => {
                 el.addEventListener('click', () => {
-                    sidebar.classList.toggle('is-open');
-                    scrim.classList.toggle('is-open');
+                    setNavOpen(!sidebar.classList.contains('is-open'));
                 });
             });
 
             document.querySelectorAll('[data-collapse-toggle]').forEach(el => {
                 el.addEventListener('click', () => {
+                    if (isMobile()) return;
                     const collapsed = shell.classList.toggle('is-collapsed');
                     localStorage.setItem('etys-sidebar-collapsed', collapsed ? '1' : '0');
                 });
             });
 
+            sidebar.querySelectorAll('a[href]:not(.is-disabled)').forEach(a => {
+                a.addEventListener('click', () => {
+                    if (isMobile()) setNavOpen(false);
+                });
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
+                    setNavOpen(false);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (!isMobile()) setNavOpen(false);
+            });
+
             document.querySelectorAll('[data-dropdown-toggle]').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    if (shell.classList.contains('is-collapsed')) return;
+                    if (shell.classList.contains('is-collapsed') && !isMobile()) return;
                     const parent = btn.closest('.app-nav-parent');
                     const isOpen = parent.classList.toggle('is-open');
+                    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                });
+            });
+
+            // Nested submenu toggle (Taşınmazlar → Sayıştay Raporları gibi)
+            document.querySelectorAll('[data-nested-toggle]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const grup = btn.closest('.app-nav-subgroup');
+                    const isOpen = grup.classList.toggle('is-open');
                     btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
                 });
             });

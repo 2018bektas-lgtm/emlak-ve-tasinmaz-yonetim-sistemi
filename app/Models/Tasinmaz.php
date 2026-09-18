@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\KayitTipi;
 use App\Enums\SatisDurumu;
 use App\Models\Concerns\PolimorfikSahipCascade;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,7 @@ class Tasinmaz extends Model
         'alan',
         'nitelik',
         'uzeri_bina_var_mi',
+        'kayit_tipi',
     ];
 
     protected function casts(): array
@@ -39,6 +41,7 @@ class Tasinmaz extends Model
         return [
             'alan' => 'decimal:2',
             'uzeri_bina_var_mi' => 'boolean',
+            'kayit_tipi' => KayitTipi::class,
         ];
     }
 
@@ -249,7 +252,10 @@ class Tasinmaz extends Model
 
     /**
      * Bağımsız bölümler (BBN): daire/dükkan/depo… her biri kendi durum
-     * alanlarını taşır; arsa üzerinde bina varsa 1+ satır olur.
+     * alanlarını taşır. Politika: her taşınmaz kaydı en fazla 1 BBN bilgisi
+     * taşır (aynı ada/parselde ek meskenler ayrı taşınmaz kaydı olur).
+     * `yapilar()` legacy amaçlı hasMany kalır; UI ve controller `yapi()`
+     * hasOne üzerinden çalışır.
      */
     public function yapilar(): HasMany
     {
@@ -258,9 +264,30 @@ class Tasinmaz extends Model
             ->orderBy('id');
     }
 
+    public function yapi(): HasOne
+    {
+        return $this->hasOne(TasinmazYapi::class, 'tasinmaz_id')->oldestOfMany();
+    }
+
     public function hisseler(): HasMany
     {
         return $this->hasMany(TasinmazHisse::class, 'tasinmaz_id')->orderBy('sira')->orderBy('id');
+    }
+
+    /**
+     * Tapudaki hissedarlar (hisse satış tebligatlarında çoklu seçim listesi).
+     */
+    public function malikler(): HasMany
+    {
+        return $this->hasMany(TasinmazMalik::class, 'tasinmaz_id')->orderBy('id');
+    }
+
+    /**
+     * Hisse satış encümen kararları (grup_no üzerinden basvuru grubuna bağlanır).
+     */
+    public function encumenler(): HasMany
+    {
+        return $this->hasMany(TasinmazEncumen::class, 'tasinmaz_id')->orderByDesc('id');
     }
 
     /**

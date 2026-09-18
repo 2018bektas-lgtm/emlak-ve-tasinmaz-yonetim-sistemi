@@ -8,7 +8,7 @@
 
 @push('scripts')
     <script src="{{ asset('js/hisse-tablo.js') }}?v=2"></script>
-    <script src="{{ asset('js/yapi-tablo.js') }}?v=1"></script>
+    <script src="{{ asset('js/yapi-tablo.js') }}?v=2"></script>
 @endpush
 
 @section('content')
@@ -28,6 +28,9 @@
 
 <form method="POST" action="{{ route('panel.tasinmazlar.store') }}" class="form-shell" enctype="multipart/form-data" novalidate>
     @csrf
+
+    {{-- 00 · Kayıt Tipi (BBN var/yok) --}}
+    @include('panel.tasinmazlar._kayit-tipi', ['tasinmazMevcut' => null])
 
     {{-- 01 · Konum haritası --}}
     <section class="form-section">
@@ -436,15 +439,6 @@
                 </div>
                 @error('kategori.mevcut_kullanim_sekli')<span class="error">{{ $message }}</span>@enderror
             </div>
-
-            <div class="form-field">
-                <label>Bina Durumu</label>
-                <label class="form-check">
-                    <input type="hidden" name="uzeri_bina_var_mi" value="0">
-                    <input type="checkbox" name="uzeri_bina_var_mi" value="1" @checked(old('uzeri_bina_var_mi'))>
-                    <span>Arsa üzerinde bina var</span>
-                </label>
-            </div>
         </div>
     </section>
 
@@ -520,18 +514,34 @@
                 <textarea id="ekbilgi-aciklama" name="ekbilgi[aciklama]" class="form-textarea" rows="3" maxlength="5000" placeholder="Ek notlar, gözlemler, durum açıklaması...">{{ old('ekbilgi.aciklama') }}</textarea>
             </div>
         </div>
+
+        @include('panel.tasinmazlar._meclis-karari', [
+            'meclisKarariMevcut' => null,
+            'ekbilgiMevcut' => null,
+        ])
     </section>
 
-    {{-- 07 · Bağımsız Bölümler (yapı) — opsiyonel --}}
-    <section class="form-section">
+    {{-- 07 · Bağımsız Bölüm Bilgisi — Kayıt tipine göre iki farklı panel --}}
+    <section class="form-section" data-bolum="bbn">
         <div class="form-section-head">
             <span class="form-section-num">07</span>
             <div class="form-section-head-text">
-                <h3>Bağımsız Bölümler</h3>
-                <small>Arsa üzerine bina/daire/dükkan/depo varsa buradan ekleyin. Her BBN kendi muhasebe / satış / kira / tahsis / açıklama bilgisini bağımsız olarak taşır.</small>
+                <h3>Bağımsız Bölüm Bilgisi</h3>
+                <small>Kayıt tipine göre alanlar değişir.</small>
             </div>
         </div>
-        @include('panel.tasinmazlar._yapi-panel', ['yapiEski' => old('yapilar', [])])
+        <div data-bbn-mode="tek">
+            @include('panel.tasinmazlar._yapi-panel', [
+                'yapiMevcut' => null,
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
+        </div>
+        <div data-bbn-mode="coklu">
+            @include('panel.tasinmazlar._yapi-panel-coklu', [
+                'yapilarEski' => old('yapilar', []),
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
+        </div>
     </section>
 
     {{-- 08 · Tapu --}}
