@@ -2,11 +2,18 @@
 
 @section('title', 'Yeni Hisse Satış Başvurusu')
 
+@section('shellClass', 'is-cam')
+
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
+@endpush
+
 @section('content')
 <section class="page-hero">
     <div class="page-hero-text">
+        <p class="hs-eyebrow">Hisse Satışı</p>
         <h2>Yeni Başvuru</h2>
-        <small>Başvuru açılacak taşınmazı arayın, sonuçtan "Yeni Başvuru" butonuna basın.</small>
+        <small>Başvuru açılacak taşınmazı bulun. Yalnızca kurumun hissesi olan ve başka hissedarı bulunan taşınmazlar listelenir.</small>
     </div>
     <div class="page-hero-actions">
         <a href="{{ route('panel.hisse-satisi.liste') }}" class="btn-cancel">
@@ -118,9 +125,9 @@
                                 <td class="td-mono"><span class="tl-badge">{{ $t->ada }}</span> / <span class="tl-badge">{{ $t->parsel }}</span></td>
                                 <td class="td-mono">{{ number_format($alan, 2, ',', '.') }}</td>
                                 <td class="td-mono"><strong>{{ number_format($bizim, 2, ',', '.') }}</strong></td>
-                                <td class="td-mono" style="color:#0e7c39;font-weight:700;">{{ number_format($diger, 2, ',', '.') }}</td>
+                                <td class="td-mono hs-diger-hisse">{{ number_format($diger, 2, ',', '.') }}</td>
                                 <td>
-                                    <a href="{{ route('panel.hisse-satisi.olustur', $t->id) }}" class="btn-submit" style="padding:5px 12px;font-size:0.78rem;">
+                                    <a href="{{ route('panel.hisse-satisi.olustur', $t->id) }}" class="btn-submit hs-mini-btn">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                                         Yeni Başvuru
                                     </a>

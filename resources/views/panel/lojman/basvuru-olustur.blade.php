@@ -2,77 +2,46 @@
 
 @section('title', 'Yeni Lojman Başvurusu')
 
+@section('shellClass', 'is-cam')
+
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
+    <link rel="stylesheet" href="{{ asset('css/lojman.css') }}?v=1">
+@endpush
+
 @section('content')
 <section class="page-hero">
     <div class="page-hero-text">
-        <h2>Yeni Başvuru</h2>
-        <small>Personel bilgileri ve lojman tercihi.</small>
+        <p class="hs-eyebrow">Lojman · Yeni Başvuru</p>
+        <h2>{{ $lojman ? $lojman->ad : 'Lojman Başvurusu' }}</h2>
+        <small>Personel bilgileri ve lojman tercihi. Lojman seçilmezse başvuru genel sıraya girer ve herhangi bir boş lojmana tahsis edilebilir.</small>
     </div>
     <div class="page-hero-actions">
-        <a href="{{ route('panel.lojman.basvurular') }}" class="btn-cancel">Vazgeç</a>
+        <a href="{{ $lojman ? route('panel.lojman.detay', $lojman->id) : route('panel.lojman.basvurular') }}" class="btn-cancel">← Vazgeç</a>
     </div>
 </section>
 
-@if ($errors->any())<div class="flash-error"><ul style="margin:0;padding-left:20px;">@foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
+@if ($errors->any())<div class="flash-error"><ul>@foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
 
-<form method="POST" action="{{ route('panel.lojman.basvuru.kaydet') }}">
+<form method="POST" action="{{ route('panel.lojman.basvuru.kaydet') }}" class="form-shell lj-form">
     @csrf
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">1</span>
-            <div class="form-section-head-text"><h3>Personel Bilgileri</h3></div>
+            <div class="form-section-head-text">
+                <h3>Başvuru</h3>
+                <small>T.C. Kimlik No kontrol haneleriyle doğrulanır; aynı kişinin sonuçlanmamış ikinci başvurusu açılamaz.</small>
+            </div>
         </div>
-        <div class="form-row form-row-2">
-            <div class="form-field"><label>Ad Soyad *</label><input type="text" name="ad_soyad" class="form-input" value="{{ old('ad_soyad') }}" required maxlength="200"></div>
-            <div class="form-field"><label>TC Kimlik No</label><input type="text" name="tc_kimlik" class="form-input" value="{{ old('tc_kimlik') }}" maxlength="11" placeholder="11 hane"></div>
-        </div>
-        <div class="form-row form-row-3">
-            <div class="form-field"><label>Sicil No</label><input type="text" name="sicil_no" class="form-input" value="{{ old('sicil_no') }}" maxlength="50"></div>
-            <div class="form-field"><label>Ünvan</label><input type="text" name="unvan" class="form-input" value="{{ old('unvan') }}" maxlength="150"></div>
-            <div class="form-field"><label>Birim</label><input type="text" name="birim" class="form-input" value="{{ old('birim') }}" maxlength="200"></div>
-        </div>
+        @include('panel.lojman._basvuru-form', ['basvuru' => null, 'kompakt' => false])
     </section>
 
-    <section class="form-section">
-        <div class="form-section-head">
-            <span class="form-section-num">2</span>
-            <div class="form-section-head-text"><h3>Başvuru Detayı</h3></div>
-        </div>
-        <div class="form-row form-row-3">
-            <div class="form-field">
-                <label>Lojman (opsiyonel)</label>
-                <select name="lojman_id" class="form-select">
-                    <option value="">— Herhangi bir lojman —</option>
-                    @foreach ($lojmanlar as $l)
-                        <option value="{{ $l->id }}" @selected(old('lojman_id', $lojman?->id) == $l->id)>{{ $l->ad }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="form-field">
-                <label>Tahsis Türü</label>
-                <select name="tahsis_turu" class="form-select">
-                    <option value="">— Seçin —</option>
-                    @foreach (['Sıra', 'Görev', 'Hizmet', 'Temsil'] as $t)
-                        <option value="{{ $t }}" @selected(old('tahsis_turu') === $t)>{{ $t }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="form-field"><label>Başvuru Tarihi *</label><input type="date" name="basvuru_tarihi" class="form-input" value="{{ old('basvuru_tarihi', now()->toDateString()) }}" required></div>
-        </div>
-        <div class="form-field">
-            <label>Durum *</label>
-            <select name="durum" class="form-select" required>
-                @foreach (['basvuruldu'=>'Başvuruldu','degerlendirmede'=>'Değerlendirmede','onaylandi'=>'Onaylandı','reddedildi'=>'Reddedildi'] as $k => $v)
-                    <option value="{{ $k }}" @selected(old('durum', 'basvuruldu') === $k)>{{ $v }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="form-field"><label>Açıklama</label><textarea name="aciklama" class="form-input" rows="3" maxlength="5000">{{ old('aciklama') }}</textarea></div>
-    </section>
-
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+    <div class="form-actions">
         <a href="{{ route('panel.lojman.basvurular') }}" class="btn-cancel">Vazgeç</a>
-        <button type="submit" class="btn-submit">Başvuruyu Kaydet</button>
+        <button type="submit" class="btn-submit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            Başvuruyu Kaydet
+        </button>
     </div>
 </form>
 @endsection

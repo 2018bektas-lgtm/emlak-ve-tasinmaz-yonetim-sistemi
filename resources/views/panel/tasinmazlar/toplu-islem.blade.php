@@ -2,6 +2,13 @@
 
 @section('title', 'Toplu İşlemler')
 
+@section('shellClass', 'is-cam')
+
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
+    <link rel="stylesheet" href="{{ asset('css/araclar.css') }}?v=1">
+@endpush
+
 @section('content')
 
 @if (session('basari'))
@@ -34,6 +41,7 @@
 
 <section class="page-hero">
     <div class="page-hero-text">
+        <p class="hs-eyebrow">Taşınmaz · İçe Aktarım</p>
         <h2>Toplu İşlemler</h2>
         <small>Excel/CSV üzerinden çoklu taşınmaz veya hisse içe aktarımı. Şablonu indirin, doldurun, yükleyin.</small>
     </div>

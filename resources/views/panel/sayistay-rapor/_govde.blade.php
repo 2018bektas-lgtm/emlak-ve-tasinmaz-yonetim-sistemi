@@ -10,6 +10,7 @@
 
 <section class="page-hero sr-hero">
     <div class="page-hero-text">
+        <p class="hs-eyebrow">Sayıştay Raporları</p>
         <h2>{{ $baslik }} <span class="sr-ek-rozet">{{ $ek }}</span></h2>
         <small>ÜLKESİ / İLİ : TÜRKİYE / {{ $secilenIlceAd ? mb_strtoupper($secilenIlceAd, 'UTF-8') : 'ANKARA' }} · Toplam {{ $tasinmazlar->total() }} taşınmaz</small>
     </div>

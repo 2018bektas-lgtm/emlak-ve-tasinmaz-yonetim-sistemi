@@ -24,8 +24,8 @@ class DatabaseSeeder extends Seeder
             MuhasebeKayitSeeder::class,
             KayitTuruSeeder::class,
             ImarDurumuSeeder::class,
+            MevcutKullanimSekliSeeder::class,
             YetkiSeeder::class,
-            MudurlukSeeder::class,
         ]);
     }
 }

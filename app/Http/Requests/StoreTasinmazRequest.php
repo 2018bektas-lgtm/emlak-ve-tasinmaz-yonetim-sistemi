@@ -3,11 +3,15 @@
 namespace App\Http\Requests;
 
 use App\Enums\SatisDurumu;
+use App\Http\Requests\Concerns\TasinmazTekillikKurali;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreTasinmazRequest extends FormRequest
 {
+    use TasinmazTekillikKurali;
+
     public function authorize(): bool
     {
         return auth()->check();
@@ -18,7 +22,6 @@ class StoreTasinmazRequest extends FormRequest
         return [
             // Lokasyon
             'mahalle_id' => ['required', 'integer', 'exists:mahalleler,id'],
-            'mudurluk_id' => ['nullable', 'integer', 'exists:mudurlukler,id'],
             'ada' => ['required', 'string', 'max:20'],
             'parsel' => ['required', 'string', 'max:20'],
 
@@ -62,7 +65,7 @@ class StoreTasinmazRequest extends FormRequest
             'yapi' => ['nullable', 'array'],
             'yapi.blok_no' => ['nullable', 'string', 'max:20'],
             'yapi.kat_no' => ['nullable', 'string', 'max:10'],
-            'yapi.bagimsiz_bolum_no' => ['nullable', 'string', 'max:20'],
+            'yapi.bagimsiz_bolum_no' => ['required_if:kayit_tipi,kat_mulkiyetli', 'nullable', 'string', 'max:20'],
             'yapi.nitelik' => ['nullable', 'string', 'max:50'],
             'yapi.brut_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
             'yapi.net_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
@@ -100,29 +103,13 @@ class StoreTasinmazRequest extends FormRequest
             'images' => ['nullable', 'array', 'max:20'],
             'images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
 
-            // Hisseler
-            'hisseler' => ['nullable', 'array'],
-            'hisseler.*.hisse_no' => ['nullable', 'integer', 'min:1'],
-            'hisseler.*.hisse_pay' => ['nullable', 'numeric', 'min:0'],
-            'hisseler.*.hisse_payda' => ['nullable', 'numeric', 'gt:0'],
-            'hisseler.*.hisse_yuzolcum' => ['nullable', 'numeric', 'min:0', 'max:9999999999999.99'],
-            'hisseler.*.edinme_sekli' => ['nullable', 'string', 'max:100'],
-            'hisseler.*.yevmiye_no' => ['nullable', 'integer', 'min:0'],
-            'hisseler.*.edinme_tarihi' => ['nullable', 'date'],
-            'hisseler.*.kayitlardan_cikis' => ['nullable', 'string', 'max:150'],
-            'hisseler.*.kayitlardan_cikistarihi' => ['nullable', 'date'],
-            'hisseler.*.hisse_durum' => ['nullable', 'in:aktif,pasif'],
-            'hisseler.*.islem_tipi' => ['nullable', 'in:alis,satis'],
-            'hisseler.*.maliyet_bedeli' => ['nullable', 'numeric', 'min:0'],
-            'hisseler.*.rayic_bedel' => ['nullable', 'numeric', 'min:0'],
-            'hisseler.*.emlak_vd' => ['nullable', 'numeric', 'min:0'],
-            'hisseler.*.iz_bedeli' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 
     public function messages(): array
     {
         return [
+            'yapi.bagimsiz_bolum_no.required_if' => 'Kat mülkiyetli kayıtta Bağımsız Bölüm No zorunludur.',
             'mahalle_id.required' => 'Mahalle seçimi zorunludur.',
             'mahalle_id.exists' => 'Seçilen mahalle geçerli değil.',
             'ada.required' => 'Ada bilgisi zorunludur.',
@@ -148,6 +135,11 @@ class StoreTasinmazRequest extends FormRequest
             'tapu.tapu_kaydi_pdf.mimes' => 'Tapu kaydı PDF olmalıdır.',
             'tapu.tapu_kaydi_pdf.max' => 'Tapu PDF en fazla 10 MB olabilir.',
         ];
+    }
+
+    public function after(): array
+    {
+        return [fn (Validator $validator) => $this->tekillikKontrolu($validator)];
     }
 
     protected function prepareForValidation(): void
@@ -220,25 +212,6 @@ class StoreTasinmazRequest extends FormRequest
             $tapu = [];
         }
 
-        $hisseler = $this->input('hisseler');
-        if (is_array($hisseler)) {
-            $temiz = [];
-            foreach ($hisseler as $h) {
-                if (! is_array($h)) {
-                    continue;
-                }
-                foreach (['hisse_pay', 'hisse_payda', 'hisse_yuzolcum', 'maliyet_bedeli', 'rayic_bedel', 'emlak_vd', 'iz_bedeli'] as $k) {
-                    $h[$k] = $this->trNumericCevir($h[$k] ?? null);
-                }
-                if (collect($h)->contains(fn ($v) => filled($v))) {
-                    $temiz[] = $h;
-                }
-            }
-            $hisseler = $temiz ?: null;
-        } else {
-            $hisseler = null;
-        }
-
         // Meclis kararı — checkbox işaretli değilse alanları temizle
         $meclisKarari = $this->input('meclis_karari');
         if (! is_array($meclisKarari) || ! ($ekbilgi['meclis_satis_karari_var'] ?? false)) {
@@ -261,7 +234,6 @@ class StoreTasinmazRequest extends FormRequest
             'yapi' => $yapi,
             'yapilar' => $yapilar,
             'tapu' => $tapu,
-            'hisseler' => $hisseler,
             'meclis_karari' => $meclisKarari,
         ]);
     }

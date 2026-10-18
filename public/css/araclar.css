@@ -1,0 +1,119 @@
+/* ==========================================================================
+   ETYS · Toplu İşlemler + Sayıştay Raporları — cam görünüm
+   corporate.css ve hisse-satis.css'ten sonra yüklenir; yalnızca .is-cam altında
+   eski düz kart stillerini ezer. Sayıştay tablosunun kendisi resmî form
+   olduğundan beyaz zeminde kalır (yazdırma çıktısı değişmez).
+   ========================================================================== */
+
+/* ---------- Ortak cam yüzey ---------- */
+.is-cam .ti-kart,
+.is-cam .sr-tab,
+.is-cam .sr-filtre,
+.is-cam .sr-tablo-kap {
+    border: 0;
+    background: var(--hs-cam);
+    -webkit-backdrop-filter: var(--hs-blur);
+    backdrop-filter: var(--hs-blur);
+    box-shadow: var(--hs-golge);
+}
+
+/* ---------- Toplu İşlemler ---------- */
+.is-cam .ti-grid { margin-bottom: 0; }
+.is-cam .ti-kart { padding: 22px 24px; border-radius: 24px; }
+.is-cam .ti-kart:hover { box-shadow: var(--hs-golge), 0 24px 44px -28px rgba(15, 23, 42, 0.35); }
+.is-cam .ti-kart-head { border-bottom-color: var(--hs-line); }
+.is-cam .ti-kart-ikon { border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 8px 18px -10px rgba(15, 23, 42, 0.5); }
+.is-cam .ti-kart-ikon-navy { background: linear-gradient(135deg, #4f6bff, #3b4fd8); }
+.is-cam .ti-kart-ikon-gold { background: linear-gradient(135deg, #ffb37a, #f97316); }
+.is-cam .ti-kart-baslik h3 { color: var(--hs-ink); font-weight: 700; }
+.is-cam .ti-kart-baslik small { color: var(--hs-muted); }
+.is-cam .ti-kart-sablon {
+    padding: 7px 13px;
+    border-radius: 999px;
+    color: var(--hs-ink);
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08), 0 4px 10px -6px rgba(15, 23, 42, 0.25);
+}
+.is-cam .ti-kart-sablon:hover { background: #fff; transform: translateY(-1px); }
+
+.is-cam .ti-dropzone {
+    border-radius: 18px;
+    border: 2px dashed rgba(15, 23, 42, 0.13);
+    background: rgba(255, 255, 255, 0.45);
+}
+.is-cam .ti-dropzone:hover,
+.is-cam .ti-dropzone.is-hover {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: #ff8a5b;
+    box-shadow: 0 0 0 4px rgba(255, 138, 91, 0.12);
+}
+.is-cam .ti-dropzone.is-dolu {
+    border-style: solid;
+    border-color: #ffc98b;
+    background: linear-gradient(180deg, rgba(255, 244, 230, 0.9), rgba(255, 233, 210, 0.75));
+}
+.is-cam .ti-dropzone:hover .ti-dropzone-icin svg { color: #f97316; }
+.is-cam .ti-dropzone-icin strong { color: var(--hs-ink); }
+.is-cam .ti-dosya-ad { color: #c2410c; }
+
+.is-cam .ti-ipuclari {
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+    color: var(--hs-text);
+}
+.is-cam .ti-ipuclari li::before { color: #ff8a5b; }
+.is-cam .ti-ipuclari strong { color: var(--hs-ink); }
+.is-cam .ti-ipuclari em { color: #c2410c; }
+
+.is-cam .ti-hatalar {
+    margin-bottom: 0;
+    border: 0;
+    border-radius: 18px;
+    background: rgba(255, 247, 230, 0.85);
+    box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.2), inset 4px 0 0 #f59e0b;
+    -webkit-backdrop-filter: var(--hs-blur);
+    backdrop-filter: var(--hs-blur);
+}
+
+/* ---------- Sayıştay Raporları ---------- */
+.is-cam .sr-hero { align-items: center; }
+.is-cam .sr-hero h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; }
+.is-cam .sr-ek-rozet {
+    padding: 3px 10px;
+    border-radius: 999px;
+    color: var(--hs-amber-ink);
+    background: var(--hs-amber);
+    font-size: 0.72rem;
+}
+
+.is-cam .sr-tab { margin-bottom: 0; padding: 6px; border-radius: 999px; }
+.is-cam .sr-tab-oge { border-radius: 999px; padding: 8px 16px; color: var(--hs-text); }
+.is-cam .sr-tab-oge:hover { background: rgba(255, 255, 255, 0.75); color: var(--hs-ink); }
+.is-cam .sr-tab-oge.is-aktif {
+    color: var(--hs-amber-ink);
+    background: var(--hs-amber);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 8px 18px -10px rgba(255, 120, 60, 0.7);
+}
+.is-cam .sr-tab-ek { border-radius: 999px; color: #9a3412; background: rgba(255, 138, 91, 0.14); }
+.is-cam .sr-tab-oge.is-aktif .sr-tab-ek { color: var(--hs-amber-ink); background: rgba(255, 255, 255, 0.55); }
+
+.is-cam .sr-filtre { margin-bottom: 0; padding: 16px 18px; border-radius: 22px; }
+
+.is-cam .sr-tablo-kap { margin-bottom: 0; padding: 10px; border-radius: 22px; }
+.is-cam .sr-tablo {
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+.is-cam .sr-tablo-baslik { background: #1e293b !important; }
+.is-cam .sr-tablo-altbaslik { background: #fff4e6 !important; color: #9a3412 !important; }
+.is-cam .sr-tablo-ek { background: #ffc98b !important; color: var(--hs-amber-ink) !important; }
+.is-cam .sr-tablo thead th:not(.sr-tablo-baslik):not(.sr-tablo-altbaslik):not(.sr-tablo-ek) { background: #f8fafc; }
+.is-cam .sr-tablo tbody tr:hover td:not([rowspan]) { background: #fff8f1; }
+
+@media print {
+    .is-cam .sr-tablo-kap { padding: 0; background: none; box-shadow: none; }
+    .is-cam .sr-tablo { box-shadow: none; border-radius: 0; }
+}

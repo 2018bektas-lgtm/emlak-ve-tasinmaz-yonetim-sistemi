@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\KayitTipi;
 use App\Http\Controllers\Concerns\TasinmazYetkisi;
 use App\Http\Requests\StoreTasinmazRequest;
 use App\Http\Requests\UpdateTasinmazRequest;
@@ -11,7 +12,6 @@ use App\Models\ImarDurumu;
 use App\Models\KayitTuru;
 use App\Models\Mahalle;
 use App\Models\MevcutKullanimSekli;
-use App\Models\Mudurluk;
 use App\Models\MuhasebeKayit;
 use App\Models\Resim;
 use App\Models\Tasinmaz;
@@ -64,14 +64,13 @@ class TasinmazController extends Controller
             }
         }
         $binaVarMi = $request->query('bina'); // 1 | 0 | null
+        $kayitTipi = $this->kayitTipiFiltresi($request);
 
         $sorgu = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',
                 'mahalle:id,ad,tkgm_id,ilce_id',
-                'mudurluk:id,ad',
                 'koordinat:id,tasinmaz_id,lat,lng,koordinat',
                 'imar:id,tasinmaz_id,imar_durumu_id,emsal,yenaz_yencok,imar_notu',
                 'imar.imarDurumu:id,ad',
@@ -85,21 +84,25 @@ class TasinmazController extends Controller
                 'yapilar.muhasebeKayit:id,ad,kod',
                 'yapilar.kayitTuru:id,ad,kod',
                 'resimler',
+                // Kullanım rozetleri (lojman / işgal kaydı / hisse dosyası)
+                'lojmanlar:id,tasinmaz_id,durum',
+                'lojmanlar.aktifTahsisler:id,lojman_id,baslangic_tarihi,bitis_tarihi',
+                'ecrimisiller:id,tasinmaz_id',
+                'ecrimisiller.tutanaklar:id,isgalci_id,isgal_bitis_tarihi',
+                'hisseBasvurulari:id,tasinmaz_id,grup_no,durum',
             ])
             ->withCount('resimler')
+            ->tap(fn ($s) => $this->modulFiltreleri($s, $request))
+            ->when($kayitTipi, fn ($s) => $s->where('kayit_tipi', $kayitTipi))
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
             ->when($nitelik !== '', fn ($s) => $s->where('nitelik', 'like', "%{$nitelik}%"))
             ->when($binaVarMi === '1', fn ($s) => $s->where('uzeri_bina_var_mi', true))
             ->when($binaVarMi === '0', fn ($s) => $s->where('uzeri_bina_var_mi', false))
-            // Satış durumu: ekbilgi VEYA herhangi bir yapıda o durum varsa
-            ->when($satisDurumu, function ($s) use ($satisDurumu) {
-                $s->where(function ($w) use ($satisDurumu) {
-                    $w->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu))
-                        ->orWhereHas('yapilar', fn ($y) => $y->where('satis_durumu', $satisDurumu));
-                });
-            })
+            // Satış durumu yalnızca ekbilgi'de tutulur (yapı satırları hep varsayılan
+            // "envanterde" kaldığından "Envanterde" filtresi her BBN'li kaydı eşliyordu)
+            ->when($satisDurumu, fn ($s) => $s->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu)))
             // Bayraklar: ekbilgi'de VEYA yapıda varsa yeter (=1); yokta hiçbir yerde olmasın (=0)
             ->when(! empty($bayrakFiltreleri), function ($s) use ($bayrakFiltreleri) {
                 foreach ($bayrakFiltreleri as $alan => $deger) {
@@ -170,19 +173,77 @@ class TasinmazController extends Controller
                 'satis_durumu' => $satisDurumu,
                 'mulkiyet' => $mulkiyet,
                 'bina' => $binaVarMi,
-            ], array_map(fn ($v) => (string) $v, $bayrakFiltreleri)),
-            'toplamKayit' => Tasinmaz::query()->mudurlukKapsami()->count(),
+                'kayit_tipi' => $kayitTipi,
+            ], array_map(fn ($v) => (string) $v, $bayrakFiltreleri), $this->modulFiltreDegerleri($request)),
+            'toplamKayit' => Tasinmaz::query()->count(),
+            // Kayıt tipi dağılımı (diğer filtrelerden bağımsız)
+            'tipSayilari' => Tasinmaz::query()
+                ->selectRaw('kayit_tipi, COUNT(*) as adet')
+                ->groupBy('kayit_tipi')
+                ->pluck('adet', 'kayit_tipi')
+                ->map(fn ($v) => (int) $v)
+                ->all(),
             'tumKolonlar' => TasinmazKolonlari::katalog(),
             'kolonGruplari' => TasinmazKolonlari::gruplar(),
             'gorunurKolonlar' => TasinmazKolonlari::kullaniciIcin(auth()->user()),
         ]);
     }
 
+    /** Lojman / işgal kaydı / hisse dosyası filtre anahtarları (1 = var, 0 = yok). */
+    private const MODUL_FILTRELERI = ['lojman', 'isgal_kaydi', 'hisse_dosyasi'];
+
+    /** @return array<string, string> */
+    private function modulFiltreDegerleri(Request $request): array
+    {
+        $d = [];
+        foreach (self::MODUL_FILTRELERI as $f) {
+            $v = $request->query($f);
+            $d[$f] = $v === '1' || $v === '0' ? $v : '';
+        }
+
+        return $d;
+    }
+
+    /**
+     * Diğer modüllerden gelen kullanım filtreleri:
+     *  - lojman: taşınmazda lojman kaydı
+     *  - isgal_kaydi: süren (bitişi boş ya da ileride tutanaklı) ecrimisil kaydı
+     *  - hisse_dosyasi: sonuçlanmamış hisse satışı başvurusu
+     */
+    private function modulFiltreleri($sorgu, Request $request): void
+    {
+        $bugun = now()->toDateString();
+        $kapsam = [
+            'lojman' => fn ($q, bool $var) => $var ? $q->whereHas('lojmanlar') : $q->whereDoesntHave('lojmanlar'),
+            'isgal_kaydi' => function ($q, bool $var) use ($bugun) {
+                $sart = fn ($e) => $e->whereHas('tutanaklar', fn ($t) => $t->where(fn ($w) => $w->whereNull('isgal_bitis_tarihi')->orWhereDate('isgal_bitis_tarihi', '>=', $bugun)));
+
+                return $var ? $q->whereHas('ecrimisiller', $sart) : $q->whereDoesntHave('ecrimisiller', $sart);
+            },
+            'hisse_dosyasi' => function ($q, bool $var) {
+                $sart = fn ($b) => $b->whereNotIn('durum', ['tamamlandi', 'reddedildi']);
+
+                return $var ? $q->whereHas('hisseBasvurulari', $sart) : $q->whereDoesntHave('hisseBasvurulari', $sart);
+            },
+        ];
+        foreach ($this->modulFiltreDegerleri($request) as $f => $v) {
+            if ($v !== '') {
+                $kapsam[$f]($sorgu, $v === '1');
+            }
+        }
+    }
+
+    /** ?kayit_tipi= değeri — yalnızca geçerli KayitTipi değerleri kabul edilir. */
+    private function kayitTipiFiltresi(Request $request): ?string
+    {
+        return KayitTipi::tryFrom((string) $request->query('kayit_tipi'))?->value;
+    }
+
     /**
      * Liste filtrelerini paylaşımlı olarak bir sorguya dönüştürür.
      * export (excel/kml/pdf) ve geojson-filtreli aynı sorguyu kullanır.
      * Eğer `?ids=1,2,3` geldiyse tüm filtreler yok sayılır ve sadece bu id'ler
-     * (müdürlük kapsamı çerçevesinde) sorgulanır.
+     * sorgulanır.
      */
     private function listeSorgusu(Request $request): \Illuminate\Database\Eloquent\Builder
     {
@@ -195,7 +256,6 @@ class TasinmazController extends Controller
                 ->all();
 
             return Tasinmaz::query()
-                ->mudurlukKapsami()
                 ->whereIn('id', $idler);
         }
 
@@ -207,6 +267,7 @@ class TasinmazController extends Controller
         $satisDurumu = $request->query('satis_durumu');
         $mulkiyet = $request->query('mulkiyet');
         $binaVarMi = $request->query('bina');
+        $kayitTipi = $this->kayitTipiFiltresi($request);
 
         $bayrakFiltreleri = [];
         foreach (['kira_var', 'tahsis_var', 'ust_hakki_var', 'meclis_satis_karari_var'] as $f) {
@@ -217,19 +278,17 @@ class TasinmazController extends Controller
         }
 
         return Tasinmaz::query()
-            ->mudurlukKapsami()
+            ->tap(fn ($s) => $this->modulFiltreleri($s, $request))
+            ->when($kayitTipi, fn ($s) => $s->where('kayit_tipi', $kayitTipi))
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
             ->when($nitelik !== '', fn ($s) => $s->where('nitelik', 'like', "%{$nitelik}%"))
             ->when($binaVarMi === '1', fn ($s) => $s->where('uzeri_bina_var_mi', true))
             ->when($binaVarMi === '0', fn ($s) => $s->where('uzeri_bina_var_mi', false))
-            ->when($satisDurumu, function ($s) use ($satisDurumu) {
-                $s->where(function ($w) use ($satisDurumu) {
-                    $w->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu))
-                        ->orWhereHas('yapilar', fn ($y) => $y->where('satis_durumu', $satisDurumu));
-                });
-            })
+            // Satış durumu yalnızca ekbilgi'de tutulur (yapı satırları hep varsayılan
+            // "envanterde" kaldığından "Envanterde" filtresi her BBN'li kaydı eşliyordu)
+            ->when($satisDurumu, fn ($s) => $s->whereHas('ekbilgi', fn ($e) => $e->where('satis_durumu', $satisDurumu)))
             ->when(! empty($bayrakFiltreleri), function ($s) use ($bayrakFiltreleri) {
                 foreach ($bayrakFiltreleri as $alan => $deger) {
                     if ($deger === 1) {
@@ -283,12 +342,13 @@ class TasinmazController extends Controller
     {
         $tasinmazlar = $this->listeSorgusu($request)
             ->with([
-                'il:id,ad', 'ilce:id,ad', 'mahalle:id,ad,tkgm_id', 'mudurluk:id,ad',
+                'il:id,ad', 'ilce:id,ad', 'mahalle:id,ad,tkgm_id',
                 'tapu', 'imar.imarDurumu:id,ad',
                 'kategori.muhasebeKayit:id,ad,kod',
                 'hisseler:id,tasinmaz_id,hisse_durum,hisse_pay,hisse_payda,hisse_yuzolcum',
                 'yapilar',
                 'ekbilgi', 'koordinat',
+                'lojmanlar.aktifTahsisler', 'ecrimisiller.tutanaklar', 'hisseBasvurulari:id,tasinmaz_id,grup_no,durum',
             ])
             ->withCount('resimler')
             ->orderBy('id')
@@ -385,6 +445,25 @@ class TasinmazController extends Controller
      * Her kolon anahtarı için taşınmaz veri değerini üretir.
      * Kolon anahtarları TasinmazKolonlari::katalog() ile birebir.
      */
+    /** "Lojman (dolu) · İşgal kaydı · Hisse satışında" — liste/Excel ortak. */
+    private function kullanimMetni(Tasinmaz $t): string
+    {
+        $p = [];
+        if ($t->relationLoaded('lojmanlar') ? $t->lojmanlar->isNotEmpty() : $t->lojmanlar()->exists()) {
+            $p[] = $t->lojmanlar->count() === 1
+                ? 'Lojman ('.mb_strtolower($t->lojmanlar->first()->durumEtiketi()).')'
+                : $t->lojmanlar->count().' lojman';
+        }
+        if ($t->ecrimisiller->contains(fn ($e) => $e->durum() === 'devam-eden')) {
+            $p[] = 'İşgal kaydı';
+        }
+        if ($t->hisseBasvurulari->contains(fn ($b) => ! in_array($b->durum?->value, ['tamamlandi', 'reddedildi'], true))) {
+            $p[] = 'Hisse satışında';
+        }
+
+        return implode(' · ', $p);
+    }
+
     private function kolonMetni(Tasinmaz $t, string $anahtar): string
     {
         $aktifHisseler = $t->hisseler->where('hisse_durum', 'aktif');
@@ -402,7 +481,6 @@ class TasinmazController extends Controller
             'takbis' => optional($t->tapu)->takbis_zemin_no ?? '',
             'ilce' => optional($t->ilce)->ad ?? '',
             'mahalle' => optional($t->mahalle)->ad ?? '',
-            'mudurluk' => optional($t->mudurluk)->ad ?? '',
             'ada' => $t->ada ?? '',
             'parsel' => $t->parsel ?? '',
             'alan' => $t->alan !== null ? number_format((float) $t->alan, 2, ',', '.') : '',
@@ -423,6 +501,7 @@ class TasinmazController extends Controller
             'tahsis' => $bayrak('tahsis_var') ? 'Var' : 'Yok',
             'ust_hakki' => $bayrak('ust_hakki_var') ? 'Var' : 'Yok',
             'kira' => $bayrak('kira_var') ? 'Var' : 'Yok',
+            'kullanim' => $this->kullanimMetni($t),
             'meclis' => $bayrak('meclis_satis_karari_var') ? 'Var' : 'Yok',
             'geometri' => ($t->koordinat && ! empty($t->koordinat->koordinat)) ? 'Var' : 'Yok',
             'ek_rapor' => '',
@@ -440,7 +519,7 @@ class TasinmazController extends Controller
             'ada', 'parsel', 'kat_no', 'blok_no', 'bb_no', 'bina', 'tahsis',
             'ust_hakki', 'kira', 'meclis', 'geometri', 'dosya' => 9,
             'ilce', 'satis', 'hisse_durumu' => 12,
-            'mahalle', 'mudurluk', 'alan', 'hisse_m2', 'takbis',
+            'mahalle', 'alan', 'hisse_m2', 'takbis',
             'imar', 'mulkiyet' => 16,
             'nitelik', 'muhasebe' => 22,
             'aciklama' => 30,
@@ -541,7 +620,7 @@ class TasinmazController extends Controller
     {
         $tasinmazlar = $this->listeSorgusu($request)
             ->with([
-                'il:id,ad', 'ilce:id,ad', 'mahalle:id,ad,tkgm_id', 'mudurluk:id,ad',
+                'il:id,ad', 'ilce:id,ad', 'mahalle:id,ad,tkgm_id',
                 'tapu', 'imar.imarDurumu:id,ad',
                 'kategori.muhasebeKayit:id,ad,kod',
                 'hisseler:id,tasinmaz_id,hisse_durum,hisse_pay,hisse_payda,hisse_yuzolcum',
@@ -578,7 +657,6 @@ class TasinmazController extends Controller
         $parsel = trim((string) $request->query('parsel', ''));
 
         $sorgu = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'koordinat'])
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
@@ -624,7 +702,6 @@ class TasinmazController extends Controller
                 'il:id,ad',
                 'ilce:id,ad',
                 'mahalle:id,ad,tkgm_id,ilce_id',
-                'mudurluk:id,ad',
                 'koordinat',
                 'imar.imarDurumu:id,ad',
                 'tapu',
@@ -637,6 +714,11 @@ class TasinmazController extends Controller
                 'yapilar.tapu',
                 'resimler',
                 'meclisKararlari',
+                // Kullanım (salt okunur): lojman, işgal, hisse satışı modüllerinden
+                'lojmanlar.aktifTahsisler',
+                'ecrimisiller.tutanaklar:id,isgalci_id,isgal_baslangic_tarihi,isgal_bitis_tarihi',
+                'hisseBasvurulari:id,tasinmaz_id,grup_no,ad_soyad,durum',
+                'degerlemeler:id,tasinmaz_id,tip,bb_no,toplam_bedel,birim_fiyat,rapor_no,rapor_tarihi',
             ]);
 
         return view('panel.tasinmazlar.goster', [
@@ -648,6 +730,13 @@ class TasinmazController extends Controller
     {
         $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
         $id = $model->id;
+
+        if ($engel = $model->silmeEngelleri()) {
+            return back()->withErrors([
+                'sil' => 'Taşınmaz #'.$id.' silinemez; bağlı kayıtlar var: '.implode(', ', $engel).'. Önce ilgili modülde bu kayıtları kapatın ya da taşıyın.',
+            ]);
+        }
+
         $model->delete();
 
         return redirect()
@@ -659,8 +748,6 @@ class TasinmazController extends Controller
     {
         return view('panel.tasinmazlar.olustur', [
             'iller' => Il::orderBy('ad')->get(['id', 'ad', 'tkgm_id']),
-            'mudurlukler' => Mudurluk::query()->aktif()->orderBy('sira')->get(['id', 'ad']),
-            'mudurlukSecilebilir' => auth()->user()?->izinVarMi('tasinmaz.tumunu-gor') ?? false,
             'muhasebeKayitlari' => $this->hiyerarsikSecenekler(MuhasebeKayit::query()),
             'kayitTurleri' => $this->hiyerarsikSecenekler(KayitTuru::query()),
             'mevcutKullanimSekilleri' => MevcutKullanimSekli::where('aktif_mi', true)
@@ -692,7 +779,6 @@ class TasinmazController extends Controller
         $yapilarVeri = $veri['yapilar'] ?? null;
         $tapu = $veri['tapu'] ?? null;
         $resimler = $request->file('images') ?? [];
-        $hisseler = $veri['hisseler'] ?? [];
         $meclisKarariVeri = $veri['meclis_karari'] ?? null;
         $meclisPdf = $request->file('meclis_karari.karar_pdf');
         // Tasinmaz alanlarindan yardimci alanlari ayir
@@ -710,13 +796,11 @@ class TasinmazController extends Controller
             $veri['yapilar'],
             $veri['tapu'],
             $veri['images'],
-            $veri['hisseler'],
             $veri['meclis_karari'],
         );
 
-        $veri = $this->mudurlukIdUygula($veri);
-
-        $tasinmaz = DB::transaction(function () use ($veri, $koordinatVeri, $imarVeri, $kategoriVeri, $ekbilgiVeri, $yapiVeri, $yapilarVeri, $tapu, $resimler, $hisseler, $meclisKarariVeri, $meclisPdf) {
+        $tasinmaz = DB::transaction(function () use ($veri, $koordinatVeri, $imarVeri, $kategoriVeri, $ekbilgiVeri, $yapiVeri, $yapilarVeri, $tapu, $resimler, $meclisKarariVeri, $meclisPdf) {
+            // Hisseler oluşturma ekranından girilmez; kayıt sonrası düzenleme ekranından eklenir.
             $tasinmaz = Tasinmaz::create($veri);
 
             // Sadece harita uzerinden lat/lng verilmisse koordinat kaydi olustur
@@ -757,6 +841,9 @@ class TasinmazController extends Controller
                 $tasinmaz->yapilar()->create($yapiVeri);
             } elseif (is_array($yapilarVeri)) {
                 // kat_mulkiyetsiz_bina: çoklu BBN
+                // validated() diziyi kural sırasıyla yeniden kurar (ör. blok_no / id olmayan satırlar
+                // sona düşer); formdaki sırayı korumak için indekse göre sırala.
+                ksort($yapilarVeri);
                 foreach (array_values($yapilarVeri) as $sira => $y) {
                     if (! is_array($y)) {
                         continue;
@@ -795,23 +882,6 @@ class TasinmazController extends Controller
                 $tasinmaz->tapu()->create($tapu);
             }
 
-            // Hisseler — birden fazla, sirali
-            if (! empty($hisseler)) {
-                foreach (array_values($hisseler) as $sira => $h) {
-                    $h['sira'] = $sira;
-                    // Bos alanlari null yap (form'dan bos string gelir)
-                    foreach ($h as $k => $v) {
-                        if ($v === '') {
-                            $h[$k] = null;
-                        }
-                    }
-                    if (empty($h['hisse_durum'])) {
-                        $h['hisse_durum'] = 'aktif';
-                    }
-                    $tasinmaz->hisseler()->create($h);
-                }
-            }
-
             // Resim yukleme — ilk resim otomatik kapak, kalanlar sirali
             if (! empty($resimler)) {
                 $klasor = 'tasinmazlar/'.$tasinmaz->id.'/'.now()->format('Y/m');
@@ -838,7 +908,7 @@ class TasinmazController extends Controller
     public function edit(int $mahalleTkgmId, string $ada, string $parsel): View
     {
         $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel)
-            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle', 'mudurluk']);
+            ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
 
         // Cascade dropdown'lar icin il seciliyse ilceleri, ilce seciliyse mahalleleri onceden yukle
         $ilceler = $model->il_id
@@ -851,8 +921,6 @@ class TasinmazController extends Controller
         return view('panel.tasinmazlar.duzenle', [
             'tasinmaz' => $model,
             'iller' => Il::orderBy('ad')->get(['id', 'ad', 'tkgm_id']),
-            'mudurlukler' => Mudurluk::query()->orderBy('sira')->get(['id', 'ad']),
-            'mudurlukSecilebilir' => auth()->user()?->izinVarMi('tasinmaz.tumunu-gor') ?? false,
             'ilcelerOnceden' => $ilceler,
             'mahallelerOnceden' => $mahalleler,
             'muhasebeKayitlari' => $this->hiyerarsikSecenekler(MuhasebeKayit::query()),
@@ -871,7 +939,7 @@ class TasinmazController extends Controller
         $model = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel)
             ->load(['koordinat', 'imar', 'tapu', 'resimler', 'hisseler', 'kategori', 'ekbilgi', 'yapilar', 'mahalle']);
 
-        $veri = $this->mudurlukIdUygula($request->validated(), true);
+        $veri = $request->validated();
         $koordinatVeri = [
             'lat' => $veri['lat'] ?? null,
             'lng' => $veri['lng'] ?? null,
@@ -982,21 +1050,35 @@ class TasinmazController extends Controller
                     $model->yapilar()->create($yapiVeri);
                 }
             } elseif (is_array($yapilarVeri)) {
-                // kat_mulkiyetsiz_bina: çoklu BBN. Mevcutları temizle ve yeni listeyi yaz.
-                // (basit ama güvenli: form submit'te tam liste geliyor)
-                $model->yapilar->each->delete();
+                // kat_mulkiyetsiz_bina: çoklu BBN. Liste ile eşitle — id'si gelen mevcut
+                // bölüm güncellenir, yenisi eklenir, listeden çıkarılan silinir. Silip
+                // yeniden oluşturmak bölümlere bağlı tapu/karar/resimleri kaybettiriyordu.
+                $mevcutlar = $model->yapilar()->get()->keyBy('id');
+                $korunan = [];
+                // validated() diziyi kural sırasıyla yeniden kurar (ör. blok_no / id olmayan satırlar
+                // sona düşer); formdaki sırayı korumak için indekse göre sırala.
+                ksort($yapilarVeri);
                 foreach (array_values($yapilarVeri) as $sira => $y) {
                     if (! is_array($y)) {
                         continue;
                     }
+                    $id = isset($y['id']) ? (int) $y['id'] : null;
+                    unset($y['id']);
                     $y['sira'] = $sira;
                     foreach ($y as $k => $v) {
                         if ($v === '') {
                             $y[$k] = null;
                         }
                     }
-                    $model->yapilar()->create($y);
+                    // Başka bir kayda ait id gelirse yok sayılır → yeni bölüm olarak eklenir
+                    if ($id && $mevcutlar->has($id)) {
+                        $mevcutlar[$id]->update($y);
+                        $korunan[] = $id;
+                    } else {
+                        $model->yapilar()->create($y);
+                    }
                 }
+                $mevcutlar->except($korunan)->each->delete();
             } else {
                 // bos_parsel: BBN yok
                 $model->yapilar->each->delete();
@@ -1054,7 +1136,7 @@ class TasinmazController extends Controller
         $model->refresh()->load('mahalle');
 
         return redirect()
-            ->route('panel.tasinmazlar.duzenle', $model->duzenleParams())
+            ->to($model->rota('duzenle'))
             ->with('basari', 'Taşınmaz #'.$model->id.' başarıyla güncellendi.');
     }
 
@@ -1088,7 +1170,6 @@ class TasinmazController extends Controller
         }
 
         $kayitlar = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',

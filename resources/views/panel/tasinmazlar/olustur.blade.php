@@ -4,12 +4,14 @@
 
 @push('head')
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-form.css') }}?v=5">
 @endpush
 
 @push('scripts')
-    <script src="{{ asset('js/hisse-tablo.js') }}?v=2"></script>
-    <script src="{{ asset('js/yapi-tablo.js') }}?v=2"></script>
+    <script src="{{ asset('js/yapi-tablo.js') }}?v=4"></script>
 @endpush
+
+@section('shellClass', 'is-cam')
 
 @section('content')
 @if (session('basari'))
@@ -26,14 +28,24 @@
     </div>
 @endif
 
-<form method="POST" action="{{ route('panel.tasinmazlar.store') }}" class="form-shell" enctype="multipart/form-data" novalidate>
+<form method="POST" action="{{ route('panel.tasinmazlar.store') }}" class="form-shell tf-shell" enctype="multipart/form-data" novalidate>
     @csrf
 
     {{-- 00 · Kayıt Tipi (BBN var/yok) --}}
     @include('panel.tasinmazlar._kayit-tipi', ['tasinmazMevcut' => null])
 
+    <div class="tf-bos" aria-live="polite">
+        <span class="tf-bos-ikon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        </span>
+        <div>
+            <strong>Kayıt tipini seçin</strong>
+            <p>Seçiminize göre konum, tapu ve bağımsız bölüm alanları burada açılır.</p>
+        </div>
+    </div>
+
     {{-- 01 · Konum haritası --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">01</span>
             <div class="form-section-head-text">
@@ -208,7 +220,7 @@
     </section>
 
     {{-- 02 · Konum bilgileri (5 kolon: il/ilçe/mahalle/ada/parsel) --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">02</span>
             <div class="form-section-head-text">
@@ -255,39 +267,44 @@
                 @error('parsel')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
-        <div class="form-row form-row-2" style="margin-top:14px">
-            <div class="form-field {{ $errors->has('mudurluk_id') ? 'has-error' : '' }}">
-                <label for="mudurluk_id">Müdürlük</label>
-                @if ($mudurlukSecilebilir ?? false)
-                    <select id="mudurluk_id" name="mudurluk_id" class="form-select">
-                        <option value="">— Seçin —</option>
-                        @foreach ($mudurlukler ?? [] as $m)
-                            <option value="{{ $m->id }}" @selected(old('mudurluk_id') == $m->id)>{{ $m->ad }}</option>
-                        @endforeach
-                    </select>
-                    <span class="hint">Kayıt hangi müdürlüğe ait olacak.</span>
-                @else
-                    <input type="text" class="form-input" value="{{ auth()->user()->mudurluk->ad ?? 'Müdürlük atanmamış' }}" disabled>
-                    <span class="hint">Kayıt sizin müdürlüğünüze yazılır.</span>
-                @endif
-                @error('mudurluk_id')<span class="error">{{ $message }}</span>@enderror
+    </section>
+
+    {{-- Bağımsız Bölüm — kat mülkiyetlide kaydın kimliği; konumun hemen altında --}}
+    <section class="form-section" data-bolum="bbn" data-tip-adim>
+        <div class="form-section-head">
+            <span class="form-section-num">07</span>
+            <div class="form-section-head-text">
+                <h3>Bağımsız Bölüm Bilgisi</h3>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu kaydın ait olduğu bağımsız bölüm. Blok (varsa) ve BB No kaydı tekilleştirir.", "kat_mulkiyetsiz_bina": "Bina üzerindeki bölümler — ayrı tapuları yoktur, hepsi bu kayıt altında listelenir.", "varsayilan": "Kayıt tipine göre alanlar değişir."}'>Kayıt tipine göre alanlar değişir.</small>
             </div>
+        </div>
+        <div data-bbn-mode="tek">
+            @include('panel.tasinmazlar._yapi-panel', [
+                'yapiMevcut' => null,
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
+        </div>
+        <div data-bbn-mode="coklu">
+            @include('panel.tasinmazlar._yapi-panel-coklu', [
+                'yapilarEski' => old('yapilar', []),
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
         </div>
     </section>
 
     {{-- 03 · Fiziksel bilgiler (2 kolon) --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">03</span>
             <div class="form-section-head-text">
                 <h3>Fiziksel Bilgiler</h3>
-                <small>Parselin toplam alanı ve niteliği.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bölümün bulunduğu ana taşınmazın (parselin) tapudaki yüzölçümü ve niteliği. Bölümün kendi m² bilgisi Bağımsız Bölüm alanındadır.", "varsayilan": "Parselin tapudaki yüzölçümü ve niteliği."}'>Parselin tapudaki yüzölçümü ve niteliği.</small>
             </div>
         </div>
 
         <div class="form-row form-row-2">
             <div class="form-field {{ $errors->has('alan') ? 'has-error' : '' }}">
-                <label for="alan">Alan (m²) <span class="required">*</span></label>
+                <label for="alan"><span data-tip-metin='{"kat_mulkiyetli": "Ana Taşınmaz Alanı (m²)", "varsayilan": "Parsel Alanı (m²)"}'>Parsel Alanı (m²)</span> <span class="required">*</span></label>
                 @php
                     $alanEski = old('alan');
                     if ($alanEski !== null && $alanEski !== '') {
@@ -307,15 +324,15 @@
             </div>
 
             <div class="form-field {{ $errors->has('nitelik') ? 'has-error' : '' }}">
-                <label for="nitelik">Nitelik <span class="required">*</span></label>
-                <input id="nitelik" name="nitelik" type="text" class="form-input" value="{{ old('nitelik') }}" required maxlength="100" placeholder="Arsa · Tarla · Bahçe · Bağ">
+                <label for="nitelik"><span data-tip-metin='{"kat_mulkiyetli": "Ana Taşınmaz Niteliği", "varsayilan": "Tapu Niteliği"}'>Tapu Niteliği</span> <span class="required">*</span></label>
+                <input id="nitelik" name="nitelik" type="text" class="form-input" value="{{ old('nitelik') }}" required maxlength="100" placeholder="Arsa · Tarla · Bahçe · Bağ" data-tip-placeholder='{"bos_parsel": "Arsa · Tarla · Bahçe · Bağ", "kat_mulkiyetsiz_bina": "Kargir ev ve arsası · Betonarme bina ve arsası", "kat_mulkiyetli": "Arsa · Betonarme bina ve arsası", "varsayilan": "Arsa · Tarla · Bahçe · Bağ"}'>
                 @error('nitelik')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
     </section>
 
     {{-- 04 · İmar bilgileri --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">04</span>
             <div class="form-section-head-text">
@@ -384,12 +401,12 @@
     </section>
 
     {{-- 05 · Sınıflandırma (kategori — arsa seviyesi) --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">05</span>
             <div class="form-section-head-text">
                 <h3>Sınıflandırma</h3>
-                <small>Arsanın muhasebe/kayıt türü/kullanım bilgisi. Üzerinde bağımsız bölüm varsa her BBN kendi ayrı sınıflandırmasını Bölüm 07'de taşır.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu bağımsız bölümün muhasebe kaydı, kayıt türü ve mevcut kullanım şekli.", "kat_mulkiyetsiz_bina": "Taşınmazın (parselin tamamının) muhasebe kaydı, kayıt türü ve kullanımı — bina içindeki bölümler ayrıca sınıflandırılmaz.", "varsayilan": "Taşınmazın muhasebe kaydı, kayıt türü ve mevcut kullanım şekli."}'>Taşınmazın muhasebe kaydı, kayıt türü ve mevcut kullanım şekli.</small>
             </div>
         </div>
 
@@ -443,12 +460,12 @@
     </section>
 
     {{-- 06 · Ek Bilgi (ekbilgi — arsa seviyesi durum) --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">06</span>
             <div class="form-section-head-text">
                 <h3>Ek Bilgi (Durum)</h3>
-                <small>İşgal / satış / meclis kararı / tahsis / üst hakkı / kira gibi durum bayrakları — arsa için. BBN'lerin kendi durumu Bölüm 07'de.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu bağımsız bölümün işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu.", "kat_mulkiyetsiz_bina": "Taşınmazın (parselin tamamının) işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu — bölümler için ayrı tutulmaz.", "varsayilan": "Taşınmazın işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu."}'>Taşınmazın işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu.</small>
             </div>
         </div>
 
@@ -521,36 +538,13 @@
         ])
     </section>
 
-    {{-- 07 · Bağımsız Bölüm Bilgisi — Kayıt tipine göre iki farklı panel --}}
-    <section class="form-section" data-bolum="bbn">
-        <div class="form-section-head">
-            <span class="form-section-num">07</span>
-            <div class="form-section-head-text">
-                <h3>Bağımsız Bölüm Bilgisi</h3>
-                <small>Kayıt tipine göre alanlar değişir.</small>
-            </div>
-        </div>
-        <div data-bbn-mode="tek">
-            @include('panel.tasinmazlar._yapi-panel', [
-                'yapiMevcut' => null,
-                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
-            ])
-        </div>
-        <div data-bbn-mode="coklu">
-            @include('panel.tasinmazlar._yapi-panel-coklu', [
-                'yapilarEski' => old('yapilar', []),
-                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
-            ])
-        </div>
-    </section>
-
     {{-- 08 · Tapu --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">08</span>
             <div class="form-section-head-text">
                 <h3>Tapu Bilgileri</h3>
-                <small>TAKBİS zemin, cilt / sayfa ve tapu kaydı. İsteğe bağlı.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bağımsız bölümün <strong>kendi</strong> tapu kaydı (kat mülkiyeti kütüğü): TAKBİS, cilt / sayfa ve tapu belgesi.", "varsayilan": "Parselin tapu kaydı: TAKBİS, cilt / sayfa ve tapu belgesi."}'>Parselin tapu kaydı: TAKBİS, cilt / sayfa ve tapu belgesi.</small>
             </div>
         </div>
 
@@ -601,65 +595,8 @@
         </div>
     </section>
 
-    {{-- 09 · Hisse bilgileri --}}
-    <section class="form-section">
-        <div class="form-section-head">
-            <span class="form-section-num">09</span>
-            <div class="form-section-head-text">
-                <h3>Hisse Bilgileri</h3>
-                <small>Hisseleri tabloda tarayın; ekleme ve düzenleme modalda yapılır. Aktif hisselerin toplamı taşınmaz alanını aşarsa uyarı görünür.</small>
-            </div>
-        </div>
-
-        <div class="hisse-shell" id="hisse-shell" data-eski='@json(old("hisseler", []))'>
-            <div class="hisse-tablo-kabuk">
-                <table class="hisse-tablo" id="hisse-tablo">
-                    <thead>
-                        <tr>
-                            <th class="hisse-th-no">#</th>
-                            <th>Pay / Payda</th>
-                            <th>Hisseye Düşen (m²)</th>
-                            <th>Durum</th>
-                            <th>İşlem</th>
-                            <th>Edinme Tarihi</th>
-                            <th class="hisse-th-eylem" aria-label="Eylemler"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="hisse-tablo-body"></tbody>
-                </table>
-                <div class="hisse-tablo-bos" id="hisse-tablo-bos">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
-                    <span>Henüz hisse eklenmedi. Aşağıdaki butonla ekleyebilirsiniz.</span>
-                </div>
-            </div>
-
-            {{-- Aktif hisse toplam + limit uyarısı — JS canlı günceller --}}
-            <div class="hisse-toplam-bar" id="hisse-toplam-bar" hidden>
-                <div class="hisse-toplam-satir">
-                    <span class="hisse-toplam-etiket">Aktif Hisseler Toplamı</span>
-                    <strong class="hisse-toplam-deger" id="hisse-toplam-deger">0,00</strong>
-                    <span class="hisse-toplam-ayrac">/</span>
-                    <span class="hisse-toplam-taban" id="hisse-toplam-taban">— m²</span>
-                    <span class="hisse-toplam-oran" id="hisse-toplam-oran"></span>
-                </div>
-                <div class="hisse-toplam-uyari" id="hisse-toplam-uyari" hidden>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                    <span>Aktif hisselerin toplamı taşınmaz alanını aşıyor. Pay/payda değerlerini kontrol edin.</span>
-                </div>
-            </div>
-
-            <button type="button" class="hisse-ekle-btn" id="hisse-ekle-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Hisse Ekle
-            </button>
-
-            {{-- Backend'e gönderilecek hidden inputlar (JS state'ten sync eder) --}}
-            <div id="hisse-hidden-alan" hidden aria-hidden="true"></div>
-        </div>
-    </section>
-
     {{-- 10 · Resimler --}}
-    <section class="form-section">
+    <section class="form-section" data-tip-adim>
         <div class="form-section-head">
             <span class="form-section-num">10</span>
             <div class="form-section-head-text">
@@ -695,8 +632,12 @@
         </div>
     </section>
 
-    <div class="form-actions">
-        <a href="{{ route('panel.dashboard') }}" class="btn-cancel">Vazgeç</a>
+    <div class="form-actions" data-tip-adim>
+        <div class="tf-ozet-kutu">
+            <span class="tf-ozet-etiket">Kayıt tipi</span>
+            <strong data-tf-ozet>—</strong>
+        </div>
+        <a href="{{ route('panel.tasinmazlar.index') }}" class="btn-cancel">Vazgeç</a>
         <button type="submit" class="btn-submit">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M5 12 l5 5 L20 7"/>
@@ -705,120 +646,6 @@
         </button>
     </div>
 </form>
-
-{{-- Hisse Ekle/Düzenle Modal --}}
-<div class="modal-backdrop" id="hisse-modal" hidden>
-    <div class="modal-shell modal-shell-lg" role="dialog" aria-labelledby="hisse-modal-baslik" aria-modal="true">
-        <div class="modal-head">
-            <h4 id="hisse-modal-baslik">Hisse Ekle</h4>
-            <button type="button" class="modal-close" data-hisse-modal-kapat aria-label="Kapat">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-        </div>
-        <div class="modal-govde">
-            <div class="modal-mesaj" id="hisse-modal-mesaj" hidden></div>
-            <div class="form-row form-row-3">
-                <div class="form-field">
-                    <label>Hisse No</label>
-                    <input type="number" data-fld="hisse_no" class="form-input" min="1" placeholder="1">
-                </div>
-                <div class="form-field">
-                    <label>Pay</label>
-                    <input type="text" data-fld="hisse_pay" class="form-input" inputmode="decimal" placeholder="1">
-                </div>
-                <div class="form-field">
-                    <label>Payda</label>
-                    <input type="text" data-fld="hisse_payda" class="form-input" inputmode="decimal" placeholder="2">
-                </div>
-            </div>
-
-            <div class="hisse-hesap-bar">
-                <span class="hisse-hesap-etiket">Hisseye Düşen Alan</span>
-                <strong class="hisse-hesap-deger" data-modal-hesap>—</strong>
-                <span class="hisse-hesap-birim">m²</span>
-                <span class="hisse-hesap-formul" title="pay / payda × taşınmaz alanı">= pay / payda × alan</span>
-            </div>
-            <div class="hisse-modal-etki" data-modal-etki hidden>
-                <span class="hisse-modal-etki-etiket">Aktif toplam (bu hisse dahil)</span>
-                <strong data-modal-etki-deger>0,00</strong>
-                <span class="hisse-modal-etki-ayrac">/</span>
-                <span data-modal-etki-taban>— m²</span>
-                <span class="hisse-modal-etki-uyari" data-modal-etki-uyari hidden>Alan aşılıyor</span>
-            </div>
-
-            <div class="form-row form-row-2">
-                <div class="form-field">
-                    <label>Yevmiye No</label>
-                    <input type="number" data-fld="yevmiye_no" class="form-input" min="0" placeholder="12345">
-                </div>
-                <div class="form-field">
-                    <label>Edinme Tarihi</label>
-                    <input type="date" data-fld="edinme_tarihi" class="form-input">
-                </div>
-            </div>
-
-            <div class="form-row form-row-3">
-                <div class="form-field">
-                    <label>Edinme Şekli</label>
-                    <input type="text" data-fld="edinme_sekli" class="form-input" maxlength="100" placeholder="Satın alma, İntikal, Bağış...">
-                </div>
-                <div class="form-field">
-                    <label>Hisse Durumu</label>
-                    <select data-fld="hisse_durum" class="form-select">
-                        <option value="aktif">Aktif</option>
-                        <option value="pasif">Pasif</option>
-                    </select>
-                </div>
-                <div class="form-field">
-                    <label>İşlem Tipi</label>
-                    <select data-fld="islem_tipi" class="form-select">
-                        <option value="">— Seçilmedi —</option>
-                        <option value="alis">Alış</option>
-                        <option value="satis">Satış</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-row form-row-2">
-                <div class="form-field">
-                    <label>Kayıtlardan Çıkış Sebebi</label>
-                    <input type="text" data-fld="kayitlardan_cikis" class="form-input" maxlength="150" placeholder="Terkin, satış vb.">
-                </div>
-                <div class="form-field">
-                    <label>Kayıtlardan Çıkış Tarihi</label>
-                    <input type="date" data-fld="kayitlardan_cikistarihi" class="form-input">
-                </div>
-            </div>
-
-            <div class="hisse-bedel-baslik">Bedel Bilgileri</div>
-            <div class="form-row form-row-4">
-                <div class="form-field">
-                    <label>Maliyet Bedeli</label>
-                    <input type="text" data-fld="maliyet_bedeli" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
-                </div>
-                <div class="form-field">
-                    <label>Rayiç Bedel</label>
-                    <input type="text" data-fld="rayic_bedel" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
-                </div>
-                <div class="form-field">
-                    <label>Emlak Vergi Değeri</label>
-                    <input type="text" data-fld="emlak_vd" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
-                </div>
-                <div class="form-field">
-                    <label>İz Bedeli</label>
-                    <input type="text" data-fld="iz_bedeli" data-tr-numeric class="form-input" inputmode="decimal" placeholder="0,00">
-                </div>
-            </div>
-        </div>
-        <div class="modal-alt">
-            <button type="button" class="btn-cancel" data-hisse-modal-kapat>Vazgeç</button>
-            <button type="button" class="btn-submit" id="hisse-modal-kaydet">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                <span data-modal-btn>Ekle</span>
-            </button>
-        </div>
-    </div>
-</div>
 
 {{-- Modal: Yeni "İmar Durumu" ekle --}}
 <div class="modal-backdrop" id="imar-modal" hidden>

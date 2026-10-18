@@ -17,6 +17,7 @@ class HisseSatisTapu extends Model
         'tescil_edilen_yuzolcum',
         'tescil_evrak',
         'aciklama',
+        'envanter_islem', // tescilin envantere yaptığı değişiklikler — geri alma için (HisseSureci)
     ];
 
     protected function casts(): array
@@ -24,6 +25,7 @@ class HisseSatisTapu extends Model
         return [
             'tescil_tarihi' => 'date',
             'tescil_edilen_yuzolcum' => 'decimal:2',
+            'envanter_islem' => 'array',
         ];
     }
 

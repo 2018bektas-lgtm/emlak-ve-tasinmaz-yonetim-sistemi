@@ -23,13 +23,13 @@
 
 <div class="yapi-tekil">
     <p class="yapi-tekil-hint">
-        Bir taşınmaz kaydı en fazla <strong>tek bağımsız bölüm</strong> bilgisi taşır. Aynı ada/parselde başka daire/dükkan varsa <em>ayrı taşınmaz kaydı</em> açın.
-        Alanları boş bırakırsanız BBN oluşturulmaz. Muhasebe, kayıt türü, kullanım ve durum bilgileri arsa için <strong>Bölüm 05–06</strong>'da girilir.
+        Bu kayıt <strong>tek bir bağımsız bölüme</strong> aittir; aynı ada/parseldeki diğer daire ve dükkânlar için ayrı kayıt açın.
+        <strong>BB No zorunludur.</strong> Blok varsa girin — "A Blok 10" ile "B Blok 10" farklı kayıtlardır.
     </p>
 
     <div class="form-row form-row-4">
         <div class="form-field {{ $errors->has('yapi.blok_no') ? 'has-error' : '' }}">
-            <label for="yapi_blok_no">Blok No</label>
+            <label for="yapi_blok_no">Blok No <span class="hint">(varsa)</span></label>
             <input id="yapi_blok_no" type="text" name="yapi[blok_no]" class="form-input" maxlength="20" placeholder="A" value="{{ $al('blok_no') }}">
             @error('yapi.blok_no')<span class="error">{{ $message }}</span>@enderror
         </div>
@@ -39,7 +39,7 @@
             @error('yapi.kat_no')<span class="error">{{ $message }}</span>@enderror
         </div>
         <div class="form-field {{ $errors->has('yapi.bagimsiz_bolum_no') ? 'has-error' : '' }}">
-            <label for="yapi_bbn">Bağımsız Bölüm No</label>
+            <label for="yapi_bbn">Bağımsız Bölüm No <span class="required">*</span></label>
             <input id="yapi_bbn" type="text" name="yapi[bagimsiz_bolum_no]" class="form-input" maxlength="20" placeholder="12" value="{{ $al('bagimsiz_bolum_no') }}">
             @error('yapi.bagimsiz_bolum_no')<span class="error">{{ $message }}</span>@enderror
         </div>

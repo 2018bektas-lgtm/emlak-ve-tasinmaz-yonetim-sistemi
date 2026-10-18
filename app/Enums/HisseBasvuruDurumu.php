@@ -3,8 +3,10 @@
 namespace App\Enums;
 
 /**
- * Hisse satış sürecinin aşama enum'u. Referans projeyle birebir aynı akış:
- * başvuru alındıktan sonra süreç aşamalarla ilerler.
+ * Hisse satış sürecinin aşama enum'u. Aşama elle seçilmez; kayıtlardan
+ * (tebligat, görüş/imar, encümen, satış tebligatı, ödeme, tapu) otomatik
+ * hesaplanır — bkz. App\Support\HisseSureci::durumlariYenile().
+ * Elle verilebilen tek durum "Reddedildi"dir.
  */
 enum HisseBasvuruDurumu: string
 {
@@ -12,6 +14,7 @@ enum HisseBasvuruDurumu: string
     case TebligatAsamasinda = 'tebligat_asamasinda';
     case DegerlemeRaporuBekleniyor = 'degerleme_raporu_bekleniyor';
     case EncumenKarariBekleniyor = 'encumen_karari_bekleniyor';
+    case SatisTebligatiBekleniyor = 'satis_tebligati_bekleniyor';
     case OdemeBekleniyor = 'odeme_bekleniyor';
     case TapuAsamasinda = 'tapu_asamasinda';
     case Tamamlandi = 'tamamlandi';
@@ -24,6 +27,7 @@ enum HisseBasvuruDurumu: string
             self::TebligatAsamasinda => 'Tebligat Aşamasında',
             self::DegerlemeRaporuBekleniyor => 'Değerleme Raporu Bekleniyor',
             self::EncumenKarariBekleniyor => 'Encümen Kararı Bekleniyor',
+            self::SatisTebligatiBekleniyor => 'Satış Tebligatı Bekleniyor',
             self::OdemeBekleniyor => 'Ödeme Bekleniyor',
             self::TapuAsamasinda => 'Tapu Aşamasında',
             self::Tamamlandi => 'Tamamlandı',
@@ -38,6 +42,7 @@ enum HisseBasvuruDurumu: string
             self::TebligatAsamasinda => 'tl-pill-warn',
             self::DegerlemeRaporuBekleniyor => 'tl-pill-warn',
             self::EncumenKarariBekleniyor => 'tl-pill-warn',
+            self::SatisTebligatiBekleniyor => 'tl-pill-warn',
             self::OdemeBekleniyor => 'tl-pill-warn',
             self::TapuAsamasinda => 'tl-pill-info',
             self::Tamamlandi => 'tl-pill-ok',
@@ -57,6 +62,7 @@ enum HisseBasvuruDurumu: string
             self::TebligatAsamasinda,
             self::DegerlemeRaporuBekleniyor,
             self::EncumenKarariBekleniyor,
+            self::SatisTebligatiBekleniyor,
             self::OdemeBekleniyor,
             self::TapuAsamasinda,
             self::Tamamlandi,

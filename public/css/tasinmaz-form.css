@@ -1,0 +1,1014 @@
+/* ==========================================================================
+   ETYS · Taşınmaz formu — sade Liquid Glass
+   corporate.css'ten sonra yüklenir; yalnızca `.tf-shell` formunu etkiler.
+   Akış: önce Kayıt Tipi seçilir, [data-tip-adim] bölümleri ancak ondan sonra açılır.
+   ========================================================================== */
+
+.tf-shell {
+    --tf-accent-1: #ffc98b;
+    --tf-accent-2: #ff8a5b;
+    --tf-accent-ink: #2a1408;
+    --tf-ink: #0b1220;
+    --tf-text: #334155;
+    --tf-muted: #64748b;
+    --tf-line: rgba(15, 23, 42, 0.08);
+    --tf-focus: rgba(255, 138, 91, 0.75);
+    --tf-ring: rgba(255, 138, 91, 0.14);
+    --tf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    gap: 16px;
+    max-width: 1180px;
+    padding-bottom: 120px;
+}
+
+/* ---------- Yoğun cam zemini (ekle / düzenle sayfaları: body.is-cam) ----------
+   Cam kartların arkasında kırılacak renk alanı; düz zeminde cam etkisi görünmez. */
+.app-shell.is-cam {
+    background:
+        radial-gradient(900px 640px at 8% 2%, rgba(99, 125, 255, 0.26), transparent 62%),
+        radial-gradient(820px 600px at 96% 8%, rgba(255, 150, 95, 0.3), transparent 60%),
+        radial-gradient(760px 620px at 70% 62%, rgba(255, 196, 120, 0.22), transparent 62%),
+        radial-gradient(700px 560px at 12% 78%, rgba(168, 120, 255, 0.2), transparent 62%),
+        radial-gradient(600px 480px at 92% 96%, rgba(56, 189, 172, 0.16), transparent 62%),
+        #eaeef5;
+    background-attachment: fixed;
+}
+
+/* ---------- Kayıt tipine bağlı akış ---------- */
+
+.tf-shell:not([data-kayit-tipi]) [data-tip-adim] { display: none !important; }
+.tf-shell[data-kayit-tipi] .tf-bos { display: none; }
+
+/* fill-mode "backwards": bitince hiçbir değer kalmaz. "both" olsaydı transform/opacity
+   animasyonu kalıcı olur ve her bölüm ayrı stacking context'e dönüşürdü — açılan
+   select listeleri bir sonraki bölümün altında kalırdı. */
+.tf-shell[data-kayit-tipi] [data-tip-adim] { animation: tf-gir 0.55s var(--tf-ease) backwards; }
+.tf-shell[data-kayit-tipi] [data-tip-adim]:nth-of-type(3) { animation-delay: 0.04s; }
+.tf-shell[data-kayit-tipi] [data-tip-adim]:nth-of-type(4) { animation-delay: 0.08s; }
+.tf-shell[data-kayit-tipi] [data-tip-adim]:nth-of-type(5) { animation-delay: 0.12s; }
+
+@keyframes tf-gir {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Boş durum: tip seçilmeden önce */
+.tf-bos {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 22px 26px;
+    border-radius: 22px;
+    color: var(--tf-muted);
+    background: rgba(255, 255, 255, 0.45);
+    border: 1.5px dashed rgba(148, 163, 184, 0.5);
+}
+.tf-bos strong { display: block; color: var(--tf-ink); font-size: 0.95rem; }
+.tf-bos p { margin: 2px 0 0; font-size: 0.84rem; }
+.tf-bos-ikon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    color: #c2410c;
+    background: linear-gradient(145deg, rgba(255, 201, 139, 0.45), rgba(255, 138, 91, 0.18));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    animation: tf-nabiz 2.2s ease-in-out infinite;
+}
+.tf-bos-ikon svg { width: 22px; height: 22px; }
+@keyframes tf-nabiz { 50% { transform: translateY(3px); } }
+
+/* ---------- Bölüm kartları: açık cam ---------- */
+
+.tf-shell .form-section {
+    border: 0;
+    border-radius: 24px;
+    padding: 24px 28px 28px;
+    /* Gerçek cam: yarı saydam + arka plan bulanıklığı. Güvenli çünkü:
+       - açık listeli bölüm z-index ile kardeşlerinin üstüne çıkar (aşağıdaki :has kuralı),
+       - harita tam ekranı Fullscreen API ile top-layer'da açılır,
+       - modallar formun dışındadır. */
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.74) 0%, rgba(255, 255, 255, 0.56) 100%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.35),
+        0 1px 2px rgba(15, 23, 42, 0.03),
+        0 22px 44px -26px rgba(15, 23, 42, 0.3);
+    transition: box-shadow 0.3s var(--tf-ease);
+}
+/* Işığı yakalayan ince cam kenar (corporate.css'teki sol şerit yerine) */
+.tf-shell .form-section::before {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: 0;
+    top: 0;
+    bottom: 0;
+    width: auto;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(150deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.35) 30%, rgba(148, 163, 184, 0.22) 70%, rgba(255, 201, 139, 0.55));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+}
+
+/* İçinde açık bir liste (oz-select / aselect / harita menüsü) ya da odak olan bölüm
+   kardeşlerinin üstüne çıkar; açılan seçenekler alttaki bölümün arkasında kalmaz.
+   Sticky header (z-index 10) ve kaydet çubuğunun (20) altında kalmalı — 5 yeterli. */
+.tf-shell .form-section:focus-within,
+.tf-shell .form-section:has(.is-acik) {
+    z-index: 5;
+}
+.tf-shell .form-section:hover { border-color: transparent; }
+.tf-shell .form-section:focus-within {
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.95),
+        inset 0 0 0 1px rgba(255, 138, 91, 0.16),
+        0 1px 2px rgba(15, 23, 42, 0.03),
+        0 22px 44px -24px rgba(15, 23, 42, 0.28);
+}
+
+.tf-shell .form-section-head {
+    gap: 14px;
+    margin-bottom: 22px;
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+.tf-shell .form-section-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #9a3412;
+    background: linear-gradient(145deg, rgba(255, 224, 184, 0.9), rgba(255, 170, 120, 0.35));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(234, 88, 12, 0.12);
+}
+.tf-shell .form-section-head h3 {
+    font-size: 1.06rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--tf-ink);
+}
+.tf-shell .form-section-head small {
+    margin-top: 2px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--tf-muted);
+}
+
+.tf-shell .form-row { gap: 16px 18px; }
+.tf-shell .form-row + .form-row { margin-top: 16px; }
+
+/* ---------- Alanlar ---------- */
+
+.tf-shell .form-field > label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--tf-text);
+    letter-spacing: 0.005em;
+}
+.tf-shell .form-field > label .required { color: #ea580c; }
+
+.tf-shell .form-input,
+.tf-shell .form-select,
+.tf-shell .form-textarea,
+.tf-shell .oz-btn {
+    min-height: 46px;
+    border: 1px solid var(--tf-line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--tf-ink);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+    transition: border-color 0.2s, box-shadow 0.25s var(--tf-ease), background 0.2s;
+}
+.tf-shell .form-textarea { min-height: 96px; }
+.tf-shell .form-input:hover,
+.tf-shell .form-select:hover,
+.tf-shell .form-textarea:hover,
+.tf-shell .oz-btn:hover {
+    border-color: rgba(15, 23, 42, 0.16);
+    background: rgba(255, 255, 255, 0.9);
+}
+.tf-shell .form-input:focus,
+.tf-shell .form-select:focus,
+.tf-shell .form-textarea:focus,
+.tf-shell .oz-btn:focus,
+.tf-shell .oz-select.is-acik .oz-btn {
+    outline: none;
+    border-color: var(--tf-focus);
+    background: #fff;
+    box-shadow: 0 0 0 4px var(--tf-ring);
+}
+.tf-shell .oz-select.is-acik .oz-btn-chevron { color: var(--tf-accent-2); }
+.tf-shell .form-input::placeholder,
+.tf-shell .form-textarea::placeholder { color: #a3adbd; }
+.tf-shell .form-input:disabled,
+.tf-shell .form-select:disabled {
+    background: rgba(241, 245, 249, 0.7);
+    color: #94a3b8;
+}
+
+.tf-shell .form-field .hint { color: var(--tf-muted); font-size: 0.72rem; font-weight: 500; }
+.tf-shell .form-field .error { color: #dc2626; font-size: 0.74rem; font-weight: 600; }
+.tf-shell .form-field.has-error .form-input,
+.tf-shell .form-field.has-error .form-select,
+.tf-shell .form-field.has-error .form-textarea,
+.tf-shell .form-field.has-error .oz-btn {
+    border-color: rgba(220, 38, 38, 0.55);
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
+}
+
+/* Onay kutuları: cam hap */
+.tf-shell .form-check {
+    border: 1px solid var(--tf-line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.tf-shell .form-check:hover { background: #fff; border-color: rgba(15, 23, 42, 0.14); }
+.tf-shell .form-check:has(input:checked) {
+    border-color: rgba(255, 138, 91, 0.45);
+    background: linear-gradient(145deg, rgba(255, 224, 184, 0.55), rgba(255, 170, 120, 0.18));
+}
+.tf-shell .form-check input[type="checkbox"] { accent-color: #ea580c; }
+
+/* ---------- Kayıt Tipi kartları ---------- */
+
+/* corporate.css'teki display:inline-flex, [hidden] niteliğini eziyordu */
+.tf-shell .kt-uyari[hidden] { display: none; }
+
+/* Düzenlemede veri kaybettirecek tip değişikliği uyarısı */
+.kt-degisim {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 16px;
+    color: #9a3412;
+    background: linear-gradient(150deg, rgba(254, 226, 226, 0.85), rgba(255, 237, 213, 0.7));
+    box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.35);
+    font-size: 0.84rem;
+    font-weight: 600;
+    line-height: 1.45;
+    animation: tf-gir 0.35s var(--tf-ease, ease) both;
+}
+.kt-degisim svg { flex: none; margin-top: 1px; color: #dc2626; }
+.kt-degisim[hidden] { display: none; }
+
+.tf-shell .kt-section { padding-bottom: 26px; }
+.tf-shell .kt-num { color: #fff; background: linear-gradient(145deg, #1e293b, #0b1220); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2); }
+
+.tf-shell .kt-yardim {
+    border: 0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 0 0 1px var(--tf-line);
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+.tf-shell .kt-yardim summary { color: var(--tf-text); }
+.tf-shell .kt-yardim summary:hover { background: rgba(255, 255, 255, 0.7); }
+
+.tf-shell .kt-secim { gap: 14px; }
+.tf-shell .kt-kart-v {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px;
+    border: 0;
+    border-radius: 20px;
+    overflow: visible;
+    background: rgba(255, 255, 255, 0.62);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1px var(--tf-line),
+        0 6px 16px -12px rgba(15, 23, 42, 0.25);
+    transition: transform 0.35s var(--tf-ease), box-shadow 0.35s var(--tf-ease), background 0.3s;
+}
+.tf-shell .kt-kart-v:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1px rgba(15, 23, 42, 0.12),
+        0 16px 30px -16px rgba(15, 23, 42, 0.3);
+}
+.tf-shell .kt-kart-v:has(input:focus-visible) { box-shadow: inset 0 0 0 2px var(--tf-focus), 0 0 0 4px var(--tf-ring); }
+.tf-shell .kt-kart-v::before { display: none; }
+
+.tf-shell .kt-ikon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+    color: #475569;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.8));
+    box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px var(--tf-line), 0 4px 10px -6px rgba(15, 23, 42, 0.25);
+    transition: background 0.3s, color 0.3s, transform 0.4s var(--tf-ease), box-shadow 0.3s;
+}
+.tf-shell .kt-ikon svg { width: 24px; height: 24px; }
+.tf-shell .kt-kart-v:hover .kt-ikon { transform: scale(1.05) rotate(-3deg); }
+
+.tf-shell .kt-kart-icerik { padding: 0; gap: 5px; }
+.tf-shell .kt-kart-basluk strong { font-size: 0.96rem; color: var(--tf-ink); }
+.tf-shell .kt-kart-aciklama { min-height: 0; color: var(--tf-muted); font-size: 0.8rem; }
+.tf-shell .kt-kart-aciklama strong { color: var(--tf-ink); }
+.tf-shell .kt-kart-ornek {
+    margin-top: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #94a3b8;
+    font-size: 0.72rem;
+}
+.tf-shell .kt-kart-ornek span {
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: var(--tf-muted);
+    background: rgba(15, 23, 42, 0.05);
+}
+.tf-shell .kt-kart-check {
+    width: 24px;
+    height: 24px;
+    border: 0;
+    background: rgba(15, 23, 42, 0.05);
+    box-shadow: inset 0 0 0 1.5px rgba(15, 23, 42, 0.12);
+}
+
+/* Seçili kart */
+.tf-shell .kt-kart-v.is-secili {
+    border: 0;
+    background: linear-gradient(150deg, rgba(255, 236, 214, 0.95), rgba(255, 214, 186, 0.55));
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1.5px rgba(255, 138, 91, 0.55),
+        0 18px 36px -18px rgba(234, 88, 12, 0.45);
+}
+.tf-shell .kt-kart-v.is-secili .kt-ikon {
+    color: var(--tf-accent-ink);
+    background: linear-gradient(145deg, #ffe0b8, var(--tf-accent-1) 45%, var(--tf-accent-2));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 8px 18px -6px rgba(255, 122, 69, 0.7);
+}
+.tf-shell .kt-kart-v.is-secili .kt-kart-check {
+    color: #fff;
+    background: linear-gradient(145deg, var(--tf-accent-2), #ea580c);
+    box-shadow: 0 4px 10px -3px rgba(234, 88, 12, 0.6);
+}
+.tf-shell .kt-kart-v.is-secili .kt-kart-ornek { background: none; color: #9a3412; }
+.tf-shell .kt-kart-v.is-secili .kt-kart-ornek span { color: #9a3412; background: rgba(255, 255, 255, 0.6); }
+
+/* ---------- Bilgi kutuları, tablolar, yükleme alanı ---------- */
+
+.tf-shell .yapi-tekil-hint {
+    border: 0;
+    border-radius: 16px;
+    color: var(--tf-text);
+    background: linear-gradient(145deg, rgba(219, 234, 254, 0.6), rgba(224, 231, 255, 0.35));
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.14);
+}
+
+.tf-shell .hisse-tablo-kabuk {
+    border: 0;
+    border-radius: 18px;
+    /* overflow corporate.css'teki gibi auto kalır — dar ekranda tablo yatay kayar */
+    background: rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 0 0 1px var(--tf-line);
+}
+.tf-shell .hisse-tablo thead th {
+    background: rgba(248, 250, 252, 0.8);
+    color: var(--tf-muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.tf-shell .hisse-ekle-btn {
+    border: 1.5px dashed rgba(234, 88, 12, 0.35);
+    border-radius: 14px;
+    color: #c2410c;
+    background: rgba(255, 237, 213, 0.35);
+    transition: background 0.2s, border-color 0.2s, transform 0.25s var(--tf-ease);
+}
+.tf-shell .hisse-ekle-btn:hover {
+    background: rgba(255, 237, 213, 0.7);
+    border-color: rgba(234, 88, 12, 0.6);
+    transform: translateY(-1px);
+}
+
+.tf-shell .rsm-dropzone {
+    border: 1.5px dashed rgba(148, 163, 184, 0.6);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.5);
+    transition: background 0.2s, border-color 0.2s;
+}
+.tf-shell .rsm-dropzone:hover {
+    border-color: var(--tf-focus);
+    background: rgba(255, 247, 237, 0.75);
+}
+
+/* ==========================================================================
+   KONUM HARİTASI — tam alan harita + üzerinde yüzen cam kontroller
+   (yalnızca CSS; harita JS'i ve id/sınıflar aynı kalır)
+   ========================================================================== */
+
+.tf-shell .hrt-shell {
+    --hrt-cam: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.64));
+    --hrt-cam-koyu: linear-gradient(180deg, rgba(17, 24, 39, 0.66), rgba(17, 24, 39, 0.58));
+    --hrt-blur: blur(18px) saturate(180%);
+    --hrt-golge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.45), 0 10px 30px -12px rgba(15, 23, 42, 0.45);
+    --hrt-amber: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%);
+
+    position: relative;
+    display: block;
+    border: 0;
+    border-radius: 22px;
+    overflow: visible;            /* açılır paneller haritanın dışına taşabilsin; köşe kırpması .hrt-body'de */
+    background: #dfe5ec;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), 0 18px 40px -26px rgba(15, 23, 42, 0.45);
+}
+.tf-shell .hrt-body {
+    height: clamp(460px, 64vh, 680px);
+    border-radius: inherit;
+    overflow: hidden;
+}
+
+/* Ortak cam yüzey */
+.tf-shell .hrt-menu-left,
+.tf-shell .hrt-search-wrap,
+.tf-shell .hrt-dropdown-menu,
+.tf-shell .hrt-arama-sonuc,
+.tf-shell .hrt-cizim-arac,
+/* (dropdown/arama paneli aşağıda opak arka planla ezilir) */
+.tf-shell .hrt-shell .leaflet-control-zoom {
+    background: var(--hrt-cam);
+    -webkit-backdrop-filter: var(--hrt-blur);
+    backdrop-filter: var(--hrt-blur);
+    box-shadow: var(--hrt-golge);
+    border: 0;
+}
+
+/* ---- Üst: araç kapsülü (sol) + arama (sağ) ---- */
+.tf-shell .hrt-menu {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 30;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    pointer-events: none;          /* aralıklardan haritaya tıklanabilsin */
+}
+.tf-shell .hrt-menu > * { pointer-events: auto; }
+
+.tf-shell .hrt-menu-left {
+    gap: 2px;
+    padding: 5px;
+    border-radius: 18px;
+}
+.tf-shell .hrt-menu-right { margin-left: auto; gap: 8px; }
+
+.tf-shell .hrt-mbtn {
+    gap: 4px;
+    min-width: 54px;
+    padding: 7px 9px 6px;
+    border: 0;
+    border-radius: 13px;
+    color: #475569;
+    font-size: 0.66rem;
+    font-weight: 700;
+    transition: background 0.2s, color 0.2s, box-shadow 0.25s, transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.tf-shell .hrt-mbtn svg { width: 20px; height: 20px; }
+.tf-shell .hrt-mbtn:hover:not(:disabled) {
+    color: #0b1220;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 4px 12px -6px rgba(15, 23, 42, 0.3);
+}
+.tf-shell .hrt-mbtn:active:not(:disabled) { transform: scale(0.94); }
+.tf-shell .hrt-mbtn:focus-visible { outline: 2px solid #ff8a5b; outline-offset: 1px; }
+
+/* Aktif araç / açık menü: amber cam */
+.tf-shell .hrt-mbtn.is-aktif,
+.tf-shell .hrt-dropdown.is-acik .hrt-mbtn {
+    color: #2a1408;
+    background: var(--hrt-amber);
+    border: 0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 16px -6px rgba(255, 122, 69, 0.75);
+}
+.tf-shell .hrt-mbtn.is-aktif svg,
+.tf-shell .hrt-dropdown.is-acik .hrt-mbtn svg { color: #2a1408; }
+
+.tf-shell .hrt-mbtn-danger {
+    color: #dc2626;
+    background: rgba(254, 226, 226, 0.85);
+    -webkit-backdrop-filter: var(--hrt-blur);
+    backdrop-filter: var(--hrt-blur);
+    box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.25), 0 8px 20px -10px rgba(220, 38, 38, 0.5);
+}
+.tf-shell .hrt-mbtn-danger:hover:not(:disabled) { color: #fff; background: #ef4444; }
+
+/* Arama kapsülü */
+.tf-shell .hrt-search-wrap {
+    gap: 8px;
+    min-width: 280px;
+    max-width: 360px;
+    height: 44px;
+    padding: 0 5px 0 14px;
+    border-radius: 999px;
+}
+.tf-shell .hrt-search-wrap:focus-within {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: inset 0 0 0 1.5px rgba(255, 138, 91, 0.7), 0 0 0 4px rgba(255, 138, 91, 0.16), 0 10px 30px -12px rgba(15, 23, 42, 0.45);
+}
+.tf-shell .hrt-search-wrap > svg { color: #64748b; }
+.tf-shell .hrt-search-wrap input { font-size: 0.84rem; color: #0b1220; }
+.tf-shell .hrt-search-wrap button {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    color: #2a1408;
+    background: var(--hrt-amber);
+    font-size: 0.7rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.tf-shell .hrt-search-wrap button:hover { background: var(--hrt-amber); filter: brightness(1.05); }
+
+/* Açılır paneller ve arama sonuçları */
+.tf-shell .hrt-dropdown-menu {
+    top: calc(100% + 10px);
+    padding: 12px;
+    border-radius: 20px;
+    /* Neredeyse opak: panel, backdrop-filter'lı araç kapsülünün içinde olduğu için
+       kendi bulanıklığı haritaya ulaşamaz (iç içe backdrop root) — saydam olursa
+       harita etiketleri içinden okunur. */
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 251, 253, 0.96));
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top left;
+    transition: opacity 0.2s, transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tf-shell .hrt-dropdown.is-acik .hrt-dropdown-menu { transform: none; }
+.tf-shell .hrt-dropdown-title { color: #94a3b8; letter-spacing: 0.12em; }
+.tf-shell .hrt-layer-tile { border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+.tf-shell .hrt-layer-tile:hover { border-color: rgba(15, 23, 42, 0.12); }
+.tf-shell .hrt-layer-tile.is-aktif {
+    border-color: #ff8a5b;
+    background: rgba(255, 237, 213, 0.8);
+    box-shadow: 0 6px 16px -8px rgba(255, 122, 69, 0.6);
+}
+.tf-shell .hrt-layer-thumb { border-radius: 10px; }
+
+.tf-shell .hrt-form-row label { color: #64748b; }
+.tf-shell .hrt-form-row input,
+.tf-shell .hrt-form-row select {
+    padding: 9px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.75);
+}
+.tf-shell .hrt-form-row input:focus,
+.tf-shell .hrt-form-row select:focus {
+    border-color: rgba(255, 138, 91, 0.75);
+    box-shadow: 0 0 0 4px rgba(255, 138, 91, 0.14);
+}
+.tf-shell .hrt-form-submit {
+    padding: 10px 12px;
+    border-radius: 12px;
+    color: #2a1408;
+    background: var(--hrt-amber);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 18px -8px rgba(255, 122, 69, 0.7);
+}
+.tf-shell .hrt-form-submit:hover { background: var(--hrt-amber); filter: brightness(1.05); }
+.tf-shell .hrt-form-submit:disabled { opacity: 0.5; filter: grayscale(0.4); }
+.tf-shell .hrt-form-info { border-radius: 10px; background: rgba(241, 245, 249, 0.8); }
+
+.tf-shell .hrt-arama-sonuc {
+    top: calc(100% + 8px);
+    border-radius: 18px;
+    /* Arama kapsülünün içinde — aynı iç içe bulanıklık sınırı, bu yüzden opak */
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 251, 253, 0.96));
+}
+.tf-shell .hrt-arama-item { border-bottom-color: rgba(15, 23, 42, 0.05); }
+.tf-shell .hrt-arama-item:hover { background: rgba(255, 237, 213, 0.6); }
+.tf-shell .hrt-arama-item svg { color: #ea580c; }
+
+/* ---- Alt sol: bilgi şeridi (koyu cam, uydu üzerinde okunur) ---- */
+.tf-shell .hrt-info-bar {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    z-index: 25;
+    max-width: calc(100% - 100px);
+    gap: 4px;
+    min-height: 0;
+    padding: 5px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--hrt-cam-koyu);
+    -webkit-backdrop-filter: var(--hrt-blur);
+    backdrop-filter: var(--hrt-blur);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 30px -12px rgba(0, 0, 0, 0.55);
+}
+.tf-shell .hrt-chip {
+    padding: 4px 10px;
+    border: 0;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.07);
+}
+.tf-shell .hrt-chip-label { color: rgba(255, 255, 255, 0.55); }
+.tf-shell .hrt-chip-value { color: #ffc98b; font-variant-numeric: tabular-nums; }
+.tf-shell .hrt-chip-wide .hrt-chip-value { color: #fff; }
+.tf-shell .hrt-chip-hint {
+    margin-left: 2px;
+    color: #ffd9a8;
+    background: rgba(255, 138, 91, 0.18);
+}
+
+/* ---- Alt orta: çizim modu çubuğu ---- */
+.tf-shell .hrt-cizim-arac {
+    position: absolute;
+    left: 50%;
+    bottom: 68px;
+    z-index: 26;
+    transform: translateX(-50%);
+    gap: 6px;
+    min-height: 0;
+    padding: 6px;
+    border-radius: 18px;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    animation: hrt-cam-gir 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes hrt-cam-gir { from { opacity: 0; transform: translate(-50%, 10px); } }
+.tf-shell .hrt-cizim-mode {
+    padding: 7px 12px;
+    border-radius: 12px;
+    color: #2a1408;
+    background: var(--hrt-amber);
+    font-size: 0.66rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.tf-shell .hrt-cizim-btn {
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 12px;
+    color: #334155;
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+    transition: background 0.2s, transform 0.2s;
+}
+.tf-shell .hrt-cizim-btn:hover:not(:disabled) { color: #0b1220; background: #fff; border-color: transparent; }
+.tf-shell .hrt-cizim-btn:active:not(:disabled) { transform: scale(0.95); }
+.tf-shell .hrt-cizim-btn-ok { color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 6px 14px -6px rgba(22, 163, 74, 0.7); }
+.tf-shell .hrt-cizim-btn-ok:hover:not(:disabled) { color: #fff; background: linear-gradient(135deg, #2ed16a, #15803d); }
+.tf-shell .hrt-cizim-hint { display: none; } /* ipucu zaten alt bilgi şeridinde */
+
+/* ---- Leaflet kontrolleri: sağ alt ---- */
+.tf-shell .hrt-shell .leaflet-top.leaflet-left {
+    top: auto;
+    left: auto;
+    right: 14px;
+    bottom: 40px;
+}
+.tf-shell .hrt-shell .leaflet-top.leaflet-left .leaflet-control { margin: 0; }
+.tf-shell .hrt-shell .leaflet-control-zoom {
+    border: 0 !important;
+    border-radius: 14px !important;
+    overflow: hidden;
+    box-shadow: var(--hrt-golge) !important;
+}
+.tf-shell .hrt-shell .leaflet-control-zoom a {
+    width: 38px;
+    height: 38px;
+    line-height: 38px;
+    color: #334155 !important;
+    background: transparent !important;
+    border-color: rgba(15, 23, 42, 0.06) !important;
+    font-size: 18px;
+}
+.tf-shell .hrt-shell .leaflet-control-zoom a:hover { color: #0b1220 !important; background: rgba(255, 255, 255, 0.8) !important; }
+
+.tf-shell .hrt-shell .leaflet-bottom.leaflet-left { left: auto; right: 14px; bottom: 12px; }
+.tf-shell .hrt-shell .leaflet-control-attribution {
+    margin: 0 !important;
+    border-radius: 8px !important;
+    background: rgba(255, 255, 255, 0.6) !important;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: #64748b;
+}
+
+/* Bilgi popup'ı: koyu cam */
+.leaflet-popup.hrt-info-popup .leaflet-popup-content-wrapper {
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.82);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 40px -14px rgba(0, 0, 0, 0.6);
+}
+.leaflet-popup.hrt-info-popup .leaflet-popup-tip { background: rgba(15, 23, 42, 0.82); }
+.leaflet-popup.hrt-info-popup .hrt-popup-tablo td { color: #ffc98b; }
+
+/* Tam ekran */
+.tf-shell .hrt-shell:fullscreen { border-radius: 0; height: 100vh; }
+.tf-shell .hrt-shell:fullscreen .hrt-body { height: 100vh; border-radius: 0; }
+
+/* ---- Dar ekran ---- */
+@media (max-width: 720px) {
+    .tf-shell .hrt-menu { flex-wrap: wrap; top: 10px; left: 10px; right: 10px; }
+    .tf-shell .hrt-menu-right { order: -1; flex-basis: 100%; margin: 0; }
+    .tf-shell .hrt-search-wrap { flex: 1; min-width: 0; max-width: none; }
+    /* Tek satır: butonlar genişliği eşit paylaşır (taşma/kaydırma yok — overflow
+       verilmez ki katman ve ada/parsel panelleri kırpılmasın) */
+    .tf-shell .hrt-menu-left { flex: 1 1 100%; flex-wrap: nowrap; }
+    .tf-shell .hrt-menu-left > * { flex: 1 1 0; min-width: 0; }
+    .tf-shell .hrt-menu-left .hrt-dropdown > .hrt-mbtn { width: 100%; box-sizing: border-box; }
+    .tf-shell .hrt-mbtn { min-width: 0; padding: 9px 0; }
+    .tf-shell .hrt-info-bar { left: 10px; bottom: 10px; max-width: calc(100% - 70px); }
+    .tf-shell .hrt-chip-wide,
+    .tf-shell .hrt-chip-hint { display: none; }
+    .tf-shell .hrt-cizim-arac { bottom: 58px; max-width: calc(100% - 20px); }
+    .tf-shell .hrt-shell .leaflet-top.leaflet-left { right: 10px; bottom: 36px; }
+    .tf-shell .hrt-shell .leaflet-bottom.leaflet-left { right: 10px; bottom: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tf-shell .hrt-cizim-arac { animation: none; }
+    .tf-shell .hrt-mbtn,
+    .tf-shell .hrt-dropdown-menu { transition: none; }
+}
+
+/* ---------- Yeni seçenek ekleme (+) düğmeleri ---------- */
+.tf-shell .mks-ekle-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    color: #9a3412;
+    background: linear-gradient(145deg, rgba(255, 237, 213, 0.95), rgba(255, 201, 139, 0.55));
+    box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(255, 138, 91, 0.35), 0 6px 14px -8px rgba(234, 88, 12, 0.5);
+    transition: transform 0.25s var(--tf-ease), background 0.2s, color 0.2s;
+}
+.tf-shell .mks-ekle-btn:hover {
+    color: var(--tf-accent-ink);
+    background: linear-gradient(135deg, #ffd9a8 0%, var(--tf-accent-1) 35%, var(--tf-accent-2) 100%);
+    transform: translateY(-1px);
+}
+
+/* ---------- Dosya seçme düğmesi ---------- */
+.tf-shell input[type="file"].form-input { padding: 6px 8px; display: flex; align-items: center; }
+.tf-shell input[type="file"]::file-selector-button {
+    margin-right: 12px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 10px;
+    color: #9a3412;
+    background: linear-gradient(145deg, rgba(255, 237, 213, 0.95), rgba(255, 201, 139, 0.55));
+    box-shadow: inset 0 0 0 1px rgba(255, 138, 91, 0.3);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.tf-shell input[type="file"]::file-selector-button:hover {
+    color: var(--tf-accent-ink);
+    background: linear-gradient(135deg, #ffd9a8 0%, var(--tf-accent-1) 35%, var(--tf-accent-2) 100%);
+}
+
+/* ---------- Meclis kararı alt kartı ---------- */
+.tf-shell .meclis-alanlar {
+    padding: 18px;
+    border: 0;
+    border-radius: 18px;
+    background: linear-gradient(150deg, rgba(255, 237, 213, 0.7), rgba(255, 247, 237, 0.45));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 138, 91, 0.25);
+}
+.tf-shell .meclis-baslik { color: #9a3412; letter-spacing: 0.04em; }
+.tf-shell .meclis-pdf-link { color: #c2410c; }
+
+/* ---------- Hisse şeritleri ---------- */
+.tf-shell .hisse-toplam-bar,
+.hisse-hesap-bar,
+.hisse-modal-etki {
+    border: 0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+}
+.hisse-hesap-bar {
+    background: linear-gradient(150deg, rgba(255, 237, 213, 0.8), rgba(255, 247, 237, 0.55));
+    box-shadow: inset 0 0 0 1px rgba(255, 138, 91, 0.3);
+}
+.tf-shell .hisse-toplam-bar.is-asildi,
+.hisse-modal-etki.is-asildi {
+    background: rgba(254, 226, 226, 0.75);
+    box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.35);
+}
+.tf-shell .hisse-td-btn { border-radius: 10px; }
+
+/* ---------- Yüzen kaydet çubuğu ---------- */
+
+.tf-shell .form-actions {
+    position: sticky;
+    bottom: 16px;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 0;
+    padding: 10px 10px 10px 20px;
+    border: 0;
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.62));
+    -webkit-backdrop-filter: blur(22px) saturate(190%);
+    backdrop-filter: blur(22px) saturate(190%);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1px rgba(15, 23, 42, 0.06),
+        0 24px 50px -22px rgba(15, 23, 42, 0.4);
+}
+.tf-ozet-kutu {
+    display: flex;
+    flex-direction: column;
+    margin-right: auto;
+    line-height: 1.2;
+    min-width: 0;
+}
+.tf-ozet-etiket {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.tf-ozet-kutu strong {
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: var(--tf-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tf-shell .btn-cancel {
+    min-height: 46px;
+    border: 0;
+    border-radius: 14px;
+    color: var(--tf-text);
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 0 0 1px var(--tf-line);
+}
+.tf-shell .btn-cancel:hover { background: #fff; color: var(--tf-ink); }
+
+.tf-shell .btn-submit {
+    min-height: 46px;
+    padding: 0 22px;
+    border-radius: 14px;
+    color: var(--tf-accent-ink);
+    background: linear-gradient(135deg, #ffd9a8 0%, var(--tf-accent-1) 35%, var(--tf-accent-2) 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.75),
+        inset 0 -2px 5px rgba(160, 60, 20, 0.22),
+        0 12px 26px -10px rgba(255, 120, 70, 0.75);
+}
+.tf-shell .btn-submit:hover {
+    background: linear-gradient(135deg, #ffe2bd 0%, #ffd29a 35%, #ff9466 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        inset 0 -2px 5px rgba(160, 60, 20, 0.22),
+        0 18px 34px -12px rgba(255, 120, 70, 0.85);
+}
+
+/* ---------- Modallar (hisse / bölüm / imar / kullanım şekli) ----------
+   Formun dışındadır (yapı modalı JS ile body'ye taşınır); bu dosya yalnızca
+   ekle/düzenle sayfalarında yüklendiği için kapsamsız yazılır. */
+.modal-backdrop {
+    background: rgba(15, 23, 42, 0.32);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    backdrop-filter: blur(10px) saturate(140%);
+}
+.modal-shell {
+    position: relative;
+    border-radius: 26px;
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    backdrop-filter: blur(26px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+        0 40px 90px -30px rgba(15, 23, 42, 0.55);
+    animation: tf-modal-gir 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes tf-modal-gir { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+.modal-head {
+    padding: 20px 24px 14px;
+    background: transparent;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.modal-head h4 { font-size: 1.08rem; font-weight: 800; letter-spacing: -0.02em; color: #0b1220; }
+.modal-close {
+    border-radius: 12px;
+    color: #475569;
+    background: rgba(15, 23, 42, 0.05);
+    transition: background 0.2s, color 0.2s;
+}
+.modal-close:hover { color: #fff; background: #ef4444; }
+.modal-govde { padding: 20px 24px; }
+.modal-alt {
+    padding: 14px 24px 20px;
+    background: transparent;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.modal-shell .modal-label,
+.modal-shell .form-field > label { color: #334155; font-weight: 700; }
+.modal-shell .form-input,
+.modal-shell .form-select,
+.modal-shell .form-textarea,
+.modal-shell .oz-btn {
+    min-height: 44px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background-color: rgba(255, 255, 255, 0.78);
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.modal-shell .form-input:focus,
+.modal-shell .form-select:focus,
+.modal-shell .form-textarea:focus {
+    outline: none;
+    border-color: rgba(255, 138, 91, 0.75);
+    background-color: #fff;
+    box-shadow: 0 0 0 4px rgba(255, 138, 91, 0.14);
+}
+.modal-shell .btn-cancel {
+    min-height: 44px;
+    border: 0;
+    border-radius: 14px;
+    color: #334155;
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+.modal-shell .btn-cancel:hover { background: #fff; color: #0b1220; }
+.modal-shell .btn-submit {
+    min-height: 44px;
+    border-radius: 14px;
+    color: #2a1408;
+    background: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 12px 24px -10px rgba(255, 120, 70, 0.75);
+}
+.modal-shell .btn-submit:hover { background: linear-gradient(135deg, #ffe2bd 0%, #ffd29a 35%, #ff9466 100%); }
+.modal-mesaj { border-radius: 12px; }
+.hisse-bedel-baslik { color: #94a3b8; letter-spacing: 0.12em; }
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-shell { animation: none; }
+}
+
+/* Flash mesajları (form üstünde) */
+.flash-success,
+.flash-error {
+    border-radius: 18px;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+}
+
+/* ---------- Duyarlı ---------- */
+
+@media (max-width: 820px) {
+    .tf-shell .form-section { padding: 20px 18px 22px; border-radius: 20px; }
+    .tf-shell .kt-kart-v { padding: 14px; }
+}
+@media (max-width: 560px) {
+    .tf-shell .form-actions {
+        bottom: 8px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    }
+    .tf-ozet-kutu { flex-basis: 100%; padding: 0 6px 4px; }
+    .tf-shell .form-actions .btn-cancel { flex: 0 0 auto; width: auto; }
+    .tf-shell .form-actions .btn-submit { flex: 1 1 0; width: auto; min-width: 0; }
+    .tf-bos { padding: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tf-shell [data-tip-adim],
+    .tf-bos-ikon { animation: none !important; }
+    .tf-shell .kt-kart-v,
+    .tf-shell .kt-ikon { transition: none; }
+}

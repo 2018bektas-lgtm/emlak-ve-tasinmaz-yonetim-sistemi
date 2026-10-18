@@ -2,18 +2,31 @@
 
 @section('title', 'Taşınmaz Listesi')
 
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=1">
+@endpush
+
 @section('content')
+<div class="tl-sayfa">
 @if (session('basari'))
     <div class="flash-success" role="status">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12 l5 5 L20 7"/></svg>
         {{ session('basari') }}
     </div>
 @endif
+@if ($errors->has('sil'))
+    <div class="flash-error" role="alert">{{ $errors->first('sil') }}</div>
+@endif
 
 <section class="page-hero">
     <div class="page-hero-text">
-        <h2>Taşınmaz Listesi</h2>
-        <small>Toplam {{ $toplamKayit }} kayıt · Bu sayfada {{ $tasinmazlar->count() }} · Filtre sonucu {{ $tasinmazlar->total() }}</small>
+        <p class="tl-eyebrow">Envanter</p>
+        <h2>Taşınmazlar</h2>
+        <small>
+            <strong>{{ number_format($tasinmazlar->total(), 0, ',', '.') }}</strong> sonuç
+            <span aria-hidden="true">·</span> toplam {{ number_format($toplamKayit, 0, ',', '.') }} kayıt
+            <span aria-hidden="true">·</span> bu sayfada {{ $tasinmazlar->count() }}
+        </small>
     </div>
     <div class="page-hero-actions">
         @php
@@ -154,10 +167,39 @@
 </section>
 
 @php
+    $tipTanimlari = [
+        null => ['Tümü', $toplamKayit, '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'],
+        'bos_parsel' => ['Boş Parsel', $tipSayilari['bos_parsel'] ?? 0, '<path d="M3 19 9 10l4 6 3-4 5 7Z"/><circle cx="17" cy="6" r="2"/>'],
+        'kat_mulkiyetli' => ['Kat Mülkiyetli BBN', $tipSayilari['kat_mulkiyetli'] ?? 0, '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h1.5M13.5 7H15M9 11h1.5M13.5 11H15"/><rect x="10" y="15" width="4" height="6" rx="0.6" fill="currentColor" stroke="none"/>'],
+        'kat_mulkiyetsiz_bina' => ['Kat Mülkiyetsiz Bina', $tipSayilari['kat_mulkiyetsiz_bina'] ?? 0, '<path d="M3 21V10l5-3v14M8 21V4h13v17M2 21h20"/><path d="M12 8h1M16 8h1M12 12h1M16 12h1M12 16h1M16 16h1"/>'],
+    ];
+    // Diğer filtreleri koruyarak yalnızca kayıt tipini değiştirir ('0' değerli filtreler korunur)
+    $tipLink = fn (?string $tip) => route('panel.tasinmazlar.index', array_filter(
+        array_merge(request()->except(['page', 'kayit_tipi']), ['kayit_tipi' => $tip]),
+        fn ($v) => $v !== null && $v !== ''
+    ));
+@endphp
+<nav class="tl-tipler" aria-label="Kayıt tipine göre süz">
+    @foreach ($tipTanimlari as $tip => [$ad, $adet, $ikon])
+        @php $aktif = ($filtre['kayit_tipi'] ?? null) === ($tip ?: null); @endphp
+        <a href="{{ $tipLink($tip ?: null) }}" @class(['tl-tip', 'is-aktif' => $aktif]) @if ($aktif) aria-current="true" @endif>
+            <span class="tl-tip-ikon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{!! $ikon !!}</svg>
+            </span>
+            <span class="tl-tip-metin">
+                <span class="tl-tip-ad">{{ $ad }}</span>
+                <strong class="tl-tip-adet">{{ number_format($adet, 0, ',', '.') }}</strong>
+            </span>
+        </a>
+    @endforeach
+</nav>
+
+@php
     $aktifFiltreler = collect($filtre)->filter(fn ($v) => filled($v))->keys();
     $gelismisAcik = $aktifFiltreler->intersect([
         'ilce_id', 'mahalle_id', 'nitelik', 'satis_durumu', 'mulkiyet', 'bina',
         'kira_var', 'tahsis_var', 'ust_hakki_var', 'meclis_satis_karari_var',
+        'lojman', 'isgal_kaydi', 'hisse_dosyasi',
     ])->isNotEmpty();
 
     $satisSecenekleri = [
@@ -173,12 +215,21 @@
         'ust_hakki_var' => 'Üst Hakkı',
         'meclis_satis_karari_var' => 'Meclis Kararı',
     ];
+    // Diğer modüllerden gelen kullanım (salt okunur) — Var/Yok filtreleri
+    $modulSecenekleri = [
+        'lojman' => 'Lojman',
+        'isgal_kaydi' => 'İşgal Kaydı',
+        'hisse_dosyasi' => 'Hisse Satışında',
+    ];
     $ilAdi = $filtre['il_id'] ? optional($iller->firstWhere('id', (int) $filtre['il_id']))->ad : null;
     $ilceAdi = $filtre['ilce_id'] ? optional($ilceler->firstWhere('id', (int) $filtre['ilce_id']))->ad : null;
     $mahalleAdi = $filtre['mahalle_id'] ? optional($mahalleler->firstWhere('id', (int) $filtre['mahalle_id']))->ad : null;
 @endphp
 
 <form method="GET" action="{{ route('panel.tasinmazlar.index') }}" class="tl-filtre" id="tl-filtre-form">
+    @if ($filtre['kayit_tipi'] ?? null)
+        <input type="hidden" name="kayit_tipi" value="{{ $filtre['kayit_tipi'] }}">
+    @endif
     <div class="tl-filtre-satir tl-filtre-ust">
         <div class="tl-filtre-alan">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -278,7 +329,7 @@
             <div class="form-field tl-filtre-bayraklar">
                 <label>Durum Bayrakları</label>
                 <div class="tl-filtre-chipler">
-                    @foreach ($bayrakSecenekleri as $alan => $lbl)
+                    @foreach ($bayrakSecenekleri + $modulSecenekleri as $alan => $lbl)
                         @php $val = $filtre[$alan] ?? ''; @endphp
                         <div class="tl-tri-chip" data-alan="{{ $alan }}">
                             <span class="tl-tri-lbl">{{ $lbl }}</span>
@@ -306,6 +357,11 @@
     @if ($aktifFiltreler->isNotEmpty())
         <div class="tl-filtre-aktif" role="status" aria-label="Aktif filtreler">
             <span class="tl-filtre-aktif-etkt">Aktif:</span>
+            @if ($filtre['kayit_tipi'] ?? null)
+                <a href="{{ $tipLink(null) }}" class="tl-fchip">
+                    <span>Tip: <strong>{{ \App\Enums\KayitTipi::from($filtre['kayit_tipi'])->etiket() }}</strong></span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </a>
+            @endif
             @if ($filtre['q'])
                 <a href="{{ route('panel.tasinmazlar.index', array_merge(request()->except(['q','page']))) }}" class="tl-fchip">
                     <span>Ara: <strong>{{ $filtre['q'] }}</strong></span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -346,7 +402,7 @@
                     <span>Bina: <strong>{{ $filtre['bina'] === '1' ? 'Var' : 'Yok' }}</strong></span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </a>
             @endif
-            @foreach ($bayrakSecenekleri as $alan => $lbl)
+            @foreach ($bayrakSecenekleri + $modulSecenekleri as $alan => $lbl)
                 @php $val = $filtre[$alan] ?? ''; @endphp
                 @if ($val === '1' || $val === '0')
                     <a href="{{ route('panel.tasinmazlar.index', array_merge(request()->except([$alan,'page']))) }}" class="tl-fchip">
@@ -569,7 +625,6 @@
                     <td class="tl-td-mono" data-kolon="takbis" @class(['is-gizli' => ! $goster('takbis')])>{{ $t->tapu->takbis_zemin_no ?? '—' }}</td>
                     <td data-kolon="ilce" @class(['is-gizli' => ! $goster('ilce')])>{{ $t->ilce->ad ?? '—' }}</td>
                     <td data-kolon="mahalle" @class(['is-gizli' => ! $goster('mahalle')])>{{ $t->mahalle->ad ?? '—' }}</td>
-                    <td data-kolon="mudurluk" @class(['is-gizli' => ! $goster('mudurluk')])>{{ $t->mudurluk->ad ?? '—' }}</td>
                     <td class="tl-td-mono" data-kolon="ada" @class(['is-gizli' => ! $goster('ada')])><span class="tl-badge">{{ $t->ada ?? '—' }}</span></td>
                     <td class="tl-td-mono" data-kolon="parsel" @class(['is-gizli' => ! $goster('parsel')])><span class="tl-badge">{{ $t->parsel ?? '—' }}</span></td>
                     <td class="tl-td-mono" data-kolon="alan" @class(['is-gizli' => ! $goster('alan')])>{{ $t->alan !== null ? number_format((float) $t->alan, 2, ',', '.') : '—' }}</td>
@@ -617,16 +672,31 @@
                     </td>
                     <td data-kolon="satis" @class(['is-gizli' => ! $goster('satis')])>
                         <span class="tl-pill {{ $satisOzet->pill() }}">{{ $satisOzet->etiket() }}</span>
-                        @if ($yapilar->count() > 0)
-                            @php $satistaSay = $yapilar->filter(fn ($y) => ($y->satis_durumu instanceof \App\Enums\SatisDurumu ? $y->satis_durumu->value : $y->satis_durumu) === 'satista')->count(); @endphp
-                            <span class="tl-pill tl-pill-mute" title="Satıştaki BBN / toplam BBN">{{ $satistaSay }}/{{ $yapilar->count() }}</span>
-                        @endif
                     </td>
                     <td data-kolon="bina" @class(['is-gizli' => ! $goster('bina')])>{!! $binaVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
                     <td class="tl-td-metin" data-kolon="aciklama" @class(['is-gizli' => ! $goster('aciklama')]) title="{{ $aciklamaBirlesik }}">{{ Str::limit($aciklamaBirlesik, 60) ?: '—' }}</td>
                     <td data-kolon="tahsis" @class(['is-gizli' => ! $goster('tahsis')])>{!! $tahsisVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
                     <td data-kolon="ust_hakki" @class(['is-gizli' => ! $goster('ust_hakki')])>{!! $ustHakkiVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
                     <td data-kolon="kira" @class(['is-gizli' => ! $goster('kira')])>{!! $kiraVar ? '<span class="tl-pill tl-pill-info">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
+                    <td data-kolon="kullanim" @class(['is-gizli' => ! $goster('kullanim')])>
+                        @php
+                            $ljler = $t->lojmanlar;
+                            $isgalSuruyor = $t->ecrimisiller->contains(fn ($e) => $e->durum() === 'devam-eden');
+                            $hisseAcik = $t->hisseBasvurulari->contains(fn ($b) => ! in_array($b->durum?->value, ['tamamlandi', 'reddedildi'], true));
+                        @endphp
+                        @if ($ljler->isEmpty() && ! $isgalSuruyor && ! $hisseAcik)
+                            <span class="tl-pill tl-pill-mute">—</span>
+                        @else
+                            <span class="tl-kullanim">
+                                @if ($ljler->isNotEmpty())
+                                    @php $ljD = $ljler->count() === 1 ? $ljler->first()->efektifDurum() : null; @endphp
+                                    <span class="tl-kul is-lojman {{ $ljD ? 'is-'.$ljD : '' }}" title="{{ $ljler->count() === 1 ? 'Lojman — '.$ljler->first()->durumEtiketi() : $ljler->count().' lojman' }}">{{ $ljler->count() === 1 ? 'Lojman · '.$ljler->first()->durumEtiketi() : $ljler->count().' Lojman' }}</span>
+                                @endif
+                                @if ($isgalSuruyor)<span class="tl-kul is-isgal" title="Süren ecrimisil (işgal) kaydı">İşgal</span>@endif
+                                @if ($hisseAcik)<span class="tl-kul is-hisse" title="Sonuçlanmamış hisse satışı dosyası">Hisse Satışında</span>@endif
+                            </span>
+                        @endif
+                    </td>
                     <td data-kolon="meclis" @class(['is-gizli' => ! $goster('meclis')])>{!! $meclisVar ? '<span class="tl-pill tl-pill-warn">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
                     <td data-kolon="geometri" @class(['is-gizli' => ! $goster('geometri')])>{!! $geometriVar ? '<span class="tl-pill tl-pill-ok">Var</span>' : '<span class="tl-pill tl-pill-mute">Yok</span>' !!}</td>
                     <td class="tl-td-metin" data-kolon="ek_rapor" @class(['is-gizli' => ! $goster('ek_rapor')])><span class="tl-pill tl-pill-mute">—</span></td>
@@ -1092,4 +1162,5 @@
     tabloyaUygula();
 })();
 </script>
+</div>
 @endsection

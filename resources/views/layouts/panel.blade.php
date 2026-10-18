@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=97">
+    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=99">
+    <link rel="stylesheet" href="{{ asset('css/panel-glass.css') }}?v=2">
     <script src="{{ asset('js/ozel-select.js') }}?v=3" defer></script>
     @stack('head')
 </head>
@@ -33,17 +34,32 @@
                     ]],
                 ]],
             ],
+            // Kira değerleme planlanıyor; rotası olmayan alt öğeler menüde
+            // "Yakında" olarak pasif görünür.
+            'Değerleme' => [
+                ['label' => 'Taşınmaz Değerleme', 'icon' => 'scale', 'children' => [
+                    ['label' => 'Değerlemeler', 'route' => 'panel.degerleme.index', 'izin' => 'degerleme.goruntule'],
+                    ['label' => 'Yeni Değerleme', 'route' => 'panel.degerleme.yeni', 'izin' => 'degerleme.olustur'],
+                    ['label' => 'Değerleme Haritası', 'route' => 'panel.degerleme.harita', 'izin' => 'degerleme.goruntule'],
+                    ['label' => 'Excel İçe Aktar', 'route' => 'panel.degerleme.ice-aktar', 'izin' => 'degerleme.olustur'],
+                ]],
+                ['label' => 'Kira Değerleme', 'icon' => 'key', 'children' => [
+                    ['label' => 'Kira Tespitleri'],
+                    ['label' => 'Yeni Kira Tespiti'],
+                    ['label' => 'Emsal Kiralar'],
+                ]],
+                ['label' => 'Ecrimisil Değerleme', 'icon' => 'clipboard', 'children' => [
+                    ['label' => 'İşgal Kayıtları', 'route' => 'panel.ecrimisil.index', 'izin' => 'ecrimisil.goruntule'],
+                    ['label' => 'Yeni Kayıt', 'route' => 'panel.ecrimisil.olustur', 'izin' => 'ecrimisil.olustur'],
+                    ['label' => 'Harita', 'route' => 'panel.ecrimisil.harita', 'izin' => 'ecrimisil.goruntule'],
+                ]],
+            ],
             'Satış İşlemleri' => [
                 ['label' => 'Hisse Satışı', 'icon' => 'coin', 'children' => [
                     ['label' => 'Başvuru Listesi', 'route' => 'panel.hisse-satisi.liste', 'izin' => 'hisse-satisi.goruntule'],
                     ['label' => 'Yeni Başvuru', 'route' => 'panel.hisse-satisi.index', 'izin' => 'hisse-satisi.olustur'],
                     ['label' => 'Harita', 'route' => 'panel.hisse-satisi.harita', 'izin' => 'hisse-satisi.goruntule'],
                     ['label' => 'Arşiv', 'route' => 'panel.hisse-satisi.arsiv', 'izin' => 'hisse-satisi.goruntule'],
-                ]],
-                ['label' => 'Ecrimisil', 'icon' => 'clipboard', 'children' => [
-                    ['label' => 'İşgal Kayıtları', 'route' => 'panel.ecrimisil.index', 'izin' => 'ecrimisil.goruntule'],
-                    ['label' => 'Yeni Kayıt', 'route' => 'panel.ecrimisil.olustur', 'izin' => 'ecrimisil.olustur'],
-                    ['label' => 'Harita', 'route' => 'panel.ecrimisil.harita', 'izin' => 'ecrimisil.goruntule'],
                 ]],
                 ['label' => 'Lojman', 'icon' => 'building', 'children' => [
                     ['label' => 'Lojmanlar', 'route' => 'panel.lojman.index', 'izin' => 'lojman.goruntule'],
@@ -58,7 +74,6 @@
                     ['label' => 'Kullanıcı Listesi', 'route' => 'panel.kullanicilar.index', 'izin' => 'kullanici.goruntule'],
                     ['label' => 'Yeni Kullanıcı', 'route' => 'panel.kullanicilar.olustur', 'izin' => 'kullanici.olustur'],
                     ['label' => 'Roller ve İzinler', 'route' => 'panel.roller.index', 'izin' => 'rol.goruntule'],
-                    ['label' => 'Müdürlükler', 'route' => 'panel.mudurlukler.index', 'izin' => 'mudurluk.goruntule'],
                 ]],
             ],
         ];
@@ -77,6 +92,8 @@
             'gear'   => '<circle cx="12" cy="12" r="3"/><path d="M12 2 v3 M12 19 v3 M4.2 4.2 l2.1 2.1 M17.7 17.7 l2.1 2.1 M2 12 h3 M19 12 h3 M4.2 19.8 l2.1-2.1 M17.7 6.3 l2.1-2.1"/>',
             'coin'   => '<circle cx="12" cy="12" r="9"/><path d="M15 9.5 c-0.5-1-1.5-1.5-3-1.5 c-1.7 0-3 1-3 2 c0 2.5 6 1.5 6 4 c0 1-1.3 2-3 2 c-1.5 0-2.5-0.5-3-1.5 M12 6 v2 M12 16 v2"/>',
             'clipboard' => '<rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 11 h6 M9 15 h4"/>',
+            'scale'     => '<path d="M12 3 v18 M7 21 h10"/><path d="M4 7 h16"/><path d="M6 7 l-3 7 a3 3 0 0 0 6 0z"/><path d="M18 7 l-3 7 a3 3 0 0 0 6 0z"/>',
+            'key'       => '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 L20 3 M16 7 l3 3 M14 9 l2 2"/>',
             'building'  => '<path d="M3 21 h18 M5 21 V6 a2 2 0 0 1 2-2 h10 a2 2 0 0 1 2 2 v15"/><path d="M9 8 h1 M14 8 h1 M9 12 h1 M14 12 h1 M9 16 h1 M14 16 h1"/>',
         ];
 
@@ -88,12 +105,17 @@
     <aside class="app-sidebar" id="app-sidebar">
         <div class="app-brand">
             <a class="brand brand-light" href="{{ route('panel.dashboard') }}">
+                <span class="app-brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 32 32"><path d="M5 26V12l11-7 11 7v14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M11 26v-8h10v8M5 26h22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg>
+                </span>
                 <span class="logo-text">
                     <strong>ETYS</strong>
-                    <em>Emlak &amp; Taşınmaz<br>Yönetim Sistemi</em>
+                    <em>Emlak &amp; Taşınmaz Yönetimi</em>
                 </span>
             </a>
-            <span class="app-brand-mini" aria-hidden="true">E</span>
+            <a class="app-brand-mini" href="{{ route('panel.dashboard') }}" aria-label="Özet">
+                <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 26V12l11-7 11 7v14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M11 26v-8h10v8M5 26h22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg>
+            </a>
             <button type="button" class="app-collapse-btn" data-collapse-toggle aria-label="Menüyü daralt">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 6 L8 12 L14 18"/>
@@ -107,6 +129,7 @@
         </div>
 
         <nav class="app-nav" aria-label="Ana menü">
+            <span class="app-nav-glider" aria-hidden="true"></span>
             @foreach ($navGroups as $groupTitle => $items)
                 <div class="app-nav-group">
                     <p class="app-nav-title">{{ $groupTitle }}</p>
@@ -141,9 +164,9 @@
                         @if ($hasChildren)
                             <div class="app-nav-parent {{ $activeChild ? 'is-open' : '' }}" data-tooltip="{{ $item['label'] }}">
                                 <button type="button" class="app-nav-item app-nav-toggle" data-dropdown-toggle aria-expanded="{{ $activeChild ? 'true' : 'false' }}">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <span class="app-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                                         {!! $icons[$item['icon']] ?? '' !!}
-                                    </svg>
+                                    </svg></span>
                                     <span>{{ $item['label'] }}</span>
                                     <svg class="app-nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M6 9 l6 6 6-6"/>
@@ -220,9 +243,9 @@
                                class="app-nav-item {{ $active ? 'is-active' : '' }} {{ $disabled ? 'is-disabled' : '' }}"
                                data-tooltip="{{ $item['label'] }}"
                                @if ($disabled) aria-disabled="true" title="Yakında" @endif>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <span class="app-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                                     {!! $icons[$item['icon']] ?? '' !!}
-                                </svg>
+                                </svg></span>
                                 <span>{{ $item['label'] }}</span>
                             </a>
                         @endif
@@ -262,51 +285,40 @@
         @endphp
 
         <header class="app-header">
-            <div class="app-header-strip">
-                <nav class="app-breadcrumb" aria-label="Sayfa yolu">
-                    <a href="{{ route('panel.dashboard') }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 11 L12 3 l9 8"/><path d="M5 10 v10 h14 V10"/>
-                        </svg>
-                        Yönetim
-                    </a>
-                    <span class="app-breadcrumb-sep" aria-hidden="true">›</span>
-                    <span aria-current="page">@yield('title', 'Özet')</span>
-                </nav>
-
-                <div class="app-header-meta">
-                    <span class="app-header-datetime" title="{{ $tarihStr }} · {{ $gunStr }} · {{ $saatStr }}">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3" y="5" width="18" height="16" rx="2"/>
-                            <path d="M3 9 h18 M8 3 v4 M16 3 v4"/>
-                        </svg>
-                        <time datetime="{{ $simdi->toDateString() }}"><strong>{{ $tarihStr }}</strong> · {{ $gunStr }}</time>
-                    </span>
-                    <span class="app-env-badge app-env-{{ strtolower($env) }}">
-                        <span class="app-env-dot"></span>{{ $env }}
-                    </span>
-                </div>
-            </div>
-
+            <span class="app-header-refract" aria-hidden="true"></span>
             <div class="app-header-main">
                 <button class="app-menu-toggle" type="button" aria-label="Menüyü aç" aria-expanded="false" aria-controls="app-sidebar" data-sidebar-toggle>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-                        <path d="M4 7 h16 M4 12 h16 M4 17 h16"/>
+                        <path d="M4 7 h16 M4 12 h10 M4 17 h16"/>
                     </svg>
                 </button>
 
                 <div class="app-header-title">
-                    <p>Yönetim Paneli</p>
+                    <nav class="app-breadcrumb" aria-label="Sayfa yolu">
+                        <a href="{{ route('panel.dashboard') }}">Yönetim</a>
+                        <span class="app-breadcrumb-sep" aria-hidden="true">/</span>
+                        <span aria-current="page">@yield('title', 'Özet')</span>
+                    </nav>
                     <h1>@yield('title', 'Özet')</h1>
                 </div>
 
-                <div class="app-header-search" role="search">
+                <label class="app-header-search" role="search">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="11" cy="11" r="7"/>
                         <path d="M20 20 l-3.5-3.5"/>
                     </svg>
-                    <input type="search" placeholder="Ada, parsel, kullanıcı, tahsis ara..." aria-label="Genel arama">
+                    <input type="search" placeholder="Ada, parsel, kullanıcı, tahsis ara…" aria-label="Genel arama" data-header-search>
                     <kbd>Ctrl K</kbd>
+                </label>
+
+                <div class="app-header-meta" title="{{ $tarihStr }} · {{ $gunStr }}">
+                    <span class="app-header-datetime">
+                        <time datetime="{{ $simdi->toDateString() }}">{{ $tarihStr }}</time>
+                        <span class="app-header-clock" data-header-clock>{{ $saatStr }}</span>
+                    </span>
+                    <span class="app-env-badge app-env-{{ strtolower($env) }}">
+                        <span class="app-env-dot"></span>{{ $env }}
+                    </span>
                 </div>
 
                 <div class="app-header-actions">
@@ -319,13 +331,18 @@
                             <span class="app-notif-badge" aria-label="{{ $bildirimSayisi }} okunmamış bildirim">{{ $bildirimSayisi }}</span>
                         @endif
                     </button>
-                    <button class="app-icon-btn" type="button" aria-label="Yardım">
+                    <button class="app-icon-btn app-help-btn" type="button" aria-label="Yardım">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="9"/>
                             <path d="M9.5 9 a2.5 2.5 0 0 1 5 0 c0 2-2.5 2-2.5 4"/>
                             <path d="M12 17.5 v0.5"/>
                         </svg>
                     </button>
+                    <span class="app-header-divider" aria-hidden="true"></span>
+                    <span class="app-header-user" title="{{ $user->getAdSoyad() }}">
+                        <span class="app-header-avatar">{{ $initials }}</span>
+                        <span class="app-header-user-name">{{ $user->ad }}</span>
+                    </span>
                 </div>
             </div>
         </header>
@@ -388,6 +405,50 @@
             window.addEventListener('resize', () => {
                 if (!isMobile()) setNavOpen(false);
             });
+
+            // Header: canlı saat
+            const clock = document.querySelector('[data-header-clock]');
+            if (clock) {
+                const tick = () => { clock.textContent = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }); };
+                tick();
+                setInterval(tick, 15000);
+            }
+
+            // Ctrl/⌘ + K ile aramaya odaklan
+            const search = document.querySelector('[data-header-search]');
+            document.addEventListener('keydown', (e) => {
+                if (search && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                    e.preventDefault();
+                    search.focus();
+                }
+            });
+
+            // Menüde imleci takip eden kayan cam vurgu
+            const nav = sidebar.querySelector('.app-nav');
+            const glider = nav && nav.querySelector('.app-nav-glider');
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (nav && glider && !reduceMotion && window.matchMedia('(pointer: fine)').matches) {
+                const targets = '.app-nav-item, .app-nav-subitem, .app-nav-sub-subitem';
+                nav.addEventListener('pointerover', (e) => {
+                    const el = e.target.closest(targets);
+                    if (!el || el.classList.contains('is-disabled') || shell.classList.contains('is-collapsed')) return;
+                    const n = nav.getBoundingClientRect();
+                    const r = el.getBoundingClientRect();
+                    glider.style.transform = `translate(${r.left - n.left}px, ${r.top - n.top + nav.scrollTop}px)`;
+                    glider.style.width = `${r.width}px`;
+                    glider.style.height = `${r.height}px`;
+                    nav.classList.add('has-glider');
+                });
+                nav.addEventListener('pointerleave', () => nav.classList.remove('has-glider'));
+            }
+
+            // Sayfa kaydırılınca cam header'ın gölgesi belirginleşir
+            const header = document.querySelector('.app-header');
+            if (header) {
+                const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 4);
+                onScroll();
+                window.addEventListener('scroll', onScroll, { passive: true });
+            }
 
             document.querySelectorAll('[data-dropdown-toggle]').forEach(btn => {
                 btn.addEventListener('click', () => {

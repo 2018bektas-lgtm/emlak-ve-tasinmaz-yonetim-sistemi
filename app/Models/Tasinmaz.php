@@ -19,15 +19,14 @@ class Tasinmaz extends Model
     protected $table = 'tasinmazlar';
 
     /**
-     * Refactor sonrası taşınmazın kimliği + kadastral bilgisi burada.
-     * Durum alanları (muhasebe/kayıt türü/işgal/tahsis/kira/satış vb.)
-     * artık `tasinmaz_birimler` tablosunda birim başına tutulur.
+     * Taşınmazın kimliği + kadastral bilgisi burada. Durum alanları
+     * (muhasebe/kayıt türü, işgal/tahsis/kira/satış vb.) `tasinmaz_kategori`,
+     * `tasinmaz_ekbilgi` ve bağımsız bölüm başına `tasinmaz_yapi` tablolarındadır.
      */
     protected $fillable = [
         'il_id',
         'ilce_id',
         'mahalle_id',
-        'mudurluk_id',
         'ada',
         'parsel',
         'alan',
@@ -69,7 +68,24 @@ class Tasinmaz extends Model
         // temizlesin. DB-level FK cascade tek basina model event'i
         // tetiklemez, bu yuzden manuel yapiyoruz.
         static::deleting(function (self $tasinmaz): void {
+            // Son savunma hattı: bağlı hisse/lojman/işgal kaydı olan taşınmaz silinmez
+            if ($engel = $tasinmaz->silmeEngelleri()) {
+                throw new \DomainException('Taşınmaz silinemez: '.implode(', ', $engel).'.');
+            }
             $tasinmaz->yapilar->each->delete();
+        });
+
+        // Lojmanların konum kopyası taşınmazdan gelir; taşınmaz düzeltilince eşitlenir
+        static::updated(function (self $tasinmaz): void {
+            if ($tasinmaz->wasChanged(['mahalle_id', 'ada', 'parsel', 'il_id', 'ilce_id'])) {
+                Lojman::where('tasinmaz_id', $tasinmaz->id)->update([
+                    'il_id' => $tasinmaz->il_id,
+                    'ilce_id' => $tasinmaz->ilce_id,
+                    'mahalle_id' => $tasinmaz->mahalle_id,
+                    'ada' => $tasinmaz->ada,
+                    'parsel' => $tasinmaz->parsel,
+                ]);
+            }
         });
     }
 
@@ -90,57 +106,68 @@ class Tasinmaz extends Model
         return $this->belongsTo(Mahalle::class, 'mahalle_id');
     }
 
-    public function mudurluk(): BelongsTo
-    {
-        return $this->belongsTo(Mudurluk::class, 'mudurluk_id');
-    }
-
     /**
-     * Kullanıcının müdürlük kapsamına göre kayıtları daraltır.
-     * tasinmaz.tumunu-gor izni olanlar (ve admin) tüm kayıtları görür.
+     * mahalle.tkgm_id + ada + parsel (+ kat mülkiyetli kayıtlarda bölüm) ile
+     * taşınmazı bulur. Aynı parselde birden çok bağımsız bölüm kaydı
+     * olabildiği için bölüm parçası (ör. "A-10") kaydı tekilleştirir.
+     * Bölüm verilmezse parsel kaydı (boş parsel / kat mülkiyetsiz bina)
+     * tercih edilir; yoksa en eski kayıt döner (eski bağlantılar için).
      */
-    public function scopeMudurlukKapsami($query, ?Kullanici $kullanici = null)
+    public static function slugIleBul(int $mahalleTkgmId, string $ada, string $parsel, ?string $bolum = null): self
     {
-        $kullanici ??= auth()->user();
-        if (! $kullanici instanceof Kullanici || $kullanici->izinVarMi('tasinmaz.tumunu-gor')) {
-            return $query;
-        }
-
-        if (! $kullanici->mudurluk_id) {
-            return $query->whereRaw('0 = 1');
-        }
-
-        return $query->where('mudurluk_id', $kullanici->mudurluk_id);
-    }
-
-    public function mudurlukErisilebilirMi(?Kullanici $kullanici = null): bool
-    {
-        $kullanici ??= auth()->user();
-        if (! $kullanici instanceof Kullanici) {
-            return false;
-        }
-
-        return $kullanici->tasinmazGorebilirMi($this);
-    }
-
-    /**
-     * mahalle.tkgm_id + ada + parsel üçlüsü ile taşınmazı bulur.
-     */
-    public static function slugIleBul(int $mahalleTkgmId, string $ada, string $parsel): self
-    {
-        return static::query()
+        $adaylar = static::query()
             ->whereHas('mahalle', fn ($q) => $q->where('tkgm_id', $mahalleTkgmId))
             ->where('ada', $ada)
             ->where('parsel', $parsel)
+            ->with('yapi')
             ->orderBy('id')
-            ->firstOrFail();
+            ->get();
+
+        $kayit = filled($bolum)
+            ? $adaylar->first(fn (self $t) => $t->bolumSlug() === $bolum)
+            : ($adaylar->first(fn (self $t) => $t->bolumSlug() === null) ?? $adaylar->first());
+
+        if (! $kayit) {
+            throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(static::class);
+        }
+
+        return $kayit;
     }
 
     /**
-     * duzenle/guncelle/sil rotalarının parametreleri (mahalleTkgmId, ada, parsel).
-     * mahalle.tkgm_id / ada / parsel eksikse fallback: id-tabanlı legacy rota.
+     * Kat mülkiyetli kayıtların adresindeki bölüm parçası: "A-10" (bloklu)
+     * veya "10" (bloksuz). Diğer kayıt tiplerinde null.
+     */
+    public function bolumSlug(): ?string
+    {
+        if ($this->kayit_tipi !== KayitTipi::KatMulkiyetli) {
+            return null;
+        }
+
+        $yapi = $this->relationLoaded('yapi')
+            ? $this->yapi
+            : ($this->relationLoaded('yapilar') ? $this->yapilar->first() : $this->yapi);
+
+        $bbn = self::slugParcasi(\App\Support\TasinmazTekillik::numara($yapi?->bagimsiz_bolum_no));
+        if ($bbn === '') {
+            return null;
+        }
+        $blok = self::slugParcasi(\App\Support\TasinmazTekillik::blok($yapi?->blok_no));
+
+        return $blok !== '' ? $blok.'-'.$bbn : $bbn;
+    }
+
+    private static function slugParcasi(string $deger): string
+    {
+        return preg_replace('/[^A-Za-z0-9]/', '', \Illuminate\Support\Str::ascii($deger)) ?? '';
+    }
+
+    /**
+     * duzenle/guncelle/sil rotalarının parametreleri (mahalleTkgmId, ada, parsel
+     * ve kat mülkiyetli kayıtlarda bolum). mahalle.tkgm_id / ada / parsel eksikse
+     * fallback: id-tabanlı legacy rota.
      *
-     * @return array{mahalleTkgmId:int|string, ada:string, parsel:string}|array{tasinmaz:int}
+     * @return array{mahalleTkgmId:int|string, ada:string, parsel:string, bolum?:string}|array{tasinmaz:int}
      */
     public function duzenleParams(): array
     {
@@ -149,27 +176,36 @@ class Tasinmaz extends Model
             : Mahalle::query()->whereKey($this->mahalle_id)->value('tkgm_id');
 
         if ($tkgm && filled($this->ada) && filled($this->parsel)) {
-            return [
+            $params = [
                 'mahalleTkgmId' => (int) $tkgm,
                 'ada' => (string) $this->ada,
                 'parsel' => (string) $this->parsel,
             ];
+            if ($bolum = $this->bolumSlug()) {
+                $params['bolum'] = $bolum;
+            }
+
+            return $params;
         }
 
         return ['tasinmaz' => $this->id];
     }
 
     /**
-     * Rota adını ("duzenle" | "guncelle" | "sil") verildiğinde uygun URL'yi üretir.
-     * Slug verisi eksikse otomatik olarak legacy id-tabanlı rotayı kullanır.
+     * Rota adını ("detay" | "duzenle" | "guncelle" | "sil" | "hisseler.store" …)
+     * verildiğinde uygun URL'yi üretir. Kat mülkiyetli kayıtlar ".bb" ekli
+     * bölüm rotasını, slug verisi eksik kayıtlar legacy id-tabanlı rotayı kullanır.
      */
-    public function rota(string $ad): string
+    public function rota(string $ad, array $ek = []): string
     {
         $slugParams = $this->duzenleParams();
-        $legacy = isset($slugParams['tasinmaz']);
-        $baseName = 'panel.tasinmazlar.'.$ad.($legacy ? '-legacy' : '');
+        $sonek = match (true) {
+            isset($slugParams['tasinmaz']) => '-legacy',
+            isset($slugParams['bolum']) => '.bb',
+            default => '',
+        };
 
-        return route($baseName, $slugParams);
+        return route('panel.tasinmazlar.'.$ad.$sonek, array_merge($slugParams, $ek));
     }
 
     /**
@@ -282,6 +318,56 @@ class Tasinmaz extends Model
         return $this->hasMany(TasinmazMalik::class, 'tasinmaz_id')->orderBy('id');
     }
 
+    /** Bu taşınmazdaki lojmanlar (lojman modülünde açılır; burada yalnız okunur). */
+    public function lojmanlar(): HasMany
+    {
+        return $this->hasMany(Lojman::class, 'tasinmaz_id')->orderBy('blok')->orderBy('daire_no');
+    }
+
+    /** Bu taşınmaza bağlı ecrimisil (işgal) kayıtları — salt okunur. */
+    public function ecrimisiller(): HasMany
+    {
+        return $this->hasMany(EcrimisilIsgalci::class, 'tasinmaz_id')->orderByDesc('id');
+    }
+
+    /** Değerleme raporları (arsa ve bağımsız bölüm) — salt okunur, en yeni önce. */
+    public function degerlemeler(): HasMany
+    {
+        return $this->hasMany(TasinmazDegerleme::class, 'tasinmaz_id')->orderByDesc('rapor_tarihi')->orderByDesc('id');
+    }
+
+    /** Hisse satışı başvuruları — salt okunur. */
+    public function hisseBasvurulari(): HasMany
+    {
+        return $this->hasMany(HisseBasvuru::class, 'tasinmaz_id')->orderByDesc('id');
+    }
+
+    /**
+     * Taşınmaz silinirse kaybolacak/kopacak bağlı kayıtlar. Boşsa silinebilir.
+     * (Hisse satış dosyaları taşınmazla birlikte zincirleme siliniyor; lojman
+     * ve işgal kayıtları sessizce taşınmazsız kalıyordu.)
+     *
+     * @return array<int, string>
+     */
+    public function silmeEngelleri(): array
+    {
+        $engel = [];
+        if (($n = $this->hisseBasvurulari()->count()) > 0) {
+            $engel[] = "{$n} hisse satışı başvurusu (dosya geçmişi silinirdi)";
+        }
+        if (($n = $this->lojmanlar()->count()) > 0) {
+            $engel[] = "{$n} lojman kaydı";
+        }
+        if (($n = $this->ecrimisiller()->count()) > 0) {
+            $engel[] = "{$n} ecrimisil (işgal) kaydı";
+        }
+        if (($n = $this->degerlemeler()->count()) > 0) {
+            $engel[] = "{$n} değerleme raporu";
+        }
+
+        return $engel;
+    }
+
     /**
      * Hisse satış encümen kararları (grup_no üzerinden basvuru grubuna bağlanır).
      */
@@ -291,25 +377,13 @@ class Tasinmaz extends Model
     }
 
     /**
-     * Satış durumu: yapı varsa yapıların öncelikli özeti, yoksa ekbilgi'nin
-     * kendi satış_durumu değeri.
+     * Satış durumu — her zaman ekbilgi'den (formda "Ek Bilgi" bölümünde girilen).
+     * Yapı (BBN) satırlarındaki satis_durumu hiçbir ekranda düzenlenmez ve hep
+     * varsayılan "envanterde" kalır; eskiden önce yapılara bakıldığı için BBN'li
+     * kayıtlarda kullanıcının seçtiği durum görünmüyordu.
      */
     public function satisOzeti(): SatisDurumu
     {
-        $yapilar = $this->relationLoaded('yapilar')
-            ? $this->yapilar
-            : $this->yapilar()->get();
-
-        if ($yapilar->isNotEmpty()) {
-            $durumlar = $yapilar->map(function ($y) {
-                return $y->satis_durumu instanceof SatisDurumu
-                    ? $y->satis_durumu
-                    : (SatisDurumu::tryFrom((string) $y->satis_durumu) ?? SatisDurumu::Envanterde);
-            })->all();
-
-            return SatisDurumu::oncelikli(...$durumlar);
-        }
-
         $ekbilgi = $this->relationLoaded('ekbilgi') ? $this->ekbilgi : $this->ekbilgi()->first();
         if (! $ekbilgi) {
             return SatisDurumu::Envanterde;

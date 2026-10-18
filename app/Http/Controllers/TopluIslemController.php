@@ -189,9 +189,6 @@ class TopluIslemController extends Controller
                         'nitelik' => $nitelik ?: $tasinmaz->nitelik,
                         'uzeri_bina_var_mi' => $binaVar ?? $tasinmaz->uzeri_bina_var_mi ?? false,
                     ]);
-                    // Kullanıcı müdürlük atansın
-                    $veri = $this->mudurlukIdUygula(['mudurluk_id' => $tasinmaz->mudurluk_id]);
-                    $tasinmaz->mudurluk_id = $veri['mudurluk_id'] ?? auth()->user()->mudurluk_id;
                     $tasinmaz->save();
 
                     // Tapu
@@ -309,9 +306,6 @@ class TopluIslemController extends Controller
                         ->first();
                     if (! $tasinmaz) {
                         throw new \RuntimeException("Satır {$satirNo}: Taşınmaz bulunamadı: TKGM {$mahalleTkgm} · {$ada}/{$parsel}");
-                    }
-                    if (! $tasinmaz->mudurlukErisilebilirMi()) {
-                        throw new \RuntimeException("Satır {$satirNo}: Bu taşınmaza erişim yetkiniz yok.");
                     }
 
                     $hisseNo = trim((string) ($satir['D'] ?? ''));

@@ -9,7 +9,7 @@
 @endphp
 
 <div class="yapi-tekil-hint">
-    <strong>Kat mülkiyetsiz bina.</strong> Bina üzerindeki tüm bağımsız bölümler bu taşınmaz altında listelenir. Her BBN için sadece fiziksel bilgiler (blok/kat/no/nitelik/m²) girilir; muhasebe, satış ve durum bilgileri Bölüm 05–06'da parselin tümü için tek girişle takip edilir.
+    <strong>Kat mülkiyetsiz bina.</strong> Bina üzerindeki tüm bağımsız bölümler bu taşınmaz altında listelenir. Her BBN için sadece fiziksel bilgiler (blok/kat/no/nitelik/m²) girilir; muhasebe, satış ve durum bilgileri <em>Sınıflandırma</em> ve <em>Ek Bilgi</em> bölümlerinde parselin tümü için tek girişle takip edilir.
 </div>
 
 <div class="hisse-shell" id="yapi-shell" data-eski='@json($yapilarEski)'>
@@ -21,8 +21,6 @@
                     <th>Blok / Kat / B.B. No</th>
                     <th>Nitelik</th>
                     <th>Net (m²)</th>
-                    <th>Satış</th>
-                    <th>Durum</th>
                     <th class="hisse-th-eylem" aria-label="Eylemler"></th>
                 </tr>
             </thead>
@@ -33,6 +31,14 @@
             <span>Henüz bağımsız bölüm eklenmedi. Aşağıdaki butonla eklemeye başlayın.</span>
         </div>
     </div>
+
+    @if ($errors->has('yapilar.*'))
+        <div class="form-field has-error">
+            @foreach (collect($errors->get('yapilar.*'))->flatten()->unique() as $mesaj)
+                <span class="error">{{ $mesaj }}</span>
+            @endforeach
+        </div>
+    @endif
 
     <button type="button" class="hisse-ekle-btn" id="yapi-ekle-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>

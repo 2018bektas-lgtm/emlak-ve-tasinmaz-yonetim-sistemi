@@ -33,17 +33,30 @@ class LojmanTahsis extends Model
         return $this->belongsTo(LojmanBasvuru::class, 'basvuru_id');
     }
 
-    public function aktifMi(): bool
+    /** Bitişi yok ya da bugün/ileride. */
+    public function scopeAktif($query)
     {
-        return ! $this->bitis_tarihi || $this->bitis_tarihi->gte(now());
+        return $query->where(fn ($w) => $w->whereNull('bitis_tarihi')->orWhereDate('bitis_tarihi', '>=', now()->toDateString()));
     }
 
+    public function aktifMi(): bool
+    {
+        return ! $this->bitis_tarihi || $this->bitis_tarihi->gte(now()->startOfDay());
+    }
+
+    /** Başlangıcı ileri tarihte olan (henüz başlamamış) tahsis. */
+    public function baslamadiMi(): bool
+    {
+        return $this->baslangic_tarihi && $this->baslangic_tarihi->gt(now()->startOfDay());
+    }
+
+    /** Oturulan gün sayısı (başlamamışsa null; sürüyorsa bugüne kadar). */
     public function gunSayisi(): ?int
     {
-        if (! $this->baslangic_tarihi) {
+        if (! $this->baslangic_tarihi || $this->baslamadiMi()) {
             return null;
         }
-        $son = $this->bitis_tarihi ?? now();
+        $son = $this->bitis_tarihi && $this->bitis_tarihi->lt(now()) ? $this->bitis_tarihi : now();
 
         return (int) $this->baslangic_tarihi->diffInDays($son) + 1;
     }

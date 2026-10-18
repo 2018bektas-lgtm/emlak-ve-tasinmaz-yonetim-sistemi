@@ -3,6 +3,7 @@
 use App\Http\Controllers\AbbProxyController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DegerlemeController;
 use App\Http\Controllers\EcrimisilController;
 use App\Http\Controllers\EimarController;
 use App\Http\Controllers\HisseSatisController;
@@ -12,13 +13,13 @@ use App\Http\Controllers\KolonTercihiController;
 use App\Http\Controllers\KullaniciController;
 use App\Http\Controllers\LokasyonController;
 use App\Http\Controllers\MevcutKullanimSekliController;
-use App\Http\Controllers\MudurlukController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\SayistayRaporController;
 use App\Http\Controllers\TasinmazController;
 use App\Http\Controllers\TopluIslemController;
 use App\Http\Controllers\TasinmazHisseController;
 use App\Http\Controllers\YapiController;
+use App\Http\Middleware\TasinmazBolumParametresi;
 use App\Models\Tasinmaz;
 use Illuminate\Support\Facades\Route;
 
@@ -60,15 +61,6 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::delete('{rol}', [RolController::class, 'destroy'])->middleware('izin:rol.duzenle')->name('sil');
     });
 
-    Route::prefix('mudurlukler')->name('mudurlukler.')->group(function () {
-        Route::get('/', [MudurlukController::class, 'index'])->middleware('izin:mudurluk.goruntule')->name('index');
-        Route::get('olustur', [MudurlukController::class, 'create'])->middleware('izin:mudurluk.olustur')->name('olustur');
-        Route::post('olustur', [MudurlukController::class, 'store'])->middleware('izin:mudurluk.olustur')->name('store');
-        Route::get('{mudurluk}/duzenle', [MudurlukController::class, 'edit'])->middleware('izin:mudurluk.duzenle')->name('duzenle');
-        Route::put('{mudurluk}', [MudurlukController::class, 'update'])->middleware('izin:mudurluk.duzenle')->name('guncelle');
-        Route::delete('{mudurluk}', [MudurlukController::class, 'destroy'])->middleware('izin:mudurluk.sil')->name('sil');
-    });
-
     Route::prefix('tasinmazlar')->name('tasinmazlar.')->group(function () {
         Route::get('/', [TasinmazController::class, 'index'])->middleware('izin:tasinmaz.goruntule')->name('index');
         Route::get('harita', [TasinmazController::class, 'harita'])->middleware('izin:harita.goruntule')->name('harita');
@@ -88,57 +80,63 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             Route::post('toplu-islem/hisse-yukle', [TopluIslemController::class, 'hisseImport'])->name('toplu-islem.hisse-yukle');
         });
 
-        // Yeni: TKGM mahalle id + ada + parsel tabanlı rotalar
+        // TKGM mahalle id + ada + parsel tabanlı rotalar. Her rota iki kez kaydedilir:
+        //   {mahalleTkgmId}/{ada}/{parsel}/...            → parsel kaydı (boş parsel / kat mülkiyetsiz bina)
+        //   {mahalleTkgmId}/{ada}/{parsel}/bb/{bolum}/... → kat mülkiyetli bağımsız bölüm (ör. bb/A-10)
+        // URL üretimi için Tasinmaz::rota() kullanılır; doğru varyantı kendisi seçer.
         $slugKisit = [
             'mahalleTkgmId' => '\d+',
             'ada' => '[\w-]+',
             'parsel' => '[\w-]+',
+            'bolum' => '[A-Za-z0-9-]+',
         ];
-        Route::get('{mahalleTkgmId}/{ada}/{parsel}', [TasinmazController::class, 'show'])
-            ->middleware('izin:tasinmaz.goruntule')->where($slugKisit)->name('detay');
-        Route::get('{mahalleTkgmId}/{ada}/{parsel}/duzenle', [TasinmazController::class, 'edit'])
-            ->middleware('izin:tasinmaz.duzenle')->where($slugKisit)->name('duzenle');
-        Route::put('{mahalleTkgmId}/{ada}/{parsel}', [TasinmazController::class, 'update'])
-            ->middleware('izin:tasinmaz.duzenle')->where($slugKisit)->name('guncelle');
-        Route::delete('{mahalleTkgmId}/{ada}/{parsel}', [TasinmazController::class, 'destroy'])
-            ->middleware('izin:tasinmaz.sil')->where($slugKisit)->name('sil');
+        $kayitRotalari = function (string $kok, string $adSoneki) use ($slugKisit) {
+            Route::get($kok, [TasinmazController::class, 'show'])
+                ->middleware('izin:tasinmaz.goruntule')->where($slugKisit)->name('detay'.$adSoneki);
+            Route::get($kok.'/duzenle', [TasinmazController::class, 'edit'])
+                ->middleware('izin:tasinmaz.duzenle')->where($slugKisit)->name('duzenle'.$adSoneki);
+            Route::put($kok, [TasinmazController::class, 'update'])
+                ->middleware('izin:tasinmaz.duzenle')->where($slugKisit)->name('guncelle'.$adSoneki);
+            Route::delete($kok, [TasinmazController::class, 'destroy'])
+                ->middleware('izin:tasinmaz.sil')->where($slugKisit)->name('sil'.$adSoneki);
 
-        Route::post('{mahalleTkgmId}/{ada}/{parsel}/hisseler', [TasinmazHisseController::class, 'store'])
-            ->middleware('izin:hisse.olustur')->where($slugKisit)->name('hisseler.store');
-        Route::put('{mahalleTkgmId}/{ada}/{parsel}/hisseler/{hisse}', [TasinmazHisseController::class, 'update'])
-            ->middleware('izin:hisse.duzenle')->where($slugKisit)->whereNumber('hisse')->name('hisseler.update');
-        Route::delete('{mahalleTkgmId}/{ada}/{parsel}/hisseler/{hisse}', [TasinmazHisseController::class, 'destroy'])
-            ->middleware('izin:hisse.sil')->where($slugKisit)->whereNumber('hisse')->name('hisseler.destroy');
+            Route::post($kok.'/hisseler', [TasinmazHisseController::class, 'store'])
+                ->middleware('izin:hisse.olustur')->where($slugKisit)->name('hisseler.store'.$adSoneki);
+            Route::put($kok.'/hisseler/{hisse}', [TasinmazHisseController::class, 'update'])
+                ->middleware('izin:hisse.duzenle')->where($slugKisit)->whereNumber('hisse')->name('hisseler.update'.$adSoneki);
+            Route::delete($kok.'/hisseler/{hisse}', [TasinmazHisseController::class, 'destroy'])
+                ->middleware('izin:hisse.sil')->where($slugKisit)->whereNumber('hisse')->name('hisseler.destroy'.$adSoneki);
 
-        Route::post('{mahalleTkgmId}/{ada}/{parsel}/yapilar', [YapiController::class, 'store'])
-            ->middleware('izin:yapi.olustur')->where($slugKisit)->name('yapi.store');
-        Route::put('{mahalleTkgmId}/{ada}/{parsel}/yapilar/{yapi}', [YapiController::class, 'update'])
-            ->middleware('izin:yapi.duzenle')->where($slugKisit)->whereNumber('yapi')->name('yapi.update');
-        Route::delete('{mahalleTkgmId}/{ada}/{parsel}/yapilar/{yapi}', [YapiController::class, 'destroy'])
-            ->middleware('izin:yapi.sil')->where($slugKisit)->whereNumber('yapi')->name('yapi.destroy');
+            Route::post($kok.'/yapilar', [YapiController::class, 'store'])
+                ->middleware('izin:yapi.olustur')->where($slugKisit)->name('yapi.store'.$adSoneki);
+            Route::put($kok.'/yapilar/{yapi}', [YapiController::class, 'update'])
+                ->middleware('izin:yapi.duzenle')->where($slugKisit)->whereNumber('yapi')->name('yapi.update'.$adSoneki);
+            Route::delete($kok.'/yapilar/{yapi}', [YapiController::class, 'destroy'])
+                ->middleware('izin:yapi.sil')->where($slugKisit)->whereNumber('yapi')->name('yapi.destroy'.$adSoneki);
+        };
+        $kayitRotalari('{mahalleTkgmId}/{ada}/{parsel}', '');
+        Route::middleware(TasinmazBolumParametresi::class)->group(
+            fn () => $kayitRotalari('{mahalleTkgmId}/{ada}/{parsel}/bb/{bolum}', '.bb')
+        );
 
         // Eski (legacy) id-tabanlı GET rotası — sadece 301 redirect.
         // PUT/DELETE legacy tutulmaz; formlar zaten yeni URL'ye submit ediyor.
         Route::get('{tasinmaz}/duzenle', function (int $tasinmaz) {
             $t = Tasinmaz::with('mahalle:id,tkgm_id')->findOrFail($tasinmaz);
-            abort_unless($t->mudurlukErisilebilirMi(), 403, 'Bu kayda erişim yetkiniz yok.');
-            $slug = $t->duzenleParams();
-            if (isset($slug['tasinmaz'])) {
+            if (isset($t->duzenleParams()['tasinmaz'])) {
                 abort(404, 'Bu kayıtta mahalle TKGM id / ada / parsel eksik.');
             }
 
-            return redirect()->route('panel.tasinmazlar.duzenle', $slug, 301);
+            return redirect($t->rota('duzenle'), 301);
         })->middleware('izin:tasinmaz.duzenle')->whereNumber('tasinmaz')->name('duzenle-legacy');
 
         Route::get('{tasinmaz}', function (int $tasinmaz) {
             $t = Tasinmaz::with('mahalle:id,tkgm_id')->findOrFail($tasinmaz);
-            abort_unless($t->mudurlukErisilebilirMi(), 403, 'Bu kayda erişim yetkiniz yok.');
-            $slug = $t->duzenleParams();
-            if (isset($slug['tasinmaz'])) {
+            if (isset($t->duzenleParams()['tasinmaz'])) {
                 abort(404, 'Bu kayıtta mahalle TKGM id / ada / parsel eksik.');
             }
 
-            return redirect()->route('panel.tasinmazlar.detay', $slug, 301);
+            return redirect($t->rota('detay'), 301);
         })->middleware('izin:tasinmaz.goruntule')->whereNumber('tasinmaz')->name('detay-legacy');
     });
 
@@ -319,6 +317,8 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:lojman.duzenle')->whereNumber('id')->name('basvuru.guncelle');
         Route::delete('basvuru/{id}', [LojmanController::class, 'basvuruSil'])
             ->middleware('izin:lojman.sil')->whereNumber('id')->name('basvuru.sil');
+        Route::post('basvuru/{id}/tahsis', [LojmanController::class, 'basvuruTahsis'])
+            ->middleware('izin:lojman.duzenle')->whereNumber('id')->name('basvuru.tahsis');
 
         // Tahsis
         Route::post('{lojmanId}/tahsis', [LojmanController::class, 'tahsisKaydet'])
@@ -342,6 +342,43 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:lojman.duzenle')->whereNumber('id')->name('guncelle');
         Route::delete('{id}', [LojmanController::class, 'sil'])
             ->middleware('izin:lojman.sil')->whereNumber('id')->name('sil');
+    });
+
+    // ============ TAŞINMAZ DEĞERLEME ============
+    Route::prefix('degerleme')->name('degerleme.')->middleware('izin:degerleme.goruntule')->group(function () {
+        Route::get('/', [DegerlemeController::class, 'index'])->name('index');
+        Route::get('excel', [DegerlemeController::class, 'excelIndir'])->name('excel');
+        Route::get('harita', [DegerlemeController::class, 'harita'])->name('harita');
+        Route::get('harita/geojson', [DegerlemeController::class, 'haritaGeojson'])->name('harita.geojson');
+        Route::get('harita/tasinmaz/{tasinmazId}', [DegerlemeController::class, 'haritaTasinmaz'])
+            ->whereNumber('tasinmazId')->name('harita.tasinmaz');
+
+        // Yeni: önce taşınmaz bulunur, sonra o taşınmazdan değerleme açılır
+        Route::get('yeni', [DegerlemeController::class, 'yeni'])
+            ->middleware('izin:degerleme.olustur')->name('yeni');
+        Route::get('yeni/{tasinmazId}', [DegerlemeController::class, 'olustur'])
+            ->middleware('izin:degerleme.olustur')->whereNumber('tasinmazId')->name('olustur');
+        Route::post('yeni/{tasinmazId}', [DegerlemeController::class, 'kaydet'])
+            ->middleware('izin:degerleme.olustur')->whereNumber('tasinmazId')->name('kaydet');
+
+        // Excel ile toplu içe aktarım + rapor PDF'lerini rapor no ile eşleştirme
+        Route::get('ice-aktar', [DegerlemeController::class, 'iceAktar'])
+            ->middleware('izin:degerleme.olustur')->name('ice-aktar');
+        Route::get('ice-aktar/sablon', [DegerlemeController::class, 'sablonIndir'])
+            ->middleware('izin:degerleme.olustur')->name('sablon');
+        Route::post('ice-aktar', [DegerlemeController::class, 'iceAktarYukle'])
+            ->middleware('izin:degerleme.olustur')->name('ice-aktar.yukle');
+        Route::post('evrak-eslestir', [DegerlemeController::class, 'evrakEslestir'])
+            ->middleware('izin:degerleme.duzenle')->name('evrak-eslestir');
+
+        Route::get('{id}', [DegerlemeController::class, 'detay'])->whereNumber('id')->name('detay');
+        Route::get('{id}/rapor', [DegerlemeController::class, 'rapor'])->whereNumber('id')->name('rapor');
+        Route::get('{id}/duzenle', [DegerlemeController::class, 'duzenle'])
+            ->middleware('izin:degerleme.duzenle')->whereNumber('id')->name('duzenle');
+        Route::put('{id}', [DegerlemeController::class, 'guncelle'])
+            ->middleware('izin:degerleme.duzenle')->whereNumber('id')->name('guncelle');
+        Route::delete('{id}', [DegerlemeController::class, 'sil'])
+            ->middleware('izin:degerleme.sil')->whereNumber('id')->name('sil');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

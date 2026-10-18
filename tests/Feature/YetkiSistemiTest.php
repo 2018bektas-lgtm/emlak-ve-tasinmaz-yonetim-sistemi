@@ -6,11 +6,9 @@ use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\Kullanici;
 use App\Models\Mahalle;
-use App\Models\Mudurluk;
 use App\Models\Rol;
 use App\Models\Tasinmaz;
 use App\Support\TasinmazKolonlari;
-use Database\Seeders\MudurlukSeeder;
 use Database\Seeders\YetkiSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -23,7 +21,6 @@ class YetkiSistemiTest extends TestCase
     {
         parent::setUp();
         $this->seed(YetkiSeeder::class);
-        $this->seed(MudurlukSeeder::class);
     }
 
     public function test_admin_tum_izinlere_sahiptir(): void
@@ -33,7 +30,6 @@ class YetkiSistemiTest extends TestCase
         $this->assertTrue($admin->adminMi());
         $this->assertTrue($admin->izinVarMi('tasinmaz.sil'));
         $this->assertTrue($admin->izinVarMi('rol.duzenle'));
-        $this->assertTrue($admin->izinVarMi('tasinmaz.tumunu-gor'));
     }
 
     public function test_goruntuleyici_duzenleyemez(): void
@@ -68,35 +64,17 @@ class YetkiSistemiTest extends TestCase
             ->assertOk();
     }
 
-    public function test_mudurluk_kapsami_diger_kayitlari_gizler(): void
+    public function test_izinli_kullanici_tum_tasinmazlari_gorur(): void
     {
-        $emlak = Mudurluk::query()->where('kod', 'emlak-istimlak')->firstOrFail();
-        $imar = Mudurluk::query()->where('kod', 'imar-sehircilik')->firstOrFail();
+        // Müdürlük ayrımı yok: görüntüleme izni olan herkes tüm kayıtları görür
+        $a = $this->tasinmazOlustur('10', '10');
+        $b = $this->tasinmazOlustur('20', '20');
 
-        $kullanici = $this->kullanici('kullanici', $emlak);
-        $this->tasinmazOlustur($emlak, '10', '10');
-        $gizli = $this->tasinmazOlustur($imar, '20', '20');
-
-        $this->actingAs($kullanici)
+        $this->actingAs($this->kullanici('goruntuleyici'))
             ->get(route('panel.tasinmazlar.index'))
             ->assertOk()
-            ->assertSee('10', false)
-            ->assertDontSee('>'.$gizli->id.'<', false);
-
-        $gorunen = Tasinmaz::query()->mudurlukKapsami($kullanici)->pluck('id');
-        $this->assertTrue($gorunen->contains(fn ($id) => Tasinmaz::query()->where('mudurluk_id', $emlak->id)->whereKey($id)->exists()));
-        $this->assertFalse($gorunen->contains($gizli->id));
-    }
-
-    public function test_admin_tum_mudurlukleri_gorur(): void
-    {
-        $emlak = Mudurluk::query()->where('kod', 'emlak-istimlak')->firstOrFail();
-        $imar = Mudurluk::query()->where('kod', 'imar-sehircilik')->firstOrFail();
-        $this->tasinmazOlustur($emlak, '10', '10');
-        $this->tasinmazOlustur($imar, '20', '20');
-
-        $admin = $this->kullanici('admin');
-        $this->assertSame(2, Tasinmaz::query()->mudurlukKapsami($admin)->count());
+            ->assertSee('data-tasinmaz-id="'.$a->id.'"', false)
+            ->assertSee('data-tasinmaz-id="'.$b->id.'"', false);
     }
 
     public function test_pasif_kullanici_giris_yapamaz(): void
@@ -138,18 +116,17 @@ class YetkiSistemiTest extends TestCase
         );
     }
 
-    private function kullanici(string $rolKodu, ?Mudurluk $mudurluk = null): Kullanici
+    private function kullanici(string $rolKodu): Kullanici
     {
         $rol = Rol::query()->where('kod', $rolKodu)->firstOrFail();
 
         return Kullanici::factory()->create([
             'rol_id' => $rol->id,
-            'mudurluk_id' => $mudurluk?->id,
             'aktif_mi' => true,
         ]);
     }
 
-    private function tasinmazOlustur(Mudurluk $mudurluk, string $ada, string $parsel): Tasinmaz
+    private function tasinmazOlustur(string $ada, string $parsel): Tasinmaz
     {
         static $sira = 1;
 
@@ -172,7 +149,6 @@ class YetkiSistemiTest extends TestCase
             'parsel' => $parsel,
             'alan' => 100,
             'nitelik' => 'Arsa',
-            'mudurluk_id' => $mudurluk->id,
             'uzeri_bina_var_mi' => false,
         ]);
     }

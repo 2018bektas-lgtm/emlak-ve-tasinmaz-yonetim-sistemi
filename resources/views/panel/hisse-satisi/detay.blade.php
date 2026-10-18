@@ -2,47 +2,140 @@
 
 @section('title', 'Hisse Satışı — ' . $tasinmaz->ada . '/' . $tasinmaz->parsel)
 
+@section('shellClass', 'is-cam')
+
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
+@endpush
+
 @section('content')
+@php
+    use App\Enums\HisseBasvuruDurumu as HD;
+
+    $aktifBasvurular = $basvurular->reject(fn ($b) => $b->durum === HD::Reddedildi);
+    $aktifSayi = $aktifBasvurular->count();
+    $sira = array_flip(array_map(fn ($d) => $d->value, HD::siralanmis()));
+
+    // Dosya durumu: hepsi reddedildiyse Reddedildi, aksi halde en geride kalan aktif başvurunun aşaması
+    $grupDurum = $aktifSayi === 0
+        ? HD::Reddedildi
+        : $aktifBasvurular->sortBy(fn ($b) => $sira[$b->durum->value])->first()->durum;
+    $dosyaAcik = ! in_array($grupDurum, [HD::Tamamlandi, HD::Reddedildi], true);
+
+    [$itirazTamam, $itirazBekleyen] = $itiraz;
+    $gorusImarGeldi = $goruslar->contains(fn ($g) => $g->gelen_tarih || $g->gelen_evrak)
+        || $imarEvraklari->contains(fn ($i) => $i->imar_gelen_tarih || $i->imar_gelen_evrak);
+    $satisSayi = $satisTebligatlari->count();
+    $odenenSayi = $satisTebligatlari->where('odedi', true)->count();
+    $tapuSayi = $satisTapulari->count();
+    $toplamBedel = (float) $satisTebligatlari->sum('toplam_bedel');
+
+    // 7 adımlı süreç çizgisi — tamam / aktif / bekliyor
+    $adimlar = [
+        ['Başvuru', $basvurular->count().' başvuru', true],
+        ['Ön Tebligat', $tebligatlar->isEmpty() ? 'Tebligat yok' : ($itirazTamam ? 'İtiraz süresi doldu' : $itirazBekleyen.' itiraz sürüyor'), $itirazTamam],
+        ['Görüş · İmar', $gorusImarGeldi ? 'Cevaplar geldi' : ($goruslar->count() + $imarEvraklari->count()).' yazışma', $gorusImarGeldi],
+        ['Encümen', $encumenBirimFiyat > 0 ? number_format($encumenBirimFiyat, 2, ',', '.').' ₺/m²' : 'Karar yok', $encumenBirimFiyat > 0],
+        ['Satış Tebligatı', $satisSayi.' / '.$aktifSayi, $aktifSayi > 0 && $satisSayi >= $aktifSayi],
+        ['Ödeme', $odenenSayi.' / '.$aktifSayi, $aktifSayi > 0 && $odenenSayi >= $aktifSayi],
+        ['Tapu', $tapuSayi.' / '.$aktifSayi, $aktifSayi > 0 && $tapuSayi >= $aktifSayi],
+    ];
+    // Sonraki bir adım tamamsa öncekiler de geçilmiş sayılır (ör. encümen kararı
+    // alınmışsa görüş/imar adımı "aktif" görünmez)
+    for ($i = count($adimlar) - 2; $i >= 0; $i--) {
+        if ($adimlar[$i + 1][2]) {
+            $adimlar[$i][2] = true;
+        }
+    }
+    $aktifAdim = collect($adimlar)->search(fn ($a) => ! $a[2]);
+@endphp
+
 @if (session('basari'))
-    <div class="flash-success">{{ session('basari') }}</div>
+    <div class="flash-success" role="status">{{ session('basari') }}</div>
+@endif
+@if (session('uyari'))
+    <div class="hs-uyari" role="status">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        {{ session('uyari') }}
+    </div>
+@endif
+@if ($errors->any())
+    <div class="flash-error" role="alert">
+        @foreach ($errors->all() as $hata) <div>{{ $hata }}</div> @endforeach
+    </div>
 @endif
 
-{{-- ============ HEADER: taşınmaz özet + süreç aşaması ============ --}}
+{{-- ============ BAŞLIK: taşınmaz + dosya durumu + süreç çizgisi ============ --}}
 <section class="hs-basbaslik">
-    <div class="hs-basbaslik-sol">
-        <div class="hs-basbaslik-ust">
-            <span class="hs-basbaslik-etiket">Hisse Satışı</span>
-            <span class="tl-pill {{ $basvurular->first()->durum->pill() }}">{{ $basvurular->first()->durum->etiket() }}</span>
+    <div class="hs-basbaslik-ust-satir">
+        <div class="hs-basbaslik-sol">
+            <div class="hs-basbaslik-ust">
+                <span class="hs-basbaslik-etiket">Hisse Satışı · Dosya #{{ $grupNo }}</span>
+                <span class="tl-pill {{ $grupDurum->pill() }}">{{ $grupDurum->etiket() }}</span>
+            </div>
+            <h2>{{ optional($tasinmaz->ilce)->ad ?? '—' }} · {{ optional($tasinmaz->mahalle)->ad ?? '—' }}</h2>
+            <div class="hs-basbaslik-alt">
+                <span>Ada <strong>{{ $tasinmaz->ada }}</strong></span>
+                <span>Parsel <strong>{{ $tasinmaz->parsel }}</strong></span>
+                <span>Alan <strong>{{ $tasinmaz->alan !== null ? number_format((float) $tasinmaz->alan, 2, ',', '.').' m²' : '—' }}</strong></span>
+            </div>
         </div>
-        <h2>{{ optional($tasinmaz->ilce)->ad ?? '—' }} · {{ optional($tasinmaz->mahalle)->ad ?? '—' }}</h2>
-        <div class="hs-basbaslik-alt">
-            <span>Ada <strong>{{ $tasinmaz->ada }}</strong></span>
-            <span>Parsel <strong>{{ $tasinmaz->parsel }}</strong></span>
-            <span>Alan <strong>{{ $tasinmaz->alan !== null ? number_format((float) $tasinmaz->alan, 2, ',', '.').' m²' : '—' }}</strong></span>
-            <span>Kurum Hissesi <strong>{{ number_format($aktifHisseToplami, 2, ',', '.') }} m²</strong></span>
+        <div class="hs-basbaslik-sag">
+            <a href="{{ route('panel.hisse-satisi.liste') }}" class="btn-cancel">← Liste</a>
+            <a href="{{ $tasinmaz->rota('detay') }}" class="btn-cancel">Taşınmaz Kaydı</a>
+            @if ($dosyaAcik)
+                <a href="{{ route('panel.hisse-satisi.olustur', $tasinmaz->id) }}" class="btn-submit">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    Başvuru Ekle
+                </a>
+            @endif
         </div>
     </div>
-    <div class="hs-basbaslik-sag">
-        <a href="{{ route('panel.hisse-satisi.liste') }}" class="btn-cancel">← Liste</a>
-        <a href="{{ route('panel.hisse-satisi.olustur', $tasinmaz->id) }}" class="btn-submit">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Yeni Başvuru
-        </a>
-    </div>
+
+    <ol class="hs-adimlar" aria-label="Süreç aşamaları">
+        @foreach ($adimlar as $i => [$ad, $alt, $tamam])
+            @php $durum = $tamam ? 'is-tamam' : ($i === $aktifAdim ? 'is-aktif' : 'is-bekliyor'); @endphp
+            <li class="hs-adim {{ $durum }}" @if ($i === $aktifAdim) aria-current="step" @endif>
+                <span class="hs-adim-nokta" aria-hidden="true">
+                    @if ($tamam)
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+                    @else
+                        {{ $i + 1 }}
+                    @endif
+                </span>
+                <span class="hs-adim-ad">{{ $ad }}</span>
+                <span class="hs-adim-alt">{{ $alt }}</span>
+            </li>
+        @endforeach
+    </ol>
+    <p class="hs-adim-not">Aşamalar girilen kayıtlardan otomatik hesaplanır. Elle yalnızca ret verilebilir.</p>
 </section>
 
-{{-- ============ Süreç aşaması güncelleme ============ --}}
-<form method="POST" action="{{ route('panel.hisse-satisi.durum', $grupNo) }}" class="hs-durum-bar">
-    @csrf
-    @method('PUT')
-    <label>Süreç Aşaması:</label>
-    <select name="durum" class="form-select" id="hs-grup-durum">
-        @foreach ($durumSecenekleri as $d)
-            <option value="{{ $d->value }}" @selected($basvurular->first()->durum === $d)>{{ $d->etiket() }}</option>
-        @endforeach
-    </select>
-    <button type="submit" class="btn-submit" style="padding:8px 16px;">Güncelle</button>
-</form>
+{{-- ============ HESAP ÖZETİ ============ --}}
+<section class="hs-hesap" aria-label="Hesap özeti">
+    <div class="hs-hesap-kutu">
+        <span>Kurum Hissesi (aktif)</span>
+        <strong>{{ number_format($aktifHisseToplami, 2, ',', '.') }} <em>m²</em></strong>
+    </div>
+    <div class="hs-hesap-kutu">
+        <span>Talep Toplamı</span>
+        <strong>{{ number_format($talepToplami, 2, ',', '.') }} <em>m²</em></strong>
+        @if ($ulasmadiToplam > 0)<small>+ {{ number_format($ulasmadiToplam, 2, ',', '.') }} m² ulaşmayan tebligat payı</small>@endif
+    </div>
+    <div class="hs-hesap-kutu">
+        <span>Talep m² başına düşen</span>
+        <strong>{{ number_format($birimAlan, 4, ',', '.') }} <em>m²</em></strong>
+    </div>
+    <div class="hs-hesap-kutu">
+        <span>Encümen Birim Fiyatı</span>
+        <strong>{{ $encumenBirimFiyat > 0 ? number_format($encumenBirimFiyat, 2, ',', '.') : '—' }} <em>₺/m²</em></strong>
+    </div>
+    <div class="hs-hesap-kutu is-vurgu">
+        <span>Tebliğ Edilen Toplam Bedel</span>
+        <strong>{{ number_format($toplamBedel, 2, ',', '.') }} <em>₺</em></strong>
+        <small>{{ $odenenSayi }} / {{ $satisSayi }} ödendi</small>
+    </div>
+</section>
 
 {{-- ============ SEKMELER (referans birebir sıra) ============ --}}
 <div class="hs-tab" role="tablist">
@@ -50,33 +143,38 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
         Hisse Başvuruları <span class="hs-tab-sayac">{{ $basvurular->count() }}</span>
     </button>
-    <button type="button" class="hs-tab-oge" data-hs-tab="malikler">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Hissedar (Malik) Listesi <span class="hs-tab-sayac">{{ $tasinmaz->malikler->count() }}</span>
+    <button type="button" class="hs-tab-oge" data-hs-tab="tebligatlar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/></svg>
+        Ön Tebligat <span class="hs-tab-sayac">{{ $tebligatlar->count() }}</span>
     </button>
     <button type="button" class="hs-tab-oge" data-hs-tab="gorus">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        Taşınmaz Görüş <span class="hs-tab-sayac">{{ $goruslar->count() }}</span>
+        Görüş <span class="hs-tab-sayac">{{ $goruslar->count() }}</span>
     </button>
     <button type="button" class="hs-tab-oge" data-hs-tab="imar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21V11h6v10M9 15h.01M15 15h.01"/></svg>
-        İmar Durum <span class="hs-tab-sayac">{{ $imarEvraklari->count() }}</span>
-    </button>
-    <button type="button" class="hs-tab-oge" data-hs-tab="tebligatlar">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/></svg>
-        Tebligat Gönderilen Vatandaşlar <span class="hs-tab-sayac">{{ $tebligatlar->count() }}</span>
+        İmar <span class="hs-tab-sayac">{{ $imarEvraklari->count() }}</span>
     </button>
     <button type="button" class="hs-tab-oge" data-hs-tab="encumen">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
-        Encümen Bilgileri <span class="hs-tab-sayac">{{ $encumenler->count() }}</span>
+        Encümen <span class="hs-tab-sayac">{{ $encumenler->count() }}</span>
     </button>
     <button type="button" class="hs-tab-oge" data-hs-tab="satis">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/></svg>
-        Satış Tebligatı Gönderilenler <span class="hs-tab-sayac">{{ $satisTebligatlari->count() }}</span>
+        Satış Tebligatı <span class="hs-tab-sayac">{{ $satisTebligatlari->count() }}</span>
     </button>
     <button type="button" class="hs-tab-oge" data-hs-tab="tapu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10"/><path d="M2 10l10-6 10 6"/><path d="M9 22V12h6v10"/></svg>
         Tapu Tescili <span class="hs-tab-sayac">{{ $satisTapulari->count() }}</span>
+    </button>
+    <span class="hs-tab-ayrac" aria-hidden="true"></span>
+    <button type="button" class="hs-tab-oge" data-hs-tab="malikler">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Hissedarlar <span class="hs-tab-sayac">{{ $tasinmaz->malikler->count() }}</span>
+    </button>
+    <button type="button" class="hs-tab-oge" data-hs-tab="gecmis">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        İşlem Geçmişi <span class="hs-tab-sayac">{{ $gecmis->count() }}</span>
     </button>
 </div>
 
@@ -87,17 +185,12 @@
             <thead>
                 <tr>
                     <th>#</th>
-                    <th>Ad Soyad</th>
-                    <th>TC Kimlik</th>
-                    <th>GSM</th>
-                    <th>Başvuru Tarihi</th>
-                    <th>Tapu Hisse (m²)</th>
-                    <th>Talep (m²)</th>
-                    <th>Evrak</th>
+                    <th>Başvuran</th>
+                    <th>Tarih</th>
+                    <th>Tapu / Talep (m²)</th>
                     <th>Ön Tebligat</th>
-                    <th>Satış Tebligatı</th>
-                    <th>Ödendi</th>
-                    <th>Tapu Tescili</th>
+                    <th>Satış · Ödeme · Tapu</th>
+                    <th>Aşama</th>
                     <th>İşlem</th>
                 </tr>
             </thead>
@@ -116,16 +209,18 @@
                     @endphp
                     <tr>
                         <td class="td-mono">{{ $loop->iteration }}</td>
-                        <td><strong>{{ $b->ad_soyad }}</strong></td>
-                        <td class="td-mono">{{ $b->tc_kimlik }}</td>
-                        <td class="td-mono">{{ $b->gsm_no ?? '—' }}</td>
-                        <td>{{ optional($b->basvuru_tarihi)->format('d.m.Y') }}</td>
-                        <td class="td-mono">{{ $b->tapu_hisse !== null ? number_format((float) $b->tapu_hisse, 2, ',', '.') : '—' }}</td>
-                        <td class="td-mono">{{ $b->talep_edilen_hisse !== null ? number_format((float) $b->talep_edilen_hisse, 2, ',', '.') : '—' }}</td>
-                        <td>
+                        <td class="hs-kisi">
+                            <strong>{{ $b->ad_soyad }}</strong>
+                            <small>{{ $b->tc_kimlik }}{{ $b->gsm_no ? ' · '.$b->gsm_no : '' }}</small>
+                        </td>
+                        <td class="td-mono">{{ optional($b->basvuru_tarihi)->format('d.m.Y') }}</td>
+                        <td class="td-mono hs-hisse-hucre">
+                            {{ $b->tapu_hisse !== null ? number_format((float) $b->tapu_hisse, 2, ',', '.') : '—' }}
+                            <span>/</span>
+                            {{ $b->talep_edilen_hisse !== null ? number_format((float) $b->talep_edilen_hisse, 2, ',', '.') : '—' }}
                             @if ($b->evrakUrl())
-                                <a href="{{ $b->evrakUrl() }}" target="_blank" class="td-link">PDF</a>
-                            @else — @endif
+                                <a href="{{ $b->evrakUrl() }}" target="_blank" class="td-link" title="Başvuru evrakı">PDF</a>
+                            @endif
                         </td>
                         {{-- Ön Tebligat durumu --}}
                         <td>
@@ -139,37 +234,26 @@
                                 <span class="tl-pill tl-pill-warn">Gönderildi</span>
                             @endif
                         </td>
-                        {{-- Satış Tebligatı durumu --}}
-                        <td>
+                        {{-- Satış tebligatı · ödeme · tapu — tek hücrede (tablo ekrana sığsın) --}}
+                        <td class="hs-surec-hucre">
                             @if (! $st)
-                                <span class="tl-pill tl-pill-mute">Yok</span>
-                            @elseif ($st->tebligat_ulasmadi)
-                                <span class="tl-pill tl-pill-danger">Ulaşmadı</span>
-                            @elseif ($st->ulastigi_tarihi)
-                                <span class="tl-pill tl-pill-ok">Ulaştı · {{ $st->ulastigi_tarihi->format('d.m.Y') }}</span>
+                                <span class="tl-pill tl-pill-mute">Satış tebligatı yok</span>
                             @else
-                                <span class="tl-pill tl-pill-warn">Gönderildi</span>
+                                @if ($st->tebligat_ulasmadi)
+                                    <span class="tl-pill tl-pill-danger" title="Satış tebligatı">Ulaşmadı</span>
+                                @elseif ($st->ulastigi_tarihi)
+                                    <span class="tl-pill tl-pill-ok" title="Satış tebligatı">Ulaştı · {{ $st->ulastigi_tarihi->format('d.m.Y') }}</span>
+                                @else
+                                    <span class="tl-pill tl-pill-warn" title="Satış tebligatı">Tebliğ edildi</span>
+                                @endif
+                                <span class="tl-pill {{ $st->odedi ? 'tl-pill-ok' : 'tl-pill-warn' }}">{{ $st->odedi ? 'Ödendi' : 'Ödeme bekliyor' }}</span>
+                                @if ($tp)
+                                    <span class="tl-pill tl-pill-ok">Tapu · {{ optional($tp->tescil_tarihi)->format('d.m.Y') }}</span>
+                                @endif
                             @endif
                         </td>
-                        {{-- Ödendi durumu --}}
-                        <td>
-                            @if (! $st)
-                                —
-                            @elseif ($st->odedi)
-                                <span class="tl-pill tl-pill-ok">Ödendi</span>
-                            @else
-                                <span class="tl-pill tl-pill-warn">Bekliyor</span>
-                            @endif
-                        </td>
-                        {{-- Tapu Tescili --}}
-                        <td>
-                            @if ($tp)
-                                <span class="tl-pill tl-pill-ok">Tamamlandı · {{ optional($tp->tescil_tarihi)->format('d.m.Y') }}</span>
-                            @else
-                                <span class="tl-pill tl-pill-mute">—</span>
-                            @endif
-                        </td>
-                        <td>
+                        <td><span class="tl-pill {{ $b->durum->pill() }}">{{ $b->durum->etiket() }}</span></td>
+                        <td class="hs-satir-islem">
                             <button type="button" class="btn-cancel hs-duzenle-btn"
                                 onclick="hsDuzenleAc('basvuru', {{ Js::from([
                                     "id" => $b->id,
@@ -181,13 +265,49 @@
                                     "talep_edilen_hisse" => $b->talep_edilen_hisse,
                                     "aciklama" => $b->aciklama,
                                 ]) }})">Düzenle</button>
-                            <button type="button" class="btn-cancel" style="padding:4px 10px;font-size:0.75rem;" onclick="hsBasvuruSil({{ $b->id }})">Sil</button>
+                            <form method="POST" action="{{ route('panel.hisse-satisi.durum', $grupNo) }}" class="hs-inline-form"
+                                  onsubmit="return {{ $b->durum === HD::Reddedildi ? 'true' : "confirm('Bu başvuru reddedilsin mi? Kurum hissesinin bölüşümünden çıkarılır.')" }};">
+                                @csrf
+                                @method('PUT')
+                                <input type="hidden" name="basvuru_id" value="{{ $b->id }}">
+                                @if ($b->durum === HD::Reddedildi)
+                                    <input type="hidden" name="islem" value="geri_al">
+                                    <button type="submit" class="btn-cancel hs-mini-btn">Reddi Geri Al</button>
+                                @elseif (! in_array($b->durum, [HD::TapuAsamasinda, HD::Tamamlandi], true))
+                                    <input type="hidden" name="islem" value="reddet">
+                                    <button type="submit" class="btn-cancel hs-mini-btn hs-mini-btn-tehlike">Reddet</button>
+                                @endif
+                            </form>
+                            <button type="button" class="btn-cancel hs-mini-btn" onclick="hsBasvuruSil({{ $b->id }})">Sil</button>
                         </td>
                     </tr>
                 @endforeach
             </tbody>
         </table>
     </div>
+</div>
+
+{{-- ============ İşlem Geçmişi ============ --}}
+<div class="hs-panel" data-hs-panel="gecmis">
+    @if ($gecmis->isEmpty())
+        <p class="hs-bos">Henüz kayıtlı işlem yok.</p>
+    @else
+        <ol class="hs-zaman">
+            @foreach ($gecmis as $g)
+                <li class="hs-zaman-oge">
+                    <span class="hs-zaman-nokta" aria-hidden="true"></span>
+                    <div class="hs-zaman-govde">
+                        <div class="hs-zaman-ust">
+                            <strong>{{ $g->islem }}</strong>
+                            <time datetime="{{ $g->created_at->toIso8601String() }}">{{ $g->created_at->format('d.m.Y H:i') }}</time>
+                        </div>
+                        @if ($g->aciklama)<p>{{ $g->aciklama }}</p>@endif
+                        <small>{{ $g->kullanici ? $g->kullanici->ad.' '.$g->kullanici->soyad : 'Sistem' }}</small>
+                    </div>
+                </li>
+            @endforeach
+        </ol>
+    @endif
 </div>
 
 {{-- ============ 2) Hissedar (Malik) Listesi ============ --}}
@@ -965,10 +1085,30 @@ function hsFetch(method, url, body) {
         },
         body: body ? JSON.stringify(body) : undefined,
     }).then(async r => {
-        if (! r.ok) throw new Error('Sunucu hatası');
-        return r.json();
+        const veri = await r.json().catch(() => ({}));
+        // Sunucunun açıklayıcı mesajını (ör. "ödemesi olan başvuru silinemez") göster
+        if (! r.ok || veri.ok === false) throw new Error(veri.mesaj || veri.message || 'İşlem yapılamadı.');
+        return veri;
     });
 }
+
+// Hata bildirimi — sayfayı kilitlemeyen cam kutu
+function hsBildir(mesaj) {
+    let kutu = document.getElementById('hs-bildirim');
+    if (! kutu) {
+        kutu = document.createElement('div');
+        kutu.id = 'hs-bildirim';
+        kutu.className = 'hs-bildirim';
+        kutu.setAttribute('role', 'alert');
+        document.body.appendChild(kutu);
+    }
+    kutu.textContent = mesaj;
+    kutu.classList.add('is-acik');
+    clearTimeout(kutu._t);
+    kutu._t = setTimeout(() => kutu.classList.remove('is-acik'), 5000);
+}
+// Aşamayı etkileyen işlemlerden sonra sayfa yenilenir (süreç çizgisi güncel kalsın)
+const hsYenile = () => location.reload();
 
 function hsKalanGunHTML(kg) {
     if (kg === null || kg === undefined) return '—';
@@ -978,7 +1118,7 @@ function hsKalanGunHTML(kg) {
 
 function hsAjaxSil(url) {
     if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return;
-    hsFetch('DELETE', url).then(() => location.reload()).catch(() => alert('Silme başarısız.'));
+    hsFetch('DELETE', url).then(hsYenile).catch(e => hsBildir(e.message));
 }
 
 function hsBasvuruSil(id) { hsAjaxSil(`${HS.base}/basvuru/${id}`); }
@@ -987,19 +1127,22 @@ function hsMalikSil(id) { hsAjaxSil(`${HS.base}/malik/${id}`); }
 function hsTebligatSil(id) { hsAjaxSil(`${HS.base}/tebligat/${id}`); }
 function hsTebligatBasvurdu(id, cb) {
     hsFetch('PATCH', `${HS.base}/tebligat/${id}/basvurdu`, { basvurdu: cb.checked ? 1 : 0 })
-        .catch(() => { cb.checked = !cb.checked; alert('Güncellenemedi'); });
+        .then(hsYenile)
+        .catch(e => { cb.checked = !cb.checked; hsBildir(e.message); });
 }
 function hsTebligatUlasmadi(id, cb) {
     hsFetch('PATCH', `${HS.base}/tebligat/${id}/ulasmadi`, { tebligat_ulasmadi: cb.checked ? 1 : 0 })
-        .catch(() => { cb.checked = !cb.checked; alert('Güncellenemedi'); });
+        .then(hsYenile)
+        .catch(e => { cb.checked = !cb.checked; hsBildir(e.message); });
 }
 function hsTebligatUlastigi(id, input) {
     hsFetch('PATCH', `${HS.base}/tebligat/${id}/ulastigi-tarihi`, { ulastigi_tarihi: input.value || null })
         .then(d => {
             const row = document.querySelector(`tr[data-teb-id="${id}"]`);
             if (row) row.querySelector('.hs-kalan-gun').innerHTML = hsKalanGunHTML(d.kalan_gun);
+            hsYenile();
         })
-        .catch(() => alert('Güncellenemedi'));
+        .catch(e => hsBildir(e.message));
 }
 
 function hsEncumenSil(id) { hsAjaxSil(`${HS.base}/encumen/${id}`); }
@@ -1013,19 +1156,22 @@ function hsTapuSil(id) { hsAjaxSil(`${HS.base}/tapu/${id}`); }
 function hsSatisSil(id) { hsAjaxSil(`${HS.base}/satis-tebligat/${id}`); }
 function hsSatisOdedi(id, cb) {
     hsFetch('PATCH', `${HS.base}/satis-tebligat/${id}/odedi`, { odedi: cb.checked ? 1 : 0 })
-        .catch(() => { cb.checked = !cb.checked; alert('Güncellenemedi'); });
+        .then(hsYenile)
+        .catch(e => { cb.checked = !cb.checked; hsBildir(e.message); });
 }
 function hsSatisUlasmadi(id, cb) {
     hsFetch('PATCH', `${HS.base}/satis-tebligat/${id}/ulasmadi`, { tebligat_ulasmadi: cb.checked ? 1 : 0 })
-        .catch(() => { cb.checked = !cb.checked; alert('Güncellenemedi'); });
+        .then(hsYenile)
+        .catch(e => { cb.checked = !cb.checked; hsBildir(e.message); });
 }
 function hsSatisUlastigi(id, input) {
     hsFetch('PATCH', `${HS.base}/satis-tebligat/${id}/ulastigi-tarihi`, { ulastigi_tarihi: input.value || null })
         .then(d => {
             const row = document.querySelector(`tr[data-satis-id="${id}"]`);
             if (row) row.querySelector('.hs-kalan-gun').innerHTML = hsKalanGunHTML(d.kalan_gun);
+            hsYenile();
         })
-        .catch(() => alert('Güncellenemedi'));
+        .catch(e => hsBildir(e.message));
 }
 </script>
 @endsection

@@ -23,7 +23,6 @@ class HisseBasvuru extends Model
         'basvuru_evrak',
         'aciklama',
         'durum',
-        'mudurluk_id',
     ];
 
     protected function casts(): array
@@ -56,11 +55,6 @@ class HisseBasvuru extends Model
     public function tasinmaz(): BelongsTo
     {
         return $this->belongsTo(Tasinmaz::class, 'tasinmaz_id');
-    }
-
-    public function mudurluk(): BelongsTo
-    {
-        return $this->belongsTo(Mudurluk::class, 'mudurluk_id');
     }
 
     public function grupBasvurulari(): HasMany

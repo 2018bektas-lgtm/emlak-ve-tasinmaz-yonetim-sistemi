@@ -681,20 +681,27 @@
         /* =========================================================
          * 8) PANELLER — aç/kapat + sürükle
          * ========================================================= */
+        // Paneller aynı köşede açılır — aynı anda tek panel açık kalsın, üst üste binmesin
+        const PANELLER = [
+            ['hrm-katman-btn', 'hrm-panel'],
+            ['hrm-adaparsel-btn', 'hrm-adaparsel-panel'],
+            ['hrm-arama-btn', 'hrm-arama-panel'],
+        ];
         function panelKur(btnId, panelId) {
             const btn = document.getElementById(btnId);
             const panel = document.getElementById(panelId);
             if (!btn || !panel) return;
             btn.addEventListener('click', function () {
                 const acilacak = panel.hidden;
+                if (acilacak) {
+                    PANELLER.forEach(function (p) { if (p[1] !== panelId) panelKapat(p[1], p[0]); });
+                }
                 panel.hidden = !acilacak;
                 btn.setAttribute('aria-expanded', acilacak ? 'true' : 'false');
                 btn.classList.toggle('is-aktif', acilacak);
             });
         }
-        panelKur('hrm-katman-btn', 'hrm-panel');
-        panelKur('hrm-adaparsel-btn', 'hrm-adaparsel-panel');
-        panelKur('hrm-arama-btn', 'hrm-arama-panel');
+        PANELLER.forEach(function (p) { panelKur(p[0], p[1]); });
 
         function panelKapat(panelId, btnId) {
             const panel = document.getElementById(panelId);

@@ -15,12 +15,16 @@ use App\Models\Mahalle;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazEncumen;
 use App\Models\TasinmazMalik;
+use App\Models\HisseIslemGecmisi;
+use App\Rules\TcKimlikNo;
+use App\Support\HisseSureci;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use RuntimeException;
 
 /**
  * Hisse Satışı — referans (tbs-eylul-2025) projeyle birebir aynı akış:
@@ -33,14 +37,15 @@ use Illuminate\View\View;
  *     yeni bir HisseBasvuru yaratılır. checkbox=0 yapılırsa o başvuru silinir.
  *  4) Görüş / Encümen kararı: satış bedeli ve karar_no encümenler tablosuna işlenir.
  *  5) Satış Tebligatı: onaylanan başvurulara bedel/tapu payı tebliği.
- *     Ödendi işaretlenirse süreç Tamamlandı durumuna geçer.
+ *  6) Ödendi işaretlenince Tapu Aşamasına geçer; tapu tescili envantere
+ *     işlenir (kurum hissesi düşer, alıcının malik payı artar) ve Tamamlandı olur.
  *
- * grup_no = ilk başvurunun id'si; tüm işlemler grup bazlı yürür.
+ * grup_no = ilk başvurunun id'si; tüm işlemler grup bazlı yürür. Kapanmış
+ * (tamamlanan/reddedilen) dosyaya yeni başvuru eklenmez, yeni grup açılır.
+ * Aşamalar kayıtlardan otomatik hesaplanır: App\Support\HisseSureci.
  */
 class HisseSatisController extends Controller
 {
-    private const DURUM_VALIDATION = 'basvuruldu,tebligat_asamasinda,degerleme_raporu_bekleniyor,encumen_karari_bekleniyor,odeme_bekleniyor,tapu_asamasinda,tamamlandi,reddedildi';
-
     /**
      * Yeni Başvuru için taşınmaz arama ekranı.
      * Arama kriterleri: il, ilçe, mahalle, ada, parsel — hepsi birlikte AND.
@@ -70,7 +75,6 @@ class HisseSatisController extends Controller
                 ."AND tasinmaz_hisseler.hisse_durum = 'aktif')";
 
             $sonuclar = Tasinmaz::query()
-                ->mudurlukKapsami()
                 ->with(['ilce:id,ad', 'mahalle:id,ad'])
                 ->withCount(['hisseler as aktif_hisse_sayisi' => fn ($h) => $h->where('hisse_durum', 'aktif')])
                 ->selectRaw("tasinmazlar.*, {$aktifToplamSql} AS aktif_hisse_toplami")
@@ -126,11 +130,13 @@ class HisseSatisController extends Controller
             'islemde' => [
                 HisseBasvuruDurumu::Basvuruldu, HisseBasvuruDurumu::TebligatAsamasinda,
                 HisseBasvuruDurumu::DegerlemeRaporuBekleniyor, HisseBasvuruDurumu::EncumenKarariBekleniyor,
-                HisseBasvuruDurumu::OdemeBekleniyor, HisseBasvuruDurumu::TapuAsamasinda,
+                HisseBasvuruDurumu::SatisTebligatiBekleniyor, HisseBasvuruDurumu::OdemeBekleniyor,
+                HisseBasvuruDurumu::TapuAsamasinda,
             ],
             'beklemede' => [
                 HisseBasvuruDurumu::TebligatAsamasinda, HisseBasvuruDurumu::DegerlemeRaporuBekleniyor,
-                HisseBasvuruDurumu::EncumenKarariBekleniyor, HisseBasvuruDurumu::OdemeBekleniyor,
+                HisseBasvuruDurumu::EncumenKarariBekleniyor, HisseBasvuruDurumu::SatisTebligatiBekleniyor,
+                HisseBasvuruDurumu::OdemeBekleniyor,
             ],
             'tamamlanan' => [HisseBasvuruDurumu::Tamamlandi],
             'reddedilen' => [HisseBasvuruDurumu::Reddedildi],
@@ -183,12 +189,28 @@ class HisseSatisController extends Controller
             ->get()
             ->keyBy('id');
 
+        // Dosya (grup) durumu: hepsi reddedildiyse Reddedildi; aksi halde reddedilmemiş
+        // başvuruların en geride olanının aşaması (eskiden yalnızca ilk başvurunun durumu gösteriliyordu)
+        $sira = array_flip(array_map(fn ($d) => $d->value, HisseBasvuruDurumu::siralanmis()));
+        $grupDurumlari = HisseBasvuru::query()
+            ->whereIn('grup_no', collect($gruplar->items())->pluck('grup_no'))
+            ->get(['id', 'grup_no', 'durum'])
+            ->groupBy('grup_no')
+            ->map(function ($liste) use ($sira) {
+                $aktif = $liste->reject(fn ($b) => $b->durum === HisseBasvuruDurumu::Reddedildi);
+
+                return $aktif->isEmpty()
+                    ? HisseBasvuruDurumu::Reddedildi
+                    : $aktif->sortBy(fn ($b) => $sira[$b->durum->value])->first()->durum;
+            });
+
         // Kısayol sayaçları (aktif filtreye BAĞLI OLMADAN — genel sayılar)
         $kisayolSayaci = $this->kisayolSayaci();
 
         return view('panel.hisse-satisi.liste', [
             'gruplar' => $gruplar,
             'basvurular' => $basvurular,
+            'grupDurumlari' => $grupDurumlari,
             'durumSecenekleri' => HisseBasvuruDurumu::siralanmis(),
             'durum' => $durum,
             'iller' => \App\Models\Il::orderBy('ad')->get(['id', 'ad']),
@@ -207,7 +229,7 @@ class HisseSatisController extends Controller
         return [
             'hepsi' => (clone $grupSorgu)->distinct('grup_no')->count('grup_no'),
             'islemde' => (clone $grupSorgu)->whereNotIn('durum', ['tamamlandi', 'reddedildi'])->distinct('grup_no')->count('grup_no'),
-            'beklemede' => (clone $grupSorgu)->whereIn('durum', ['tebligat_asamasinda', 'degerleme_raporu_bekleniyor', 'encumen_karari_bekleniyor', 'odeme_bekleniyor'])->distinct('grup_no')->count('grup_no'),
+            'beklemede' => (clone $grupSorgu)->whereIn('durum', ['tebligat_asamasinda', 'degerleme_raporu_bekleniyor', 'encumen_karari_bekleniyor', 'satis_tebligati_bekleniyor', 'odeme_bekleniyor'])->distinct('grup_no')->count('grup_no'),
             'tamamlanan' => (clone $grupSorgu)->where('durum', 'tamamlandi')->distinct('grup_no')->count('grup_no'),
             'reddedilen' => (clone $grupSorgu)->where('durum', 'reddedildi')->distinct('grup_no')->count('grup_no'),
             'tapu' => (clone $grupSorgu)->where('durum', 'tapu_asamasinda')->distinct('grup_no')->count('grup_no'),
@@ -222,11 +244,12 @@ class HisseSatisController extends Controller
         $tasinmaz = Tasinmaz::query()
             ->with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'hisseler', 'malikler'])
             ->findOrFail($tasinmazId);
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
-        $mevcutGrup = HisseBasvuru::where('tasinmaz_id', $tasinmazId)
-            ->orderBy('id')
-            ->first();
+        // Yalnızca açık (sonlanmamış) dosya — kapanmış dosyaya yeni başvuru eklenmez
+        $acikGrup = HisseSureci::acikGrupNo($tasinmazId);
+        $mevcutGrup = $acikGrup
+            ? HisseBasvuru::where('grup_no', $acikGrup)->orderBy('id')->first()
+            : null;
 
         return view('panel.hisse-satisi.olustur', [
             'tasinmaz' => $tasinmaz,
@@ -237,11 +260,11 @@ class HisseSatisController extends Controller
     public function kaydet(Request $request, int $tasinmazId): RedirectResponse
     {
         $tasinmaz = Tasinmaz::findOrFail($tasinmazId);
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tapu_hisse', 'talep_edilen_hisse']);
         $veri = $request->validate([
             'ad_soyad' => 'required|string|max:150',
-            'tc_kimlik' => 'required|string|size:11',
+            'tc_kimlik' => ['required', new TcKimlikNo],
             'gsm_no' => 'nullable|string|max:20',
             'basvuru_tarihi' => 'required|date',
             'tapu_hisse' => 'nullable|numeric|min:0',
@@ -250,16 +273,25 @@ class HisseSatisController extends Controller
             'aciklama' => 'nullable|string|max:5000',
         ]);
 
+        // Yalnızca açık dosyaya eklenir; taşınmazın dosyası kapanmışsa yeni grup açılır.
+        $grupNo = HisseSureci::acikGrupNo($tasinmazId);
+        if ($grupNo && HisseBasvuru::where('grup_no', $grupNo)
+            ->where('tc_kimlik', $veri['tc_kimlik'])
+            ->where('durum', '!=', HisseBasvuruDurumu::Reddedildi->value)
+            ->exists()) {
+            return back()->withInput()->withErrors([
+                'tc_kimlik' => 'Bu kişinin bu taşınmazın açık dosyasında zaten başvurusu var (Grup #'.$grupNo.').',
+            ]);
+        }
+
         $pdfYolu = null;
         if ($request->hasFile('basvuru_evrak')) {
             $pdfYolu = $request->file('basvuru_evrak')->store('hisse-satisi/basvuru-evraklari/'.now()->format('Y/m'), 'public');
         }
 
-        $onceki = HisseBasvuru::where('tasinmaz_id', $tasinmazId)->orderBy('id')->first();
-
         $basvuru = HisseBasvuru::create([
             'tasinmaz_id' => $tasinmazId,
-            'grup_no' => optional($onceki)->grup_no,
+            'grup_no' => $grupNo,
             'ad_soyad' => $veri['ad_soyad'],
             'tc_kimlik' => $veri['tc_kimlik'],
             'gsm_no' => $veri['gsm_no'] ?? null,
@@ -268,11 +300,14 @@ class HisseSatisController extends Controller
             'talep_edilen_hisse' => $veri['talep_edilen_hisse'] ?? null,
             'basvuru_evrak' => $pdfYolu,
             'aciklama' => $veri['aciklama'] ?? null,
-            'mudurluk_id' => auth()->user()->mudurluk_id,
         ]);
+        $grupNo = (int) $basvuru->fresh()->grup_no;
 
-        return redirect()->route('panel.hisse-satisi.detay', $basvuru->grup_no ?? $basvuru->id)
-            ->with('basari', 'Başvuru kaydedildi. Grup No: '.($basvuru->grup_no ?? $basvuru->id));
+        HisseSureci::gecmis($grupNo, 'Başvuru', $basvuru->ad_soyad.' başvurusu kaydedildi.', $basvuru->id);
+        HisseSureci::durumlariYenile($grupNo);
+
+        return redirect()->route('panel.hisse-satisi.detay', $grupNo)
+            ->with('basari', 'Başvuru kaydedildi. Grup No: '.$grupNo);
     }
 
     /** Grup detay: bir taşınmazın tüm başvuru/tebligat/satış tebligatı akışı. */
@@ -286,7 +321,6 @@ class HisseSatisController extends Controller
         abort_if($basvurular->isEmpty(), 404);
 
         $tasinmaz = $basvurular->first()->tasinmaz;
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $tebligatlar = HisseTebligat::where('grup_no', $grupNo)->orderBy('id')->get();
         $satisTebligatlari = HisseSatisTebligat::where('grup_no', $grupNo)->with('basvuru')->orderBy('id')->get();
@@ -300,7 +334,9 @@ class HisseSatisController extends Controller
         // Bir başvurana düşen m² = talebi × birimAlan
         // Bir başvurana düşen bedel = düşen m² × en son encümen birim_fiyat
         $aktifHisseToplami = (float) $tasinmaz->hisseler->where('hisse_durum', 'aktif')->sum('hisse_yuzolcum');
-        $talepToplami = (float) $basvurular->sum(fn ($b) => $b->talep_edilen_hisse ?? $b->tapu_hisse ?? 0);
+        // Reddedilen başvurular kurum hissesinin bölüşümüne girmez
+        $hesabaGiren = $basvurular->reject(fn ($b) => $b->durum === HisseBasvuruDurumu::Reddedildi);
+        $talepToplami = (float) $hesabaGiren->sum(fn ($b) => $b->talep_edilen_hisse ?? $b->tapu_hisse ?? 0);
         $ulasmadiToplam = (float) $tebligatlar->where('tebligat_ulasmadi', true)->sum('tapu_hisse');
         $paydaToplam = $talepToplami + $ulasmadiToplam;
         $birimAlan = $paydaToplam > 0 ? $aktifHisseToplami / $paydaToplam : 0;
@@ -310,7 +346,9 @@ class HisseSatisController extends Controller
 
         // Her başvuru için düşen m² ve bedel — satış tebligatı formunda ön-dolgu için
         $basvuruHesap = $basvurular->mapWithKeys(function ($b) use ($birimAlan, $encumenBirimFiyat) {
-            $talep = (float) ($b->talep_edilen_hisse ?? $b->tapu_hisse ?? 0);
+            $talep = $b->durum === HisseBasvuruDurumu::Reddedildi
+                ? 0.0
+                : (float) ($b->talep_edilen_hisse ?? $b->tapu_hisse ?? 0);
             $dusen = round($talep * $birimAlan, 2);
             $bedel = round($dusen * $encumenBirimFiyat, 2);
 
@@ -330,6 +368,7 @@ class HisseSatisController extends Controller
         $satisTebligatliBasvuruIdleri = $satisTebligatlari->pluck('basvuru_id')->all();
         $satisSecilebilirBasvurular = $basvurular->reject(
             fn ($b) => in_array($b->id, $satisTebligatliBasvuruIdleri, true)
+                || $b->durum === HisseBasvuruDurumu::Reddedildi
         )->values();
 
         // Tapu tescili için — ödedi=1 ama henüz tapu tescili yapılmamış başvurular
@@ -361,31 +400,71 @@ class HisseSatisController extends Controller
             'tapuBekleyenBasvurular' => $tapuBekleyenBasvurular,
             'goruslar' => $goruslar,
             'imarEvraklari' => $imarEvraklari,
+            'itiraz' => HisseSureci::itirazDurumu($tebligatlar),
+            'gecmis' => HisseIslemGecmisi::where('grup_no', $grupNo)->with('kullanici:id,ad,soyad')
+                ->latest('id')->limit(100)->get(),
         ]);
     }
 
     /** Grup durumu topluca güncelle. */
     public function durumGuncelle(Request $request, int $grupNo): RedirectResponse|JsonResponse
     {
-        $veri = $request->validate(['durum' => 'required|in:'.self::DURUM_VALIDATION]);
-        HisseBasvuru::where('grup_no', $grupNo)->update(['durum' => $veri['durum']]);
+        // Aşama elle seçilmez (kayıtlardan hesaplanır). Burada yalnızca reddetme /
+        // reddi geri alma yapılır — tüm dosya için ya da tek başvuru için.
+        $ilk = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
+
+        $veri = $request->validate([
+            'islem' => 'required|in:reddet,geri_al',
+            'basvuru_id' => 'nullable|integer',
+            'gerekce' => 'nullable|string|max:1000',
+        ]);
+
+        $hedefler = HisseBasvuru::where('grup_no', $grupNo)
+            ->when($veri['basvuru_id'] ?? null, fn ($q, $id) => $q->whereKey($id))
+            ->get();
+        abort_if($hedefler->isEmpty(), 404);
+
+        $atlanan = 0;
+        foreach ($hedefler as $b) {
+            if ($veri['islem'] === 'reddet') {
+                // Ödemesi/tapusu olan başvuru reddedilemez
+                $ilerlemis = HisseSatisTapu::where('basvuru_id', $b->id)->exists()
+                    || HisseSatisTebligat::where('basvuru_id', $b->id)->where('odedi', true)->exists();
+                if ($ilerlemis) {
+                    $atlanan++;
+                    continue;
+                }
+                $b->update(['durum' => HisseBasvuruDurumu::Reddedildi->value]);
+            } elseif ($b->durum === HisseBasvuruDurumu::Reddedildi) {
+                $b->update(['durum' => HisseBasvuruDurumu::Basvuruldu->value]); // aşama aşağıda yeniden hesaplanır
+            }
+        }
+        HisseSureci::durumlariYenile($grupNo);
+
+        $kimin = ! empty($veri['basvuru_id']) ? $hedefler->first()->ad_soyad.' başvurusu' : 'Tüm dosya';
+        $mesaj = $veri['islem'] === 'reddet' ? "{$kimin} reddedildi." : "{$kimin} için ret geri alındı.";
+        if ($atlanan) {
+            $mesaj .= " {$atlanan} başvuru ödemesi/tapusu olduğu için reddedilmedi.";
+        }
+        HisseSureci::gecmis($grupNo, $veri['islem'] === 'reddet' ? 'Ret' : 'Ret geri alındı',
+            trim($mesaj.' '.($veri['gerekce'] ?? '')), $veri['basvuru_id'] ?? null);
 
         if ($request->wantsJson() || $request->ajax()) {
-            return response()->json(['ok' => true, 'durum' => $veri['durum']]);
+            return response()->json(['ok' => true, 'mesaj' => $mesaj]);
         }
 
-        return back()->with('basari', 'Grup durumu güncellendi.');
+        return back()->with('basari', $mesaj);
     }
 
     /** Tek başvuruyu güncelle. */
     public function basvuruGuncelle(Request $request, int $basvuruId): RedirectResponse
     {
         $basvuru = HisseBasvuru::findOrFail($basvuruId);
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tapu_hisse', 'talep_edilen_hisse']);
         $veri = $request->validate([
             'ad_soyad' => 'required|string|max:150',
-            'tc_kimlik' => 'required|string|size:11',
+            'tc_kimlik' => ['required', new TcKimlikNo],
             'gsm_no' => 'nullable|string|max:20',
             'basvuru_tarihi' => 'required|date',
             'tapu_hisse' => 'nullable|numeric|min:0',
@@ -402,6 +481,7 @@ class HisseSatisController extends Controller
         }
 
         $basvuru->update($veri);
+        HisseSureci::gecmis((int) $basvuru->grup_no, 'Başvuru güncellendi', $basvuru->ad_soyad, $basvuru->id);
 
         return back()->with('basari', 'Başvuru güncellendi.');
     }
@@ -409,8 +489,26 @@ class HisseSatisController extends Controller
     public function basvuruSil(int $basvuruId): JsonResponse
     {
         $basvuru = HisseBasvuru::findOrFail($basvuruId);
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
+
+        // Satış tebligatı / tapu tescili olan başvuru silinemez (eskiden bunlar da
+        // sessizce siliniyordu). Önce o kayıtlar kaldırılmalı.
+        if (HisseSatisTebligat::where('basvuru_id', $basvuruId)->exists()
+            || HisseSatisTapu::where('basvuru_id', $basvuruId)->exists()) {
+            return response()->json([
+                'ok' => false,
+                'mesaj' => 'Bu başvurunun satış tebligatı veya tapu tescili var; silinemez. Gerekirse başvuruyu reddedin.',
+            ], 422);
+        }
+
+        $grupNo = (int) $basvuru->grup_no;
+        if ($basvuru->basvuru_evrak) {
+            Storage::disk('public')->delete($basvuru->basvuru_evrak);
+        }
+        $ad = $basvuru->ad_soyad;
         $basvuru->delete();
+
+        HisseSureci::gecmis($grupNo, 'Başvuru silindi', $ad);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -420,11 +518,11 @@ class HisseSatisController extends Controller
     public function malikKaydet(Request $request, int $tasinmazId): RedirectResponse|JsonResponse
     {
         $tasinmaz = Tasinmaz::findOrFail($tasinmazId);
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tapu_hisse']);
         $veri = $request->validate([
             'ad_soyad' => 'required|string|max:150',
-            'tc_kimlik' => 'nullable|string|size:11',
+            'tc_kimlik' => ['nullable', new TcKimlikNo],
             'tapu_hisse' => 'nullable|numeric|min:0',
             'adres' => 'nullable|string|max:500',
             'gsm_no' => 'nullable|string|max:20',
@@ -442,11 +540,11 @@ class HisseSatisController extends Controller
     public function malikGuncelle(Request $request, int $malikId): RedirectResponse|JsonResponse
     {
         $malik = TasinmazMalik::findOrFail($malikId);
-        abort_unless($malik->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tapu_hisse']);
         $veri = $request->validate([
             'ad_soyad' => 'required|string|max:150',
-            'tc_kimlik' => 'nullable|string|size:11',
+            'tc_kimlik' => ['nullable', new TcKimlikNo],
             'tapu_hisse' => 'nullable|numeric|min:0',
             'adres' => 'nullable|string|max:500',
             'gsm_no' => 'nullable|string|max:20',
@@ -463,7 +561,6 @@ class HisseSatisController extends Controller
     public function malikSil(int $malikId): JsonResponse
     {
         $malik = TasinmazMalik::findOrFail($malikId);
-        abort_unless($malik->tasinmaz->mudurlukErisilebilirMi(), 403);
         $malik->delete();
 
         return response()->json(['ok' => true]);
@@ -477,7 +574,6 @@ class HisseSatisController extends Controller
     public function malikTopluYukle(Request $request, int $tasinmazId): RedirectResponse
     {
         $tasinmaz = Tasinmaz::findOrFail($tasinmazId);
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $request->validate([
             'excel_file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
@@ -643,7 +739,6 @@ class HisseSatisController extends Controller
 
         // Hedef taşınmaz kümesini önceden daralt
         $tasinmazSorgu = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->whereIn('id', HisseBasvuru::query()->select('tasinmaz_id'))
             ->with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad'])
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
@@ -942,7 +1037,7 @@ class HisseSatisController extends Controller
      */
     private function arsivIstatistik(): array
     {
-        $tasinmazIdler = Tasinmaz::query()->mudurlukKapsami()
+        $tasinmazIdler = Tasinmaz::query()
             ->whereIn('id', HisseBasvuru::query()->select('tasinmaz_id'))
             ->pluck('id');
 
@@ -1020,9 +1115,6 @@ class HisseSatisController extends Controller
 
             $tasinmazId = $model->tasinmaz_id ?? optional(HisseBasvuru::find($model->basvuru_id ?? 0))->tasinmaz_id;
             $tasinmaz = $tasinmazId ? Tasinmaz::with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad'])->find($tasinmazId) : null;
-            if ($tasinmaz && ! $tasinmaz->mudurlukErisilebilirMi()) {
-                continue;
-            }
 
             $sonuc->push([
                 'id' => $id,
@@ -1093,10 +1185,9 @@ class HisseSatisController extends Controller
         $mahalleId = $request->query('mahalle_id');
         $ada = trim((string) $request->query('ada', ''));
         $parsel = trim((string) $request->query('parsel', ''));
-        $durum = $request->query('durum'); // yeni | encumen-var | satis-tebligat | tamamlandi
+        $durum = $request->query('durum'); // yeni | encumen-var | satis-tebligat | tamamlandi | reddedildi
 
         $tasinmazlar = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',
@@ -1119,36 +1210,7 @@ class HisseSatisController extends Controller
             })
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik']);
 
-        $tasinmazIdler = $tasinmazlar->pluck('id');
-
-        // Grup başına özet — parsel durumunu belirlemek için
-        $basvuruOzetleri = HisseBasvuru::query()
-            ->whereIn('tasinmaz_id', $tasinmazIdler)
-            ->select('tasinmaz_id')
-            ->selectRaw('MIN(grup_no) as grup_no')
-            ->selectRaw('MIN(basvuru_tarihi) as ilk_tarih')
-            ->selectRaw('COUNT(*) as basvuru_sayisi')
-            ->groupBy('tasinmaz_id')
-            ->get()
-            ->keyBy('tasinmaz_id');
-
-        $encumenSayilari = TasinmazEncumen::query()
-            ->whereIn('tasinmaz_id', $tasinmazIdler)
-            ->selectRaw('tasinmaz_id, COUNT(*) as adet')
-            ->groupBy('tasinmaz_id')
-            ->pluck('adet', 'tasinmaz_id');
-
-        $satisTebligatSayilari = HisseSatisTebligat::query()
-            ->whereIn('grup_no', $basvuruOzetleri->pluck('grup_no'))
-            ->selectRaw('grup_no, COUNT(*) as adet')
-            ->groupBy('grup_no')
-            ->pluck('adet', 'grup_no');
-
-        $tapuSayilari = HisseSatisTapu::query()
-            ->whereIn('grup_no', $basvuruOzetleri->pluck('grup_no'))
-            ->selectRaw('grup_no, COUNT(*) as adet')
-            ->groupBy('grup_no')
-            ->pluck('adet', 'grup_no');
+        $meta = $this->haritaDurumOzeti($tasinmazlar->pluck('id'));
 
         $features = [];
         foreach ($tasinmazlar as $t) {
@@ -1157,20 +1219,9 @@ class HisseSatisController extends Controller
                 continue;
             }
 
-            $ozet = $basvuruOzetleri->get($t->id);
-            $grupNo = (int) ($ozet->grup_no ?? 0);
-            $encumen = (int) ($encumenSayilari[$t->id] ?? 0);
-            $satisTebligat = (int) ($satisTebligatSayilari[$grupNo] ?? 0);
-            $tapuTescili = (int) ($tapuSayilari[$grupNo] ?? 0);
-
-            $tasinmazDurum = 'yeni';
-            if ($tapuTescili > 0) {
-                $tasinmazDurum = 'tamamlandi';
-            } elseif ($satisTebligat > 0) {
-                $tasinmazDurum = 'satis-tebligat';
-            } elseif ($encumen > 0) {
-                $tasinmazDurum = 'encumen-var';
-            }
+            $m = $meta[$t->id];
+            $grupNo = $m['grup_no'];
+            $tasinmazDurum = $m['durum'];
 
             if ($durum !== null && $durum !== '' && $durum !== 'tumu' && $tasinmazDurum !== $durum) {
                 continue;
@@ -1191,10 +1242,10 @@ class HisseSatisController extends Controller
                     'mahalle' => $t->mahalle?->ad,
                     'mahalle_tkgm_id' => $t->mahalle?->tkgm_id,
                     'grup_no' => $grupNo,
-                    'basvuru_sayisi' => (int) ($ozet->basvuru_sayisi ?? 0),
-                    'encumen_sayisi' => $encumen,
-                    'satis_tebligat_sayisi' => $satisTebligat,
-                    'tapu_tescili_sayisi' => $tapuTescili,
+                    'basvuru_sayisi' => $m['basvuru_sayisi'],
+                    'encumen_sayisi' => $m['encumen_sayisi'],
+                    'satis_tebligat_sayisi' => $m['satis_tebligat_sayisi'],
+                    'tapu_tescili_sayisi' => $m['tapu_tescili_sayisi'],
                     'durum' => $tasinmazDurum,
                     'detay_url' => $grupNo ? route('panel.hisse-satisi.detay', $grupNo) : null,
                 ],
@@ -1215,14 +1266,19 @@ class HisseSatisController extends Controller
     {
         $tasinmaz = Tasinmaz::with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad'])
             ->findOrFail($tasinmazId);
-        abort_unless($tasinmaz->mudurlukErisilebilirMi(), 403);
 
-        $basvurular = HisseBasvuru::where('tasinmaz_id', $tasinmazId)
+        // Güncel dosya: açık dosya varsa o, yoksa en son kapanan dosya
+        $grupNo = HisseSureci::acikGrupNo($tasinmazId)
+            ?? HisseBasvuru::where('tasinmaz_id', $tasinmazId)->max('grup_no');
+        $basvurular = HisseBasvuru::where('grup_no', $grupNo)
             ->orderBy('id')
-            ->get(['id', 'grup_no', 'ad_soyad', 'tc_kimlik', 'basvuru_tarihi', 'durum']);
-        $grupNo = optional($basvurular->first())->grup_no ?? optional($basvurular->first())->id;
+            ->get(['id', 'grup_no', 'ad_soyad', 'tc_kimlik', 'basvuru_tarihi', 'durum'])
+            ->map(fn ($b) => array_merge($b->only(['id', 'grup_no', 'ad_soyad', 'tc_kimlik', 'basvuru_tarihi']), [
+                'durum' => $b->durum?->etiket(),
+                'durum_kod' => $b->durum?->value,
+            ]));
 
-        $encumenler = TasinmazEncumen::where('tasinmaz_id', $tasinmazId)
+        $encumenler = TasinmazEncumen::where('grup_no', $grupNo)
             ->orderByDesc('id')
             ->get(['id', 'grup_no', 'karar_no', 'kayit_no', 'birim_fiyat', 'gelen_tarih', 'giden_tarih', 'aciklama']);
 
@@ -1274,6 +1330,7 @@ class HisseSatisController extends Controller
             'encumen-var' => 'Encümen var',
             'satis-tebligat' => 'Satış tebligatı',
             'tamamlandi' => 'Tamamlandı',
+            'reddedildi' => 'Reddedildi',
         ];
         foreach ($tasinmazlar as $t) {
             $m = $meta[$t->id] ?? [];
@@ -1324,9 +1381,10 @@ class HisseSatisController extends Controller
             .'<Style id="s-yeni"><LineStyle><color>ffff8f38</color><width>3</width></LineStyle><PolyStyle><color>7dff8f38</color></PolyStyle></Style>'."\n"
             .'<Style id="s-encumen"><LineStyle><color>ff15ccfa</color><width>3</width></LineStyle><PolyStyle><color>7d15ccfa</color></PolyStyle></Style>'."\n"
             .'<Style id="s-satis"><LineStyle><color>ff2c92fb</color><width>3</width></LineStyle><PolyStyle><color>7d2c92fb</color></PolyStyle></Style>'."\n"
-            .'<Style id="s-tamam"><LineStyle><color>ff99d334</color><width>3</width></LineStyle><PolyStyle><color>7d99d334</color></PolyStyle></Style>'."\n";
+            .'<Style id="s-tamam"><LineStyle><color>ff99d334</color><width>3</width></LineStyle><PolyStyle><color>7d99d334</color></PolyStyle></Style>'."\n"
+            .'<Style id="s-red"><LineStyle><color>ffb8a394</color><width>3</width></LineStyle><PolyStyle><color>5db8a394</color></PolyStyle></Style>'."\n";
 
-        $stilAd = ['yeni' => 's-yeni', 'encumen-var' => 's-encumen', 'satis-tebligat' => 's-satis', 'tamamlandi' => 's-tamam'];
+        $stilAd = ['yeni' => 's-yeni', 'encumen-var' => 's-encumen', 'satis-tebligat' => 's-satis', 'tamamlandi' => 's-tamam', 'reddedildi' => 's-red'];
 
         foreach ($tasinmazlar as $t) {
             $geom = $this->koordinatGeoJson($t->koordinat);
@@ -1397,43 +1455,68 @@ class HisseSatisController extends Controller
         }
 
         $tasinmazlar = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'koordinat:id,tasinmaz_id,lat,lng,koordinat'])
             ->whereIn('id', HisseBasvuru::query()->select('tasinmaz_id'))
             ->when(is_array($idler) && ! empty($idler), fn ($q) => $q->whereIn('id', $idler))
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik']);
 
-        $ids = $tasinmazlar->pluck('id');
-        $basvuruOzet = HisseBasvuru::query()
-            ->whereIn('tasinmaz_id', $ids)
-            ->select('tasinmaz_id')
-            ->selectRaw('MIN(grup_no) as grup_no')
-            ->selectRaw('COUNT(*) as basvuru_sayisi')
-            ->groupBy('tasinmaz_id')
-            ->get()
-            ->keyBy('tasinmaz_id');
+        $meta = $this->haritaDurumOzeti($tasinmazlar->pluck('id'));
 
-        $encumenSayilari = TasinmazEncumen::query()->whereIn('tasinmaz_id', $ids)
-            ->selectRaw('tasinmaz_id, COUNT(*) as adet')->groupBy('tasinmaz_id')->pluck('adet', 'tasinmaz_id');
-        $sonKararlar = TasinmazEncumen::query()->whereIn('tasinmaz_id', $ids)
-            ->orderByDesc('id')->get(['tasinmaz_id', 'karar_no', 'birim_fiyat'])->groupBy('tasinmaz_id');
-        $satisTebligat = HisseSatisTebligat::query()->whereIn('grup_no', $basvuruOzet->pluck('grup_no'))
+        return [$tasinmazlar, $meta];
+    }
+
+    /**
+     * Haritadaki her taşınmaz için güncel dosyanın (en son açılan grup) özeti.
+     * Durum, dosyadaki başvuruların aşamasından türetilir — tek bir tapu tescili
+     * dosyayı "tamamlandı" yapmaz; reddedilmemiş başvuruların hepsi tescil
+     * edilmiş olmalıdır.
+     *
+     * @return array<int, array{grup_no:int, basvuru_sayisi:int, encumen_sayisi:int, satis_tebligat_sayisi:int, tapu_tescili_sayisi:int, durum:string, son_karar_no:?string, son_birim_fiyat:mixed}>
+     */
+    private function haritaDurumOzeti(\Illuminate\Support\Collection $tasinmazIdler): array
+    {
+        $basvurular = HisseBasvuru::query()
+            ->whereIn('tasinmaz_id', $tasinmazIdler)
+            ->get(['id', 'tasinmaz_id', 'grup_no', 'durum'])
+            ->groupBy('tasinmaz_id')
+            ->map(function ($liste) {
+                $grup = (int) $liste->max(fn ($b) => $b->grup_no ?: $b->id);
+
+                return ['grup' => $grup, 'liste' => $liste->filter(fn ($b) => (int) ($b->grup_no ?: $b->id) === $grup)->values()];
+            });
+        $grupNolar = $basvurular->pluck('grup')->values();
+
+        $encumenSayilari = TasinmazEncumen::query()->whereIn('grup_no', $grupNolar)
             ->selectRaw('grup_no, COUNT(*) as adet')->groupBy('grup_no')->pluck('adet', 'grup_no');
-        $tapu = HisseSatisTapu::query()->whereIn('grup_no', $basvuruOzet->pluck('grup_no'))
+        $sonKararlar = TasinmazEncumen::query()->whereIn('grup_no', $grupNolar)
+            ->orderByDesc('id')->get(['grup_no', 'karar_no', 'birim_fiyat'])->groupBy('grup_no');
+        $satisSayilari = HisseSatisTebligat::query()->whereIn('grup_no', $grupNolar)
+            ->selectRaw('grup_no, COUNT(*) as adet')->groupBy('grup_no')->pluck('adet', 'grup_no');
+        $tapuSayilari = HisseSatisTapu::query()->whereIn('grup_no', $grupNolar)
             ->selectRaw('grup_no, COUNT(*) as adet')->groupBy('grup_no')->pluck('adet', 'grup_no');
 
         $meta = [];
-        foreach ($tasinmazlar as $t) {
-            $ozet = $basvuruOzet->get($t->id);
-            $grup = (int) ($ozet->grup_no ?? 0);
-            $enc = (int) ($encumenSayilari[$t->id] ?? 0);
-            $st = (int) ($satisTebligat[$grup] ?? 0);
-            $tp = (int) ($tapu[$grup] ?? 0);
-            $son = optional($sonKararlar->get($t->id))->first();
-            $durum = $tp > 0 ? 'tamamlandi' : ($st > 0 ? 'satis-tebligat' : ($enc > 0 ? 'encumen-var' : 'yeni'));
-            $meta[$t->id] = [
+        foreach ($tasinmazIdler as $id) {
+            $kayit = $basvurular->get($id);
+            $grup = (int) ($kayit['grup'] ?? 0);
+            $dosya = $kayit['liste'] ?? collect();
+            $aktif = $dosya->filter(fn ($b) => $b->durum !== HisseBasvuruDurumu::Reddedildi);
+            $enc = (int) ($encumenSayilari[$grup] ?? 0);
+            $st = (int) ($satisSayilari[$grup] ?? 0);
+            $tp = (int) ($tapuSayilari[$grup] ?? 0);
+            $son = optional($sonKararlar->get($grup))->first();
+
+            $durum = match (true) {
+                $dosya->isNotEmpty() && $aktif->isEmpty() => 'reddedildi',
+                $aktif->isNotEmpty() && $aktif->every(fn ($b) => $b->durum === HisseBasvuruDurumu::Tamamlandi) => 'tamamlandi',
+                $st > 0 => 'satis-tebligat',
+                $enc > 0 => 'encumen-var',
+                default => 'yeni',
+            };
+
+            $meta[$id] = [
                 'grup_no' => $grup,
-                'basvuru_sayisi' => (int) ($ozet->basvuru_sayisi ?? 0),
+                'basvuru_sayisi' => $dosya->count(),
                 'encumen_sayisi' => $enc,
                 'satis_tebligat_sayisi' => $st,
                 'tapu_tescili_sayisi' => $tp,
@@ -1443,7 +1526,7 @@ class HisseSatisController extends Controller
             ];
         }
 
-        return [$tasinmazlar, $meta];
+        return $meta;
     }
 
     /**
@@ -1497,19 +1580,31 @@ class HisseSatisController extends Controller
     public function tebligatKaydet(Request $request, int $grupNo): RedirectResponse
     {
         $basvuru = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate([
             'malik_ids' => 'required|array|min:1',
-            'malik_ids.*' => 'integer|exists:tasinmaz_malikleri,id',
+            'malik_ids.*' => 'integer',
             'tebligat_tarihi' => 'nullable|date',
             'ulastigi_tarihi' => 'nullable|date',
         ]);
 
-        DB::transaction(function () use ($veri, $basvuru, $grupNo) {
-            foreach ($veri['malik_ids'] as $malikId) {
-                $malik = TasinmazMalik::find($malikId);
-                if (! $malik) {
+        $eklenen = 0;
+        $atlanan = 0;
+        DB::transaction(function () use ($veri, $basvuru, $grupNo, &$eklenen, &$atlanan) {
+            // Yalnızca bu taşınmazın malikleri
+            $malikler = TasinmazMalik::where('tasinmaz_id', $basvuru->tasinmaz_id)
+                ->whereIn('id', $veri['malik_ids'])->get();
+            $atlanan += count($veri['malik_ids']) - $malikler->count();
+
+            foreach ($malikler as $malik) {
+                // Aynı kişiye ikinci kez tebligat çıkmaz (TC yoksa ad soyad ile)
+                $mukerrer = HisseTebligat::where('grup_no', $grupNo)
+                    ->when($malik->tc_kimlik,
+                        fn ($q) => $q->where('tc_kimlik', $malik->tc_kimlik),
+                        fn ($q) => $q->where('ad_soyad', $malik->ad_soyad))
+                    ->exists();
+                if ($mukerrer) {
+                    $atlanan++;
                     continue;
                 }
                 HisseTebligat::create([
@@ -1521,20 +1616,25 @@ class HisseSatisController extends Controller
                     'tebligat_tarihi' => $veri['tebligat_tarihi'] ?? null,
                     'ulastigi_tarihi' => $veri['ulastigi_tarihi'] ?? null,
                 ]);
+                $eklenen++;
             }
         });
 
-        return back()->with('basari', 'Tebligatlar oluşturuldu.');
+        HisseSureci::gecmis($grupNo, 'Ön tebligat', "{$eklenen} hissedara tebligat çıkarıldı.");
+        HisseSureci::durumlariYenile($grupNo);
+
+        return back()->with('basari', "{$eklenen} tebligat oluşturuldu."
+            .($atlanan ? " {$atlanan} kişi atlandı (zaten tebligatı var veya bu taşınmaza ait değil)." : ''));
     }
 
     public function tebligatGuncelle(Request $request, int $tebligatId): RedirectResponse
     {
         $t = HisseTebligat::findOrFail($tebligatId);
-        abort_unless($t->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tapu_hisse']);
         $veri = $request->validate([
             'ad_soyad' => 'sometimes|string|max:150',
-            'tc_kimlik' => 'sometimes|string|size:11',
+            'tc_kimlik' => ['sometimes', 'nullable', new TcKimlikNo],
             'tapu_hisse' => 'nullable|numeric|min:0',
             'tebligat_tarihi' => 'nullable|date',
             'ulastigi_tarihi' => 'nullable|date',
@@ -1542,6 +1642,7 @@ class HisseSatisController extends Controller
             'tebligat_ulasmadi' => 'sometimes|boolean',
         ]);
         $t->update($veri);
+        HisseSureci::durumlariYenile((int) $t->grup_no);
 
         return back()->with('basari', 'Tebligat güncellendi.');
     }
@@ -1554,7 +1655,6 @@ class HisseSatisController extends Controller
     public function tebligatBasvurduToggle(Request $request, int $tebligatId): JsonResponse
     {
         $t = HisseTebligat::findOrFail($tebligatId);
-        abort_unless($t->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['basvurdu' => 'required|boolean']);
         $t->basvurdu = $veri['basvurdu'];
@@ -1574,15 +1674,31 @@ class HisseSatisController extends Controller
                     'basvuru_tarihi' => now()->toDateString(),
                     'tapu_hisse' => $t->tapu_hisse,
                     'talep_edilen_hisse' => null,
-                    'mudurluk_id' => auth()->user()->mudurluk_id ?? null,
                 ]);
             }
         } else {
-            HisseBasvuru::where('grup_no', $t->grup_no)
+            $otomatik = HisseBasvuru::where('grup_no', $t->grup_no)
                 ->where('tc_kimlik', $t->tc_kimlik)
-                ->whereNull('basvuru_evrak') // sadece bu toggle ile yaratılmış olanları sil
-                ->delete();
+                ->whereNull('basvuru_evrak') // sadece bu toggle ile yaratılmış olanlar
+                ->get();
+            // Satış tebligatı / tapusu olan başvuru bu işaretle silinemez
+            $ilerlemis = $otomatik->contains(fn ($b) => HisseSatisTebligat::where('basvuru_id', $b->id)->exists()
+                || HisseSatisTapu::where('basvuru_id', $b->id)->exists());
+            if ($ilerlemis) {
+                $t->basvurdu = true;
+                $t->save();
+
+                return response()->json([
+                    'ok' => false,
+                    'basvurdu' => true,
+                    'mesaj' => 'Bu kişinin başvurusunun satış tebligatı/tapusu var; "başvurdu" işareti kaldırılamaz.',
+                ], 422);
+            }
+            $otomatik->each->delete();
         }
+
+        HisseSureci::gecmis((int) $t->grup_no, 'Ön tebligat', $t->ad_soyad.($t->basvurdu ? ' başvurdu olarak işaretlendi.' : ' başvurusu geri alındı.'));
+        HisseSureci::durumlariYenile((int) $t->grup_no);
 
         return response()->json(['ok' => true, 'basvurdu' => (bool) $t->basvurdu]);
     }
@@ -1590,11 +1706,11 @@ class HisseSatisController extends Controller
     public function tebligatUlasmadiToggle(Request $request, int $tebligatId): JsonResponse
     {
         $t = HisseTebligat::findOrFail($tebligatId);
-        abort_unless($t->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['tebligat_ulasmadi' => 'required|boolean']);
         $t->tebligat_ulasmadi = $veri['tebligat_ulasmadi'];
         $t->save();
+        HisseSureci::durumlariYenile((int) $t->grup_no);
 
         return response()->json(['ok' => true, 'tebligat_ulasmadi' => (bool) $t->tebligat_ulasmadi]);
     }
@@ -1602,11 +1718,11 @@ class HisseSatisController extends Controller
     public function tebligatUlastigiTarihi(Request $request, int $tebligatId): JsonResponse
     {
         $t = HisseTebligat::findOrFail($tebligatId);
-        abort_unless($t->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['ulastigi_tarihi' => 'nullable|date']);
         $t->ulastigi_tarihi = $veri['ulastigi_tarihi'] ?? null;
         $t->save();
+        HisseSureci::durumlariYenile((int) $t->grup_no);
 
         return response()->json([
             'ok' => true,
@@ -1618,8 +1734,10 @@ class HisseSatisController extends Controller
     public function tebligatSil(int $tebligatId): JsonResponse
     {
         $t = HisseTebligat::findOrFail($tebligatId);
-        abort_unless($t->tasinmaz->mudurlukErisilebilirMi(), 403);
+        $grupNo = (int) $t->grup_no;
         $t->delete();
+        HisseSureci::gecmis($grupNo, 'Ön tebligat silindi', $t->ad_soyad);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -1629,8 +1747,8 @@ class HisseSatisController extends Controller
     public function encumenKaydet(Request $request, int $grupNo): RedirectResponse|JsonResponse
     {
         $basvuru = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['birim_fiyat']);
         $veri = $request->validate([
             'karar_no' => 'nullable|string|max:100',
             'kayit_no' => 'nullable|string|max:100',
@@ -1652,6 +1770,9 @@ class HisseSatisController extends Controller
             'grup_no' => $grupNo,
             'tasinmaz_id' => $basvuru->tasinmaz_id,
         ]));
+        HisseSureci::gecmis($grupNo, 'Encümen kararı', trim(($encumen->karar_no ? 'Karar '.$encumen->karar_no.' · ' : '')
+            .($encumen->birim_fiyat !== null ? 'Birim fiyat '.number_format((float) $encumen->birim_fiyat, 2, ',', '.').' ₺/m²' : '')));
+        HisseSureci::durumlariYenile($grupNo);
 
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json(['ok' => true, 'encumen' => $encumen]);
@@ -1663,8 +1784,8 @@ class HisseSatisController extends Controller
     public function encumenGuncelle(Request $request, int $encumenId): RedirectResponse
     {
         $e = TasinmazEncumen::findOrFail($encumenId);
-        abort_unless($e->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['birim_fiyat']);
         $veri = $request->validate([
             'karar_no' => 'nullable|string|max:100',
             'kayit_no' => 'nullable|string|max:100',
@@ -1686,6 +1807,8 @@ class HisseSatisController extends Controller
         }
 
         $e->update($veri);
+        HisseSureci::gecmis((int) $e->grup_no, 'Encümen kararı güncellendi', $e->karar_no);
+        HisseSureci::durumlariYenile((int) $e->grup_no);
 
         return back()->with('basari', 'Encümen kararı güncellendi.');
     }
@@ -1693,14 +1816,16 @@ class HisseSatisController extends Controller
     public function encumenSil(int $encumenId): JsonResponse
     {
         $e = TasinmazEncumen::findOrFail($encumenId);
-        abort_unless($e->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         foreach (['gelen_evrak', 'giden_evrak'] as $alan) {
             if ($e->$alan) {
                 Storage::disk('public')->delete($e->$alan);
             }
         }
+        $grupNo = (int) $e->grup_no;
         $e->delete();
+        HisseSureci::gecmis($grupNo, 'Encümen kararı silindi', $e->karar_no);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -1716,11 +1841,11 @@ class HisseSatisController extends Controller
     public function satisTebligatKaydet(Request $request, int $grupNo): RedirectResponse
     {
         $ilkBasvuru = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
-        abort_unless($ilkBasvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['birim_fiyat', 'hisseye_dusen_yuzolcum[]', 'toplam_bedel[]']);
         $veri = $request->validate([
             'basvuru_ids' => 'required|array|min:1',
-            'basvuru_ids.*' => 'integer|exists:hisse_basvurulari,id',
+            'basvuru_ids.*' => 'integer',
             'tebligat_tarihi' => 'required|date',
             'ulastigi_tarihi' => 'nullable|date',
             'birim_fiyat' => 'nullable|numeric|min:0',
@@ -1731,15 +1856,35 @@ class HisseSatisController extends Controller
             'aciklama' => 'nullable|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($veri, $grupNo) {
-            foreach ($veri['basvuru_ids'] as $bid) {
-                $bid = (int) $bid;
+        // Encümen kararı (birim fiyat) olmadan satış tebligatı çıkarılamaz
+        $encumenFiyat = TasinmazEncumen::where('grup_no', $grupNo)->where('birim_fiyat', '>', 0)
+            ->orderByDesc('id')->value('birim_fiyat');
+        if ($encumenFiyat === null) {
+            return back()->withInput()->withErrors([
+                'satis' => 'Önce encümen kararı (birim fiyat) girilmeli; satış tebligatı encümen kararından sonra çıkarılır.',
+            ]);
+        }
+
+        // Yalnızca bu dosyanın, reddedilmemiş ve henüz satış tebligatı olmayan başvuruları
+        $gecerliIdler = HisseBasvuru::where('grup_no', $grupNo)
+            ->whereIn('id', $veri['basvuru_ids'])
+            ->where('durum', '!=', HisseBasvuruDurumu::Reddedildi->value)
+            ->whereDoesntHave('satisTebligatlari')
+            ->pluck('id')->all();
+        if (empty($gecerliIdler)) {
+            return back()->withInput()->withErrors([
+                'satis' => 'Seçilen başvurular bu dosyaya ait değil, reddedilmiş ya da zaten satış tebligatı var.',
+            ]);
+        }
+
+        DB::transaction(function () use ($veri, $grupNo, $gecerliIdler, $encumenFiyat) {
+            foreach ($gecerliIdler as $bid) {
                 HisseSatisTebligat::create([
                     'basvuru_id' => $bid,
                     'grup_no' => $grupNo,
                     'tebligat_tarihi' => $veri['tebligat_tarihi'],
                     'ulastigi_tarihi' => $veri['ulastigi_tarihi'] ?? null,
-                    'birim_fiyat' => $veri['birim_fiyat'] ?? null,
+                    'birim_fiyat' => $veri['birim_fiyat'] ?? $encumenFiyat,
                     'hisseye_dusen_yuzolcum' => $veri['hisseye_dusen_yuzolcum'][$bid] ?? 0,
                     'toplam_bedel' => $veri['toplam_bedel'][$bid] ?? 0,
                     'aciklama' => $veri['aciklama'] ?? null,
@@ -1747,14 +1892,24 @@ class HisseSatisController extends Controller
             }
         });
 
-        return back()->with('basari', 'Satış tebligatları oluşturuldu.');
+        HisseSureci::gecmis($grupNo, 'Satış tebligatı', count($gecerliIdler).' başvurana satış tebligatı çıkarıldı.');
+        HisseSureci::durumlariYenile($grupNo);
+
+        $yanit = back()->with('basari', count($gecerliIdler).' satış tebligatı oluşturuldu.');
+        // 15 günlük itiraz süresi dolmadıysa uyar (engellemez)
+        [$itirazTamam, $bekleyen] = HisseSureci::itirazDurumu(HisseTebligat::where('grup_no', $grupNo)->get());
+        if (! $itirazTamam && $bekleyen > 0) {
+            $yanit->with('uyari', "Dikkat: {$bekleyen} ön tebligatın ".HisseSureci::ITIRAZ_GUN.' günlük itiraz süresi henüz dolmadı.');
+        }
+
+        return $yanit;
     }
 
     public function satisTebligatGuncelle(Request $request, int $satisId): RedirectResponse
     {
         $st = HisseSatisTebligat::findOrFail($satisId);
-        abort_unless($st->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['birim_fiyat', 'hisseye_dusen_yuzolcum', 'toplam_bedel']);
         $veri = $request->validate([
             'tebligat_tarihi' => 'sometimes|date',
             'ulastigi_tarihi' => 'nullable|date',
@@ -1765,42 +1920,56 @@ class HisseSatisController extends Controller
             'tebligat_ulasmadi' => 'sometimes|boolean',
             'aciklama' => 'nullable|string|max:2000',
         ]);
+        if (array_key_exists('odedi', $veri) && ! $veri['odedi']
+            && HisseSatisTapu::where('basvuru_id', $st->basvuru_id)->exists()) {
+            return back()->withErrors(['satis' => 'Tapu tescili yapılmış başvurunun ödemesi geri alınamaz; önce tapu tescilini silin.']);
+        }
         $st->update($veri);
+        HisseSureci::durumlariYenile((int) $st->grup_no);
 
         return back()->with('basari', 'Satış tebligatı güncellendi.');
     }
 
     /**
      * "Ödedi" toggle — referans projedeki HisseSatisTebligatController::updateOdedi.
-     * odedi=1 olursa ilgili başvurunun durumu Tamamlandı'ya çekilir; 0'a alınırsa
-     * durum tekrar Ödeme Bekleniyor'a döner. (Referans projede ayrıca emsal
-     * kayıtları oluşturuluyor — bu proje bunu ayrı bir modülde tutmuyor.)
+     * odedi=1 → başvuru Tapu Aşamasına geçer (Tamamlandı ancak tapu tescilinden
+     * sonra); 0 → Ödeme Bekleniyor. Tapusu tescil edilmiş başvurunun ödemesi
+     * geri alınamaz.
      */
     public function satisOdediToggle(Request $request, int $satisId): JsonResponse
     {
         $st = HisseSatisTebligat::findOrFail($satisId);
-        abort_unless($st->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['odedi' => 'required|boolean']);
+        if (! $veri['odedi'] && HisseSatisTapu::where('basvuru_id', $st->basvuru_id)->exists()) {
+            return response()->json([
+                'ok' => false,
+                'odedi' => true,
+                'mesaj' => 'Tapu tescili yapılmış başvurunun ödemesi geri alınamaz; önce tapu tescilini silin.',
+            ], 422);
+        }
         $st->odedi = $veri['odedi'];
         $st->save();
 
-        $yeniDurum = $veri['odedi']
-            ? HisseBasvuruDurumu::Tamamlandi->value
-            : HisseBasvuruDurumu::OdemeBekleniyor->value;
-        HisseBasvuru::whereKey($st->basvuru_id)->update(['durum' => $yeniDurum]);
+        // Ödendi → Tapu Aşamasında (Tamamlandı ancak tapu tescilinden sonra)
+        HisseSureci::durumlariYenile((int) $st->grup_no);
+        HisseSureci::gecmis((int) $st->grup_no, 'Ödeme', $st->basvuru->ad_soyad.($st->odedi ? ' ödedi.' : ' ödemesi geri alındı.'), $st->basvuru_id);
 
-        return response()->json(['ok' => true, 'odedi' => (bool) $st->odedi, 'durum' => $yeniDurum]);
+        return response()->json([
+            'ok' => true,
+            'odedi' => (bool) $st->odedi,
+            'durum' => $st->basvuru->fresh()->durum->value,
+        ]);
     }
 
     public function satisUlasmadiToggle(Request $request, int $satisId): JsonResponse
     {
         $st = HisseSatisTebligat::findOrFail($satisId);
-        abort_unless($st->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['tebligat_ulasmadi' => 'required|boolean']);
         $st->tebligat_ulasmadi = $veri['tebligat_ulasmadi'];
         $st->save();
+        HisseSureci::durumlariYenile((int) $st->grup_no);
 
         return response()->json(['ok' => true, 'tebligat_ulasmadi' => (bool) $st->tebligat_ulasmadi]);
     }
@@ -1808,7 +1977,6 @@ class HisseSatisController extends Controller
     public function satisUlastigiTarihi(Request $request, int $satisId): JsonResponse
     {
         $st = HisseSatisTebligat::findOrFail($satisId);
-        abort_unless($st->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate(['ulastigi_tarihi' => 'nullable|date']);
         $st->ulastigi_tarihi = $veri['ulastigi_tarihi'] ?? null;
@@ -1824,8 +1992,18 @@ class HisseSatisController extends Controller
     public function satisTebligatSil(int $satisId): JsonResponse
     {
         $st = HisseSatisTebligat::findOrFail($satisId);
-        abort_unless($st->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
+
+        if (HisseSatisTapu::where('basvuru_id', $st->basvuru_id)->exists()) {
+            return response()->json([
+                'ok' => false,
+                'mesaj' => 'Tapu tescili yapılmış başvurunun satış tebligatı silinemez; önce tapu tescilini silin.',
+            ], 422);
+        }
+        $grupNo = (int) $st->grup_no;
+        $ad = $st->basvuru->ad_soyad;
         $st->delete();
+        HisseSureci::gecmis($grupNo, 'Satış tebligatı silindi', $ad);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -1841,13 +2019,12 @@ class HisseSatisController extends Controller
     public function tapuKaydet(Request $request, int $basvuruId): RedirectResponse
     {
         $basvuru = HisseBasvuru::findOrFail($basvuruId);
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         // Ödeme yapılmadan tapu tescili açılamaz.
-        $odendi = HisseSatisTebligat::where('basvuru_id', $basvuruId)
-            ->where('odedi', true)->exists();
-        abort_unless($odendi, 422, 'Bu başvuru için ödeme kaydı yok; önce satış tebligatını "Ödedi" olarak işaretleyin.');
+        $satis = HisseSatisTebligat::where('basvuru_id', $basvuruId)->first();
+        abort_unless($satis && $satis->odedi, 422, 'Bu başvuru için ödeme kaydı yok; önce satış tebligatını "Ödedi" olarak işaretleyin.');
 
+        $this->trSayilari($request, ['tescil_edilen_yuzolcum']);
         $veri = $request->validate([
             'tescil_tarihi' => 'required|date',
             'yevmiye_no' => 'nullable|string|max:100',
@@ -1855,27 +2032,52 @@ class HisseSatisController extends Controller
             'tescil_evrak' => 'nullable|file|mimes:pdf|max:10240',
             'aciklama' => 'nullable|string|max:2000',
         ]);
-
-        if ($request->hasFile('tescil_evrak')) {
-            $veri['tescil_evrak'] = $request->file('tescil_evrak')->store('hisse-satisi/tapular/'.now()->format('Y/m'), 'public');
+        // Boş bırakılırsa satış tebligatındaki "hisseye düşen" m² tescil edilir
+        if (! isset($veri['tescil_edilen_yuzolcum']) || $veri['tescil_edilen_yuzolcum'] === null) {
+            $veri['tescil_edilen_yuzolcum'] = $satis->hisseye_dusen_yuzolcum;
         }
 
-        HisseSatisTapu::updateOrCreate(
-            ['basvuru_id' => $basvuruId],
-            array_merge($veri, ['grup_no' => $basvuru->grup_no ?? $basvuruId])
-        );
+        $mevcut = HisseSatisTapu::where('basvuru_id', $basvuruId)->first();
+        $eskiEvrak = $mevcut?->tescil_evrak; // fill/save'den önce — sonra yeni yolla ezilir
+        $yeniEvrak = null;
+        if ($request->hasFile('tescil_evrak')) {
+            $yeniEvrak = $request->file('tescil_evrak')->store('hisse-satisi/tapular/'.now()->format('Y/m'), 'public');
+            $veri['tescil_evrak'] = $yeniEvrak;
+        }
 
-        // Bu başvuru tamamen tapu aşamasına geçti — durumu Tamamlandı yap.
-        $basvuru->update(['durum' => HisseBasvuruDurumu::Tamamlandi->value]);
+        try {
+            DB::transaction(function () use ($veri, $basvuru, $basvuruId, $mevcut) {
+                $tapu = $mevcut ?? new HisseSatisTapu(['basvuru_id' => $basvuruId]);
+                if ($mevcut) {
+                    HisseSureci::envanterGeriAl($mevcut);
+                }
+                $tapu->fill(array_merge($veri, ['grup_no' => $basvuru->grup_no ?? $basvuruId]))->save();
+                $tapu->envanter_islem = HisseSureci::envanterUygula($tapu);
+                $tapu->save();
+            });
+        } catch (RuntimeException $e) {
+            if ($yeniEvrak) {
+                Storage::disk('public')->delete($yeniEvrak);
+            }
 
-        return back()->with('basari', 'Tapu tescili kaydedildi.');
+            return back()->withInput()->withErrors(['tapu' => $e->getMessage()]);
+        }
+        if ($yeniEvrak && $eskiEvrak) {
+            Storage::disk('public')->delete($eskiEvrak);
+        }
+
+        HisseSureci::gecmis((int) $basvuru->grup_no, 'Tapu tescili',
+            $basvuru->ad_soyad.' · '.number_format((float) $veri['tescil_edilen_yuzolcum'], 2, ',', '.').' m² tescil edildi; kurum hissesinden düşüldü.', $basvuruId);
+        HisseSureci::durumlariYenile((int) $basvuru->grup_no);
+
+        return back()->with('basari', 'Tapu tescili kaydedildi; kurum hissesi ve malik listesi güncellendi.');
     }
 
     public function tapuGuncelle(Request $request, int $tapuId): RedirectResponse
     {
         $t = HisseSatisTapu::findOrFail($tapuId);
-        abort_unless($t->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $this->trSayilari($request, ['tescil_edilen_yuzolcum']);
         $veri = $request->validate([
             'tescil_tarihi' => 'sometimes|date',
             'yevmiye_no' => 'nullable|string|max:100',
@@ -1884,14 +2086,33 @@ class HisseSatisController extends Controller
             'aciklama' => 'nullable|string|max:2000',
         ]);
 
+        $eskiEvrak = $t->tescil_evrak;
+        $yeniEvrak = null;
         if ($request->hasFile('tescil_evrak')) {
-            if ($t->tescil_evrak) {
-                Storage::disk('public')->delete($t->tescil_evrak);
-            }
-            $veri['tescil_evrak'] = $request->file('tescil_evrak')->store('hisse-satisi/tapular/'.now()->format('Y/m'), 'public');
+            $yeniEvrak = $request->file('tescil_evrak')->store('hisse-satisi/tapular/'.now()->format('Y/m'), 'public');
+            $veri['tescil_evrak'] = $yeniEvrak;
         }
 
-        $t->update($veri);
+        try {
+            DB::transaction(function () use ($t, $veri) {
+                // Tescil m²'si/tarihi değişebilir → envanter etkisini geri al, yeniden uygula
+                HisseSureci::envanterGeriAl($t);
+                $t->fill($veri)->save();
+                $t->envanter_islem = HisseSureci::envanterUygula($t);
+                $t->save();
+            });
+        } catch (RuntimeException $e) {
+            if ($yeniEvrak) {
+                Storage::disk('public')->delete($yeniEvrak);
+            }
+
+            return back()->withInput()->withErrors(['tapu' => $e->getMessage()]);
+        }
+        if ($yeniEvrak && $eskiEvrak) {
+            Storage::disk('public')->delete($eskiEvrak);
+        }
+
+        HisseSureci::gecmis((int) $t->grup_no, 'Tapu tescili güncellendi', $t->basvuru->ad_soyad, $t->basvuru_id);
 
         return back()->with('basari', 'Tapu tescili güncellendi.');
     }
@@ -1899,12 +2120,20 @@ class HisseSatisController extends Controller
     public function tapuSil(int $tapuId): JsonResponse
     {
         $t = HisseSatisTapu::findOrFail($tapuId);
-        abort_unless($t->basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
+        $grupNo = (int) $t->grup_no;
+        $ad = $t->basvuru->ad_soyad;
+        DB::transaction(function () use ($t) {
+            // Kurum hissesi / malik / satış durumu tescil öncesine döner
+            HisseSureci::envanterGeriAl($t);
+            $t->delete();
+        });
         if ($t->tescil_evrak) {
             Storage::disk('public')->delete($t->tescil_evrak);
         }
-        $t->delete();
+
+        HisseSureci::gecmis($grupNo, 'Tapu tescili silindi', $ad.' · envanter değişiklikleri geri alındı.', $t->basvuru_id);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -1914,7 +2143,6 @@ class HisseSatisController extends Controller
     public function gorusKaydet(Request $request, int $grupNo): RedirectResponse
     {
         $basvuru = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate([
             'gorus_sube' => 'required|string|max:200',
@@ -1937,6 +2165,8 @@ class HisseSatisController extends Controller
             'grup_no' => $grupNo,
             'tasinmaz_id' => $basvuru->tasinmaz_id,
         ]));
+        HisseSureci::gecmis($grupNo, 'Görüş', $veri['gorus_sube']);
+        HisseSureci::durumlariYenile($grupNo);
 
         return back()->with('basari', 'Görüş kaydedildi.');
     }
@@ -1944,7 +2174,6 @@ class HisseSatisController extends Controller
     public function gorusGuncelle(Request $request, int $gorusId): RedirectResponse
     {
         $g = HisseGorus::findOrFail($gorusId);
-        abort_unless($g->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate([
             'gorus_sube' => 'sometimes|string|max:200',
@@ -1967,6 +2196,7 @@ class HisseSatisController extends Controller
         }
 
         $g->update($veri);
+        HisseSureci::durumlariYenile((int) $g->grup_no);
 
         return back()->with('basari', 'Görüş güncellendi.');
     }
@@ -1974,14 +2204,16 @@ class HisseSatisController extends Controller
     public function gorusSil(int $gorusId): JsonResponse
     {
         $g = HisseGorus::findOrFail($gorusId);
-        abort_unless($g->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         foreach (['giden_evrak', 'gelen_evrak'] as $alan) {
             if ($g->$alan) {
                 Storage::disk('public')->delete($g->$alan);
             }
         }
+        $grupNo = (int) $g->grup_no;
         $g->delete();
+        HisseSureci::gecmis($grupNo, 'Görüş silindi', $g->gorus_sube);
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
     }
@@ -1991,7 +2223,6 @@ class HisseSatisController extends Controller
     public function imarKaydet(Request $request, int $grupNo): RedirectResponse
     {
         $basvuru = HisseBasvuru::where('grup_no', $grupNo)->firstOrFail();
-        abort_unless($basvuru->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate([
             'imar_giden_yazi' => 'nullable|string|max:100',
@@ -2016,6 +2247,8 @@ class HisseSatisController extends Controller
             'grup_no' => $grupNo,
             'tasinmaz_id' => $basvuru->tasinmaz_id,
         ]));
+        HisseSureci::gecmis($grupNo, 'İmar evrakı', $veri['imar_durum'] ?? null);
+        HisseSureci::durumlariYenile($grupNo);
 
         return back()->with('basari', 'İmar bilgisi kaydedildi.');
     }
@@ -2023,7 +2256,6 @@ class HisseSatisController extends Controller
     public function imarGuncelle(Request $request, int $imarId): RedirectResponse
     {
         $i = HisseImarEvrak::findOrFail($imarId);
-        abort_unless($i->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         $veri = $request->validate([
             'imar_giden_yazi' => 'nullable|string|max:100',
@@ -2048,6 +2280,7 @@ class HisseSatisController extends Controller
         }
 
         $i->update($veri);
+        HisseSureci::durumlariYenile((int) $i->grup_no);
 
         return back()->with('basari', 'İmar bilgisi güncellendi.');
     }
@@ -2055,15 +2288,52 @@ class HisseSatisController extends Controller
     public function imarSil(int $imarId): JsonResponse
     {
         $i = HisseImarEvrak::findOrFail($imarId);
-        abort_unless($i->tasinmaz->mudurlukErisilebilirMi(), 403);
 
         foreach (['imar_giden_evrak', 'imar_gelen_evrak'] as $alan) {
             if ($i->$alan) {
                 Storage::disk('public')->delete($i->$alan);
             }
         }
+        $grupNo = (int) $i->grup_no;
         $i->delete();
+        HisseSureci::gecmis($grupNo, 'İmar evrakı silindi');
+        HisseSureci::durumlariYenile($grupNo);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Formlar Türkçe sayı biçimi önerir ("1.234,56"); `numeric` doğrulaması virgülü
+     * reddediyordu. Doğrulamadan önce sayısal alanları noktalı ondalığa çevirir.
+     * "alan[]" → dizi alanı (her elemanı çevrilir).
+     */
+    private function trSayilari(Request $request, array $alanlar): void
+    {
+        $cevir = function ($deger) {
+            if ($deger === null || $deger === '' || is_int($deger) || is_float($deger)) {
+                return $deger;
+            }
+            $s = preg_replace('/[\s\x{00A0}\x{202F}]/u', '', trim((string) $deger)) ?? trim((string) $deger);
+            if (preg_match('/^(.+)[.,](\d{1,2})$/', $s, $m)) {
+                $s = str_replace(['.', ','], '', $m[1]).'.'.$m[2];
+            } else {
+                $s = str_replace(['.', ','], '', $s);
+            }
+
+            return is_numeric($s) ? $s : $deger;
+        };
+
+        $birlesik = [];
+        foreach ($alanlar as $alan) {
+            if (str_ends_with($alan, '[]')) {
+                $ad = substr($alan, 0, -2);
+                if (is_array($request->input($ad))) {
+                    $birlesik[$ad] = array_map($cevir, $request->input($ad));
+                }
+            } elseif ($request->has($alan)) {
+                $birlesik[$alan] = $cevir($request->input($alan));
+            }
+        }
+        $request->merge($birlesik);
     }
 }

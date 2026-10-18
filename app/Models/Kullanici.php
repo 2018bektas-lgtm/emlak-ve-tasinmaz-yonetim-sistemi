@@ -24,7 +24,6 @@ class Kullanici extends Authenticatable
         'kullanici_adi',
         'sifre',
         'rol_id',
-        'mudurluk_id',
         'aktif_mi',
     ];
 
@@ -63,11 +62,6 @@ class Kullanici extends Authenticatable
     public function rol(): BelongsTo
     {
         return $this->belongsTo(Rol::class, 'rol_id');
-    }
-
-    public function mudurluk(): BelongsTo
-    {
-        return $this->belongsTo(Mudurluk::class, 'mudurluk_id');
     }
 
     public function kolonTercihleri(): HasMany
@@ -119,16 +113,5 @@ class Kullanici extends Authenticatable
         $izinler = $rol->relationLoaded('izinler') ? $rol->izinler : $rol->izinler()->get();
 
         return $this->izinKoduOnbellegi = $izinler->pluck('kod');
-    }
-
-    public function tasinmazGorebilirMi(Tasinmaz $tasinmaz): bool
-    {
-        if ($this->izinVarMi('tasinmaz.tumunu-gor')) {
-            return true;
-        }
-
-        return $this->mudurluk_id !== null
-            && $tasinmaz->mudurluk_id !== null
-            && (int) $this->mudurluk_id === (int) $tasinmaz->mudurluk_id;
     }
 }

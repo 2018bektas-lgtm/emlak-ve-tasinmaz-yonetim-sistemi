@@ -236,7 +236,10 @@
     .arsv-bos svg { width: 48px; height: 48px; color: #d1d5db; margin-bottom: 12px; }
     .arsv-yukleniyor { padding: 40px; text-align: center; color: #6b7280; }
 </style>
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
 @endpush
+
+@section('shellClass', 'is-cam')
 
 @section('content')
 <section class="page-hero">

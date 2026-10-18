@@ -8,258 +8,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
-<style>
-    .ech-shell { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #0e1726; }
-    .ech-map { position: absolute; inset: 0; z-index: 1; }
-    .ech-shell .leaflet-control-zoom { display: none !important; }
-    body.app-shell.is-map-full .app-content.is-flush { padding: 0; margin: 0; overflow: hidden; }
-
-    /* Toolbar */
-    .ech-toolbar { position: absolute; top: 12px; left: 12px; z-index: 20; display: flex; align-items: center; gap: 6px;
-        background: rgba(14,23,38,.92); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.08);
-        border-radius: 10px; padding: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.35); }
-    .ech-tool { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: .78rem; font-weight: 600;
-        background: transparent; color: #dfe3ea; border: 1px solid transparent; border-radius: 7px;
-        cursor: pointer; text-decoration: none; }
-    .ech-tool svg { width: 15px; height: 15px; }
-    .ech-tool:hover { background: rgba(255,255,255,.06); color: #fff; }
-    .ech-tool[aria-expanded="true"] { background: rgba(37,99,235,.18); border-color: rgba(37,99,235,.35); }
-    .ech-tool-divider { width: 1px; align-self: stretch; background: rgba(255,255,255,.08); margin: 2px 4px; }
-    .ech-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: .75rem;
-        color: #9aa3b2; background: rgba(255,255,255,.04); border-radius: 6px; }
-    .ech-chip strong { color: #fff; font-size: .82rem; }
-
-    /* Paneller */
-    .ech-panel { position: absolute; z-index: 15; background: #0e1726; color: #dfe3ea;
-        border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
-        box-shadow: 0 22px 60px rgba(0,0,0,.55);
-        display: flex; flex-direction: column; min-width: 320px; overflow: hidden; }
-    .ech-panel[hidden] { display: none; }
-    .ech-panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px;
-        background: linear-gradient(180deg,#16223c 0%,#0e1726 100%);
-        border-bottom: 1px solid rgba(255,255,255,.06); cursor: move; }
-    .ech-panel-head strong { color: #fff; font-size: .88rem; flex: 1; }
-    .ech-panel-head small { color: #8a91a1; font-size: .74rem; display: block; }
-    .ech-panel-kapat { background: transparent; border: none; color: #9aa3b2; padding: 4px; border-radius: 6px; cursor: pointer; }
-    .ech-panel-kapat:hover { background: rgba(255,255,255,.08); color: #fff; }
-    .ech-panel-scroll { flex: 1; overflow-y: auto; }
-    .ech-panel-scroll::-webkit-scrollbar { width: 8px; }
-    .ech-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 4px; }
-
-    /* Katman paneli */
-    .ech-katman { top: 72px; left: 12px; width: 340px; max-height: calc(100vh - 100px); }
-    .ech-katman-grup { border-bottom: 1px solid rgba(255,255,255,.05); }
-    .ech-katman-baslik { padding: 10px 14px; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
-        color: #8a91a1; font-weight: 700; background: rgba(255,255,255,.02); }
-    .ech-katman-kart { padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
-    .ech-katman-kart:hover { background: rgba(255,255,255,.03); }
-    .ech-katman-ikon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: #fff; flex: 0 0 30px; }
-    .ech-katman-ikon svg { width: 14px; height: 14px; }
-    .ech-katman-meta { flex: 1; min-width: 0; }
-    .ech-katman-ad { display: block; color: #fff; font-size: .84rem; font-weight: 600; }
-    .ech-katman-alt { display: block; color: #8a91a1; font-size: .72rem; margin-top: 2px; }
-
-    .ech-switch { position: relative; width: 34px; height: 20px; flex: 0 0 34px; }
-    .ech-switch input { opacity: 0; width: 0; height: 0; }
-    .ech-switch-slider { position: absolute; cursor: pointer; inset: 0; background: #2a3550; border-radius: 20px; transition: background .2s; }
-    .ech-switch-slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
-    .ech-switch input:checked + .ech-switch-slider { background: #2563eb; }
-    .ech-switch input:checked + .ech-switch-slider::before { transform: translateX(14px); }
-
-    .ech-radyo-grup { padding: 8px 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-    .ech-radyo { padding: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.02);
-        cursor: pointer; text-align: center; font-size: .72rem; color: #dfe3ea; }
-    .ech-radyo:hover { border-color: rgba(37,99,235,.4); color: #fff; }
-    .ech-radyo.is-aktif { border-color: #2563eb; background: rgba(37,99,235,.15); color: #fff; font-weight: 600; }
-
-    .ech-lejant { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.05); }
-    .ech-lejant-baslik { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: #8a91a1; font-weight: 700; margin-bottom: 8px; }
-    .ech-lejant-oge { display: flex; align-items: center; gap: 8px; font-size: .76rem; color: #dfe3ea; padding: 4px 0; }
-    .ech-lejant-nokta { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.15); flex: 0 0 12px; }
-
-    /* İşlemler paneli */
-    .ech-islem { top: 12px; right: 12px; bottom: 12px; width: 420px; max-height: none; }
-    .ech-islem-tabs { display: flex; background: #16223c; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .ech-tab { flex: 1; padding: 10px 8px; background: transparent; border: none; font-size: .76rem; font-weight: 600;
-        color: #8a91a1; cursor: pointer; border-bottom: 2px solid transparent; }
-    .ech-tab:hover { color: #dfe3ea; }
-    .ech-tab.is-aktif { color: #fff; border-bottom-color: #2563eb; background: rgba(37,99,235,.08); }
-    .ech-tab-panel { display: none; padding: 14px; }
-    .ech-tab-panel.is-aktif { display: block; }
-
-    .ech-ozet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
-    .ech-alan .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: #8a91a1; font-weight: 700; margin-bottom: 3px; }
-    .ech-alan .val { font-size: .84rem; color: #fff; word-break: break-word; }
-
-    .ech-rozet { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid; }
-    .ech-rozet.is-yeni       { color: #94a3b8; border-color: rgba(148,163,184,.35); background: rgba(148,163,184,.08); }
-    .ech-rozet.is-devam-eden { color: #f87171; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.08); }
-    .ech-rozet.is-sonlanmis  { color: #34d399; border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.08); }
-
-    .ech-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px;
-        font-size: .82rem; font-weight: 600; background: #2563eb; color: #fff; border: none; border-radius: 7px;
-        cursor: pointer; text-decoration: none; }
-    .ech-btn:hover { background: #1d4ed8; }
-    .ech-btn.is-ghost { background: transparent; color: #dfe3ea; border: 1px solid rgba(255,255,255,.14); }
-    .ech-btn.is-yesil { background: #059669; } .ech-btn.is-yesil:hover { background: #047857; }
-    .ech-btn.is-mini { padding: 5px 9px; font-size: .72rem; }
-    .ech-btn svg { width: 14px; height: 14px; }
-    .ech-btn-row { display: flex; gap: 8px; margin-top: 12px; }
-    .ech-btn-row .ech-btn { flex: 1; }
-
-    /* Tutanak listesi */
-    .ech-tut-item { border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 10px 12px; background: rgba(255,255,255,.02); margin-bottom: 8px; }
-    .ech-tut-ust { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .ech-tut-ust .num { color: #fff; font-weight: 700; font-size: .82rem; flex: 1; }
-    .ech-tut-alt { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: .74rem; }
-    .ech-tut-alt .lbl { color: #8a91a1; font-size: .66rem; text-transform: uppercase; font-weight: 700; }
-    .ech-tut-alt .val { color: #dfe3ea; margin-top: 2px; }
-
-    /* Form */
-    .ech-form { display: flex; flex-direction: column; gap: 10px; }
-    .ech-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .ech-form-satir label { display: block; font-size: .7rem; color: #8a91a1; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; margin-bottom: 4px; }
-    .ech-form-satir input, .ech-form-satir textarea, .ech-form-satir select {
-        width: 100%; padding: 8px 10px; font-size: .82rem; background: rgba(0,0,0,.25); color: #fff;
-        border: 1px solid rgba(255,255,255,.1); border-radius: 6px; }
-    .ech-form-satir input:focus, .ech-form-satir textarea:focus, .ech-form-satir select:focus {
-        outline: none; border-color: #2563eb; background: rgba(0,0,0,.35); }
-    .ech-form-satir textarea { min-height: 60px; }
-
-    /* Resim galeri */
-    .ech-galeri { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
-    .ech-galeri img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,.1); }
-
-    /* Ada/parsel etiketi */
-    .ech-etiket { background: rgba(255,224,1,.95); color: #1f2937; padding: 2px 8px; border-radius: 4px;
-        font-weight: 700; font-size: 11px; box-shadow: 0 1px 3px rgba(0,0,0,.5); white-space: nowrap; border: 1px solid rgba(0,0,0,.15); }
-
-    /* İşaretçi (özel marker) — durum bazlı renk */
-    .ech-marker {
-        width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg); border: 2.5px solid #fff;
-        box-shadow: 0 2px 6px rgba(0,0,0,.45); position: relative;
-        display: flex; align-items: center; justify-content: center;
-    }
-    .ech-marker::before {
-        content: ''; position: absolute; inset: 5px; background: rgba(255,255,255,.35); border-radius: 50%;
-    }
-    .ech-marker-yeni { background: #64748b; }
-    .ech-marker-devam-eden { background: #f43f5e; animation: ech-pulse-marker 1.8s infinite; }
-    .ech-marker-sonlanmis { background: #10b981; }
-    @keyframes ech-pulse-marker {
-        0%,100% { box-shadow: 0 2px 6px rgba(0,0,0,.45), 0 0 0 0 rgba(244,63,94,.5); }
-        50%     { box-shadow: 0 2px 6px rgba(0,0,0,.45), 0 0 0 10px rgba(244,63,94,0); }
-    }
-
-    /* Kümeleme (marker cluster) — durum bazlı renk */
-    .ech-cluster {
-        width: 40px !important; height: 40px !important;
-        border-radius: 50%; display: flex; align-items: center; justify-content: center;
-        color: #fff; font-weight: 700; font-size: 13px;
-        border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.4);
-    }
-    .ech-cluster-small { background: #64748b; }
-    .ech-cluster-medium { background: #f59e0b; }
-    .ech-cluster-large { background: #dc2626; }
-    .ech-cluster-wrap { background: transparent !important; border: none !important; }
-    .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background: transparent !important; }
-    .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div { display: none; }
-
-    .ech-bos { padding: 24px; text-align: center; color: #8a91a1; font-size: .82rem; border: 1px dashed rgba(255,255,255,.08); border-radius: 8px; }
-    .ech-yukleniyor { padding: 40px 20px; text-align: center; color: #8a91a1; }
-    .ech-yukleniyor::before { content: ''; display: inline-block; width: 20px; height: 20px;
-        border: 2.5px solid rgba(255,255,255,.15); border-top-color: #2563eb; border-radius: 50%; margin-right: 10px;
-        vertical-align: middle; animation: ech-spin .8s linear infinite; }
-    @keyframes ech-spin { to { transform: rotate(360deg); } }
-    .ech-flash { padding: 8px 12px; border-radius: 6px; font-size: .78rem; margin-bottom: 10px; }
-    .ech-flash.is-ok { background: rgba(52,211,153,.12); color: #6ee7b7; border: 1px solid rgba(52,211,153,.3); }
-    .ech-flash.is-hata { background: rgba(248,113,113,.12); color: #fca5a5; border: 1px solid rgba(248,113,113,.3); }
-
-    /* Arama paneli */
-    .ech-arama { top: 72px; left: 368px; width: 340px; max-height: calc(100vh - 100px); }
-
-    /* ---------- Şık date + file input (dark tema) ---------- */
-    .ech-form-satir input[type="date"] {
-        appearance: none; -webkit-appearance: none; cursor: pointer;
-        padding: 9px 12px; font-size: .82rem; font-weight: 500;
-        color: #fff; background: rgba(0,0,0,.25);
-        border: 1px solid rgba(255,255,255,.1); border-radius: 6px;
-        transition: all .15s ease; font-family: inherit;
-    }
-    .ech-form-satir input[type="date"]:hover { border-color: rgba(37,99,235,.4); background: rgba(0,0,0,.35); }
-    .ech-form-satir input[type="date"]:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.2); }
-    .ech-form-satir input[type="date"]::-webkit-calendar-picker-indicator {
-        cursor: pointer; opacity: .7;
-        filter: invert(80%) sepia(20%) saturate(400%) hue-rotate(190deg);
-    }
-    .ech-form-satir input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity: 1; }
-
-    /* Dark file drop */
-    .ech-file-drop {
-        position: relative; display: flex; align-items: center; gap: 12px;
-        padding: 12px 14px;
-        background: linear-gradient(135deg, rgba(255,255,255,.03) 0%, rgba(255,255,255,.06) 100%);
-        border: 2px dashed rgba(255,255,255,.15); border-radius: 8px;
-        cursor: pointer; transition: all .18s ease;
-    }
-    .ech-file-drop:hover {
-        border-color: #38bdf8;
-        background: linear-gradient(135deg, rgba(56,189,248,.08) 0%, rgba(56,189,248,.14) 100%);
-        transform: translateY(-1px);
-    }
-    .ech-file-drop.is-dragover { border-color: #34d399; border-style: solid; background: rgba(52,211,153,.12); }
-    .ech-file-drop.has-file {
-        border-style: solid; border-color: #34d399;
-        background: linear-gradient(135deg, rgba(52,211,153,.08) 0%, rgba(52,211,153,.15) 100%);
-    }
-    .ech-file-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-    .ech-file-ikon {
-        width: 38px; height: 38px; flex: 0 0 38px;
-        display: flex; align-items: center; justify-content: center;
-        background: rgba(255,255,255,.08); border-radius: 8px;
-        color: #cbd5e1; transition: all .18s ease;
-    }
-    .ech-file-ikon svg { width: 18px; height: 18px; }
-    .ech-file-drop:hover .ech-file-ikon { color: #38bdf8; background: rgba(56,189,248,.15); }
-    .ech-file-drop.has-file .ech-file-ikon { color: #34d399; background: rgba(52,211,153,.18); }
-    .ech-file-meta { flex: 1; min-width: 0; }
-    .ech-file-baslik { font-size: .82rem; font-weight: 700; color: #fff; margin-bottom: 2px; }
-    .ech-file-alt { font-size: .72rem; color: #94a3b8; }
-    .ech-file-drop.has-file .ech-file-alt { color: #86efac; word-break: break-all; }
-
-    /* ---------- Flatpickr dark özelleştirme ---------- */
-    .flatpickr-calendar {
-        background: #0e1726 !important; border: 1px solid rgba(255,255,255,.1) !important;
-        box-shadow: 0 20px 50px rgba(0,0,0,.55) !important; border-radius: 12px !important;
-    }
-    .flatpickr-calendar.arrowTop::before,
-    .flatpickr-calendar.arrowTop::after { border-bottom-color: #2563eb !important; }
-    .flatpickr-months {
-        background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%) !important;
-        border-radius: 12px 12px 0 0 !important; padding: 8px 0 !important;
-    }
-    .flatpickr-months .flatpickr-month,
-    .flatpickr-current-month,
-    .flatpickr-current-month input.cur-year,
-    .flatpickr-monthDropdown-months { color: #fff !important; }
-    .flatpickr-monthDropdown-months option { background: #0e1726; color: #fff !important; }
-    span.flatpickr-weekday { color: #8a91a1 !important; font-weight: 700 !important; text-transform: uppercase; font-size: .7rem !important; }
-    .flatpickr-day {
-        color: #dfe3ea !important; border-radius: 8px !important; font-weight: 500;
-        transition: background .12s ease, color .12s ease;
-    }
-    .flatpickr-day:hover { background: rgba(37,99,235,.25) !important; color: #fff !important; border-color: transparent !important; }
-    .flatpickr-day.today { border-color: #2563eb !important; font-weight: 700; color: #38bdf8 !important; }
-    .flatpickr-day.selected,
-    .flatpickr-day.selected:hover {
-        background: #2563eb !important; color: #fff !important; border-color: #2563eb !important;
-        box-shadow: 0 3px 8px rgba(37,99,235,.5);
-    }
-    .flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: #4b5563 !important; }
-</style>
+<link rel="stylesheet" href="{{ asset('css/ecrimisil-harita.css') }}?v=1">
 @endpush
 
 @section('content')
@@ -435,25 +184,22 @@
 @push('scripts')
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/tr.js"></script>
 <script>
 (function () {
     'use strict';
     const API = {
         geojson: @json(route('panel.ecrimisil.harita.geojson')),
         ozet: @json(url('/panel/ecrimisil/harita/kayit')),
-        tutanakKaydet: @json(url('/panel/ecrimisil')),
-        resimYukle: @json(url('/panel/ecrimisil')),
+        kayit: @json(url('/panel/ecrimisil')),
         ilceler: @json(url('/panel/ajax/ilceler')),
         mahalleler: @json(url('/panel/ajax/mahalleler')),
         csrf: @json(csrf_token()),
     };
 
     const DURUM_RENK = {
-        'yeni':        { renk: '#94a3b8', etiket: 'Yeni kayıt' },
-        'devam-eden':  { renk: '#f43f5e', etiket: 'Devam eden' },
-        'sonlanmis':   { renk: '#10b981', etiket: 'Sonlanmış' },
+        'yeni':        { renk: '#94a3b8', etiket: 'Tutanak yok' },
+        'devam-eden':  { renk: '#f43f5e', etiket: 'İşgal sürüyor' },
+        'sonlanmis':   { renk: '#10b981', etiket: 'İşgal sonlandı' },
     };
     const durumSinifi = d => 'is-' + ({ 'yeni':'yeni','devam-eden':'devam-eden','sonlanmis':'sonlanmis' }[d] || 'yeni');
 
@@ -493,7 +239,7 @@
     let secilenKayitId = null;
     let mevcutFiltre = new URLSearchParams();
 
-    function haritayiYukle(filtre) {
+    function haritayiYukle(filtre, sigdir = true) {
         parselKatman.clearLayers();
         etiketKatman.clearLayers();
         markerKatman.clearLayers();
@@ -528,7 +274,7 @@
                         const c = layer.getBounds().getCenter();
                         // Ada/parsel etiketi
                         const et = L.marker(c, {
-                            icon: L.divIcon({ className: '', html: `<div class="ech-etiket">${p.ada ?? '—'}/${p.parsel ?? '—'}</div>`, iconSize: null }),
+                            icon: L.divIcon({ className: '', html: `<div class="ech-etiket">${p.ada ? escapeHtml(p.ada) + '/' + escapeHtml(p.parsel) : escapeHtml(p.nitelik || 'Bağlı değil')}</div>`, iconSize: null }),
                         });
                         et.on('click', () => secKayit(layer.getLayers()[0], p));
                         etiketKatman.addLayer(et);
@@ -541,15 +287,17 @@
                         });
                         const marker = L.marker(c, { icon: mIcon });
                         marker.on('click', () => secKayit(layer.getLayers()[0], p));
-                        marker.bindTooltip(`<strong>${(p.ad_soyad_unvan || '').replace(/</g,'&lt;')}</strong><br>Ada ${p.ada ?? '—'}/Parsel ${p.parsel ?? '—'}`, { direction: 'top', offset: [0, -20] });
+                        marker.bindTooltip(`<strong>${escapeHtml(p.ad_soyad_unvan)}</strong><br>${p.ada ? 'Ada ' + escapeHtml(p.ada) + ' / Parsel ' + escapeHtml(p.parsel) : 'Taşınmaz bağlı değil'}`, { direction: 'top', offset: [0, -20] });
                         markerKatman.addLayer(marker);
                         markerById.set(p.id, marker);
                     } catch(e) {}
                 });
                 if (bounds.length) {
                     allBounds = bounds.reduce((acc, b) => acc ? acc.extend(b) : L.latLngBounds(b.getSouthWest ? [b.getSouthWest(), b.getNorthEast()] : [b, b]), null);
-                    if (allBounds) map.fitBounds(allBounds, { padding: [30, 30] });
+                    if (allBounds && sigdir) map.fitBounds(allBounds, { padding: [30, 30] });
                 }
+                // Seçili kayıt yeniden çizildiyse vurgusunu koru
+                if (secilenKayitId && layerById.has(secilenKayitId)) { secilenLayer = layerById.get(secilenKayitId); stiliniUygula(secilenLayer); }
                 // Marker/cluster durumunu uygula (veri yüklendikten sonra)
                 markerKatmanGuncelle();
             });
@@ -698,266 +446,189 @@
 
         const panel = document.getElementById('ech-islem-panel');
         panel.hidden = false;
-        document.getElementById('ech-islem-alt').textContent = props.ad_soyad_unvan + ' · Ada ' + (props.ada ?? '—') + '/' + (props.parsel ?? '—');
-        ['ozet','tutanak','resim'].forEach(t => document.getElementById('ech-tab-' + t).innerHTML = '<div class="ech-yukleniyor">Yükleniyor</div>');
-
-        fetch(API.ozet + '/' + props.id).then(r => r.json()).then(v => {
-            renderOzet(v, props);
-            renderTutanak(v);
-            renderRapor(v);
-            renderResim(v);
-        }).catch(e => {
-            document.getElementById('ech-tab-ozet').innerHTML = '<div class="ech-flash is-hata">Yükleme başarısız</div>';
-        });
+        document.getElementById('ech-islem-alt').textContent = props.ad_soyad_unvan + (props.ada ? ' · Ada ' + props.ada + '/' + props.parsel : '');
+        ['ozet', 'tutanak', 'rapor', 'resim'].forEach(t => document.getElementById('ech-tab-' + t).innerHTML = '<div class="ech-yukleniyor">Yükleniyor</div>');
+        ozetYukle(props.id);
     }
 
-    function renderRapor(v) {
-        const canEdit = v.izinler.duzenle;
-        const items = (v.raporlar || []).map(r => {
-            const fiyat = r.fiyat !== null && r.fiyat !== undefined
-                ? Number(r.fiyat).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺'
-                : null;
-            return `
-            <div class="ech-tut-item">
-                <div class="ech-tut-ust">
-                    <span class="num">${r.rapor_no ? 'Rapor: ' + escapeHtml(r.rapor_no) : 'Rapor #' + r.id}</span>
-                    <span style="font-size:.72rem;color:#8a91a1;">${r.rapor_tarihi ? tr(r.rapor_tarihi) : '—'}</span>
-                    ${fiyat ? `<span style="background:rgba(52,211,153,.15);color:#6ee7b7;padding:2px 8px;border-radius:6px;font-weight:700;font-size:.74rem;">${fiyat}</span>` : ''}
-                    ${r.dosya_url ? `<a class="ech-btn is-mini" href="${escapeAttr(r.dosya_url)}" target="_blank">Dosya</a>` : ''}
-                </div>
-                ${r.aciklama ? `<div style="font-size:.76rem;color:#cbd5e1;line-height:1.5;">${escapeHtml(r.aciklama)}</div>` : ''}
-            </div>`;
-        }).join('');
-
-        const form = canEdit ? `
-            <details style="margin-top:12px;">
-                <summary style="cursor:pointer;color:#dfe3ea;font-weight:600;font-size:.84rem;padding:8px 0;">➕ Yeni Rapor Ekle</summary>
-                <form class="ech-form" style="margin-top:10px;" enctype="multipart/form-data" onsubmit="return echRaporKaydet(event, ${v.kayit.id})">
-                    <div class="ech-form-row">
-                        <div class="ech-form-satir"><label>Rapor No</label><input type="text" name="rapor_no" maxlength="100"></div>
-                        <div class="ech-form-satir"><label>Rapor Tarihi</label><input type="date" name="rapor_tarihi"></div>
-                    </div>
-                    <div class="ech-form-satir"><label>Fiyat (₺)</label><input type="number" name="fiyat" step="0.01" min="0" placeholder="0,00"></div>
-                    <div class="ech-form-satir"><label>Dosya Eki</label>
-                        <label class="ech-file-drop" data-file-drop>
-                            <input type="file" name="dosya" accept=".pdf,.doc,.docx">
-                            <span class="ech-file-ikon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l3-3 3 3M12 12v6"/></svg></span>
-                            <span class="ech-file-meta">
-                                <span class="ech-file-baslik" data-file-baslik>Dosyayı sürükleyin veya tıklayın</span>
-                                <span class="ech-file-alt" data-file-alt>PDF veya Word · max 20 MB</span>
-                            </span>
-                        </label>
-                    </div>
-                    <div class="ech-form-satir"><label>Açıklama</label><textarea name="aciklama" maxlength="5000"></textarea></div>
-                    <div id="ech-rapor-flash"></div>
-                    <button type="submit" class="ech-btn is-yesil">Raporu Kaydet</button>
-                </form>
-            </details>` : '';
-
-        document.getElementById('ech-tab-rapor').innerHTML =
-            ((v.raporlar || []).length === 0 ? '<div class="ech-bos">Henüz rapor yok.</div>' : items) + form;
+    function ozetYukle(id, sadece) {
+        return fetch(API.ozet + '/' + id, { headers: { 'Accept': 'application/json' } })
+            .then(r => { if (!r.ok) throw new Error(r.status === 403 ? 'Bu kayda erişim yetkiniz yok.' : 'Yükleme başarısız (' + r.status + ').'); return r.json(); })
+            .then(v => {
+                if (id !== secilenKayitId) return;
+                if (!sadece || sadece === 'ozet') renderOzet(v);
+                if (!sadece || sadece === 'tutanak') renderTutanak(v);
+                if (!sadece || sadece === 'rapor') renderRapor(v);
+                if (!sadece || sadece === 'resim') renderResim(v);
+            })
+            .catch(e => { document.getElementById('ech-tab-ozet').innerHTML = '<div class="ech-flash is-hata">' + escapeHtml(e.message) + '</div>'; });
     }
 
-    window.echRaporKaydet = function (e, id) {
-        e.preventDefault();
-        const form = e.target, btn = form.querySelector('button[type=submit]');
-        btn.disabled = true;
-        const fd = new FormData(form);
-        const flash = form.querySelector('#ech-rapor-flash');
-        fetch(@json(url('/panel/ecrimisil')) + '/' + id + '/rapor', {
-            method: 'POST', headers: { 'X-CSRF-TOKEN': API.csrf, 'Accept': 'application/json' }, body: fd,
-        }).then(r => {
-            if (r.ok) {
-                flash.innerHTML = '<div class="ech-flash is-ok">Rapor kaydedildi.</div>';
-                fetch(API.ozet + '/' + id).then(r => r.json()).then(v => renderRapor(v));
-            } else flash.innerHTML = '<div class="ech-flash is-hata">Hata oluştu.</div>';
-        }).finally(() => btn.disabled = false);
-        return false;
-    };
+    const tarihAlani = (ad, etiket, ekstra = '') => `<div class="ech-form-satir"><label>${etiket}</label><input type="date" name="${ad}" ${ekstra}></div>`;
+    const BUGUN = new Date().toISOString().slice(0, 10);
+    const ekleKutusu = (baslik, govde) => `<details class="ech-form-toggle"><summary>+ ${baslik}</summary>${govde}</details>`;
 
-    function renderOzet(v, props) {
+    function renderOzet(v) {
         const k = v.kayit;
-        const durumEt = DURUM_RENK[props.durum]?.etiket ?? 'Yeni kayıt';
+        const durumEt = DURUM_RENK[k.durum]?.etiket ?? 'Yeni kayıt';
         document.getElementById('ech-tab-ozet').innerHTML = `
-            <div style="margin-bottom:12px;"><span class="ech-rozet ${durumSinifi(props.durum)}">${escapeHtml(durumEt)}</span></div>
+            <div class="ech-ozet-ust">
+                <span class="ech-rozet ${durumSinifi(k.durum)}">${escapeHtml(durumEt)}</span>
+                ${k.toplam_gun ? `<small>${Number(k.toplam_gun).toLocaleString('tr-TR')} gün işgal</small>` : ''}
+            </div>
             <div class="ech-ozet-grid">
-                <div class="ech-alan" style="grid-column:1/-1;"><div class="lbl">Ad Soyad / Ünvan</div><div class="val">${escapeHtml(k.ad_soyad_unvan)}</div></div>
-                <div class="ech-alan"><div class="lbl">TC / Vergi</div><div class="val">${escapeHtml(k.tc_vergi_no ?? '—')}</div></div>
+                <div class="ech-alan is-genis"><div class="lbl">Ad Soyad / Ünvan</div><div class="val">${escapeHtml(k.ad_soyad_unvan)}</div></div>
+                <div class="ech-alan"><div class="lbl">TC / Vergi No</div><div class="val">${escapeHtml(k.tc_vergi_no ?? '—')}</div></div>
                 <div class="ech-alan"><div class="lbl">Nitelik</div><div class="val">${escapeHtml(k.nitelik ?? '—')}</div></div>
                 <div class="ech-alan"><div class="lbl">Sorumlu</div><div class="val">${escapeHtml(k.kullanici?.ad_soyad ?? '—')}</div></div>
-                <div class="ech-alan" style="grid-column:1/-1;"><div class="lbl">Cadde/Sokak & Adres</div><div class="val">${escapeHtml((k.cadde_sokak ? k.cadde_sokak + ' · ' : '') + (k.adres ?? '—'))}</div></div>
-                <div class="ech-alan"><div class="lbl">Ada / Parsel</div><div class="val">${escapeHtml(k.ada ?? '—')} / ${escapeHtml(k.parsel ?? '—')}</div></div>
-                <div class="ech-alan"><div class="lbl">Konum</div><div class="val">${escapeHtml(k.ilce ?? '')} · ${escapeHtml(k.mahalle ?? '')}</div></div>
-                ${k.aciklama ? `<div class="ech-alan" style="grid-column:1/-1;"><div class="lbl">Açıklama</div><div class="val">${escapeHtml(k.aciklama)}</div></div>` : ''}
+                <div class="ech-alan"><div class="lbl">Ada / Parsel</div><div class="val">${k.ada ? escapeHtml(k.ada) + ' / ' + escapeHtml(k.parsel) : 'Bağlı değil'}</div></div>
+                <div class="ech-alan is-genis"><div class="lbl">Konum</div><div class="val">${escapeHtml([k.ilce, k.mahalle, k.cadde_sokak].filter(Boolean).join(' · ') || '—')}</div></div>
+                ${k.adres ? `<div class="ech-alan is-genis"><div class="lbl">Adres</div><div class="val">${escapeHtml(k.adres)}</div></div>` : ''}
+                ${k.aciklama ? `<div class="ech-alan is-genis"><div class="lbl">Açıklama</div><div class="val">${escapeHtml(k.aciklama)}</div></div>` : ''}
             </div>
             <div class="ech-btn-row">
-                <a class="ech-btn" href="${escapeAttr(v.detay_url)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>Kayıt Detayına Git</a>
+                <a class="ech-btn" href="${escapeAttr(v.detay_url)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>Kaydı Aç</a>
             </div>`;
     }
 
     function renderTutanak(v) {
-        const canEdit = v.izinler.duzenle;
         const items = v.tutanaklar.map(t => `
-            <div class="ech-tut-item">
+            <div class="ech-tut-item ${t.devam_ediyor ? 'is-acik' : ''}">
                 <div class="ech-tut-ust">
-                    <span class="num">Seri: ${escapeHtml(t.seri_no ?? '—')}</span>
-                    ${t.gun_sayisi !== null ? `<span class="ech-rozet ${t.devam_ediyor ? 'is-devam-eden' : 'is-sonlanmis'}">${t.gun_sayisi} gün${t.devam_ediyor ? ' (devam)' : ''}</span>` : ''}
+                    <span class="num">${t.seri_no ? 'Seri ' + escapeHtml(t.seri_no) : 'Tutanak #' + t.id}</span>
+                    ${t.gun_sayisi !== null ? `<span class="ech-rozet ${t.devam_ediyor ? 'is-devam-eden' : 'is-sonlanmis'}">${Number(t.gun_sayisi).toLocaleString('tr-TR')} gün${t.devam_ediyor ? ' · sürüyor' : ''}</span>` : ''}
                 </div>
                 <div class="ech-tut-alt">
                     <div><div class="lbl">Tutanak</div><div class="val">${t.tutanak_tarihi ? tr(t.tutanak_tarihi) : '—'}</div></div>
                     <div><div class="lbl">Başlangıç</div><div class="val">${t.isgal_baslangic_tarihi ? tr(t.isgal_baslangic_tarihi) : '—'}</div></div>
                     <div><div class="lbl">Bitiş</div><div class="val">${t.isgal_bitis_tarihi ? tr(t.isgal_bitis_tarihi) : 'Devam'}</div></div>
                 </div>
-                ${t.aciklama ? `<div style="margin-top:8px;font-size:.74rem;color:#dfe3ea;">${escapeHtml(t.aciklama)}</div>` : ''}
+                ${t.aciklama ? `<p class="ech-tut-not">${escapeHtml(t.aciklama)}</p>` : ''}
             </div>`).join('');
 
-        const form = canEdit ? `
-            <details style="margin-top:12px;">
-                <summary style="cursor:pointer;color:#dfe3ea;font-weight:600;font-size:.84rem;padding:8px 0;">➕ Yeni Tutanak Ekle</summary>
-                <form class="ech-form" style="margin-top:10px;" onsubmit="return echTutanakKaydet(event, ${v.kayit.id})">
-                    <div class="ech-form-row">
-                        <div class="ech-form-satir"><label>Seri No</label><input type="text" name="seri_no" maxlength="100"></div>
-                        <div class="ech-form-satir"><label>Tutanak Tarihi</label><input type="date" name="tutanak_tarihi"></div>
-                    </div>
-                    <div class="ech-form-row">
-                        <div class="ech-form-satir"><label>İşgal Başlangıç</label><input type="date" name="isgal_baslangic_tarihi"></div>
-                        <div class="ech-form-satir"><label>İşgal Bitiş</label><input type="date" name="isgal_bitis_tarihi"></div>
-                    </div>
-                    <div class="ech-form-satir"><label>Açıklama</label><textarea name="aciklama" maxlength="2000"></textarea></div>
-                    <div id="ech-tutanak-flash"></div>
-                    <button type="submit" class="ech-btn is-yesil">Tutanağı Kaydet</button>
-                </form>
-            </details>` : '';
+        const form = v.izinler.duzenle ? ekleKutusu('Yeni Tutanak', `
+            <form class="ech-form" data-gonder="tutanak" data-id="${v.kayit.id}">
+                <div class="ech-form-row">
+                    <div class="ech-form-satir"><label>Seri No</label><input type="text" name="seri_no" maxlength="100"></div>
+                    ${tarihAlani('tutanak_tarihi', 'Tutanak Tarihi', `max="${BUGUN}" value="${BUGUN}"`)}
+                </div>
+                <div class="ech-form-row">
+                    ${tarihAlani('isgal_baslangic_tarihi', 'İşgal Başlangıcı', `max="${BUGUN}"`)}
+                    ${tarihAlani('isgal_bitis_tarihi', 'İşgal Bitişi')}
+                </div>
+                <p class="ech-not">İşgal sürüyorsa bitişi boş bırakın. Düzenleme ve silme kayıt ekranından yapılır.</p>
+                <div class="ech-form-satir"><label>Açıklama</label><textarea name="aciklama" maxlength="2000"></textarea></div>
+                <div class="ech-flash-yer"></div>
+                <button type="submit" class="ech-btn is-yesil">Tutanağı Kaydet</button>
+            </form>`) : '';
 
         document.getElementById('ech-tab-tutanak').innerHTML =
             (v.tutanaklar.length === 0 ? '<div class="ech-bos">Henüz tutanak yok.</div>' : items) + form;
     }
 
+    function renderRapor(v) {
+        const items = (v.raporlar || []).map(r => {
+            const fiyat = r.fiyat !== null && r.fiyat !== undefined
+                ? Number(r.fiyat).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺' : null;
+            return `
+            <div class="ech-tut-item">
+                <div class="ech-tut-ust">
+                    <span class="num">${r.rapor_no ? 'Rapor ' + escapeHtml(r.rapor_no) : 'Rapor #' + r.id}</span>
+                    <span class="tarih">${r.rapor_tarihi ? tr(r.rapor_tarihi) : '—'}</span>
+                    ${fiyat ? `<span class="ech-tutar">${fiyat}</span>` : ''}
+                    ${r.dosya_url ? `<a class="ech-btn is-mini is-ghost" href="${escapeAttr(r.dosya_url)}" target="_blank" rel="noopener">Dosya</a>` : ''}
+                </div>
+                ${r.aciklama ? `<p class="ech-tut-not">${escapeHtml(r.aciklama)}</p>` : ''}
+            </div>`;
+        }).join('');
+
+        const form = v.izinler.duzenle ? ekleKutusu('Yeni Rapor', `
+            <form class="ech-form" data-gonder="rapor" data-id="${v.kayit.id}">
+                <div class="ech-form-row">
+                    <div class="ech-form-satir"><label>Rapor No</label><input type="text" name="rapor_no" maxlength="100"></div>
+                    ${tarihAlani('rapor_tarihi', 'Rapor Tarihi', `max="${BUGUN}" value="${BUGUN}"`)}
+                </div>
+                <div class="ech-form-satir"><label>Bedel (₺)</label><input type="text" name="fiyat" inputmode="decimal" placeholder="12.500,00"></div>
+                <div class="ech-form-satir"><label>Ek (PDF / Word)</label><input type="file" name="dosya" accept=".pdf,.doc,.docx"><span class="ipucu">En fazla 20 MB.</span></div>
+                <div class="ech-form-satir"><label>Açıklama</label><textarea name="aciklama" maxlength="5000"></textarea></div>
+                <div class="ech-flash-yer"></div>
+                <button type="submit" class="ech-btn is-yesil">Raporu Kaydet</button>
+            </form>`) : '';
+
+        document.getElementById('ech-tab-rapor').innerHTML =
+            ((v.raporlar || []).length === 0 ? '<div class="ech-bos">Henüz rapor yok.</div>' : items) + form;
+    }
+
     function renderResim(v) {
-        const canEdit = v.izinler.duzenle;
-        const galeri = v.resimler.length > 0 ? `
-            <div class="ech-galeri">${v.resimler.map(r => `<img src="${escapeAttr(r.url)}" alt="${escapeAttr(r.aciklama ?? '')}" onclick="window.open('${escapeAttr(r.url)}','_blank')">`).join('')}</div>`
+        const galeri = v.resimler.length > 0
+            ? `<div class="ech-galeri">${v.resimler.map(r => `<a href="${escapeAttr(r.url)}" target="_blank" rel="noopener" title="${escapeAttr(r.aciklama ?? '')}"><img src="${escapeAttr(r.url)}" alt="${escapeAttr(r.aciklama ?? 'İşgal resmi')}" loading="lazy"></a>`).join('')}</div>`
             : '<div class="ech-bos">Henüz resim yok.</div>';
-        const form = canEdit ? `
-            <details style="margin-top:12px;">
-                <summary style="cursor:pointer;color:#dfe3ea;font-weight:600;font-size:.84rem;padding:8px 0;">➕ Resim Yükle</summary>
-                <form class="ech-form" style="margin-top:10px;" onsubmit="return echResimYukle(event, ${v.kayit.id})" enctype="multipart/form-data">
-                    <div class="ech-form-satir"><label>Resim(ler)</label>
-                        <label class="ech-file-drop" data-file-drop>
-                            <input type="file" name="resimler[]" accept="image/*" multiple required>
-                            <span class="ech-file-ikon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
-                            <span class="ech-file-meta">
-                                <span class="ech-file-baslik" data-file-baslik>Resimleri sürükleyin veya tıklayın</span>
-                                <span class="ech-file-alt" data-file-alt>JPG, PNG, WEBP · çoklu · max 8 MB</span>
-                            </span>
-                        </label>
-                    </div>
-                    <div class="ech-form-satir"><label>Açıklama</label><input type="text" name="aciklama" maxlength="300"></div>
-                    <div id="ech-resim-flash"></div>
-                    <button type="submit" class="ech-btn is-yesil">Yükle</button>
-                </form>
-            </details>` : '';
+        const form = v.izinler.duzenle ? ekleKutusu('Resim Yükle', `
+            <form class="ech-form" data-gonder="resim" data-id="${v.kayit.id}">
+                <div class="ech-form-satir"><label>Resimler</label><input type="file" name="resimler[]" accept="image/jpeg,image/png,image/webp" multiple required><span class="ipucu">JPG, PNG, WEBP · her biri en fazla 8 MB · en çok 20 adet</span></div>
+                <div class="ech-form-satir"><label>Açıklama</label><input type="text" name="aciklama" maxlength="300"></div>
+                <div class="ech-flash-yer"></div>
+                <button type="submit" class="ech-btn is-yesil">Yükle</button>
+            </form>`) : '';
         document.getElementById('ech-tab-resim').innerHTML = galeri + form;
     }
 
-    window.echTutanakKaydet = function (e, id) {
-        e.preventDefault();
-        const form = e.target, btn = form.querySelector('button[type=submit]');
-        btn.disabled = true;
-        const fd = new FormData(form);
-        const flash = form.querySelector('#ech-tutanak-flash');
-        fetch(API.tutanakKaydet + '/' + id + '/tutanak', {
-            method: 'POST', headers: { 'X-CSRF-TOKEN': API.csrf, 'Accept': 'application/json' }, body: fd,
-        }).then(r => {
-            if (r.ok) {
-                flash.innerHTML = '<div class="ech-flash is-ok">Tutanak kaydedildi.</div>';
-                fetch(API.ozet + '/' + id).then(r => r.json()).then(v => renderTutanak(v));
-                // Parselin durumunu güncelle: layer'ı yeniden çiz
-                haritayiYukle(mevcutFiltre);
-            } else {
-                flash.innerHTML = '<div class="ech-flash is-hata">Hata oluştu.</div>';
-            }
-        }).finally(() => btn.disabled = false);
-        return false;
+    // Panel formları — sunucu JSON döner; doğrulama hataları alan alan gösterilir
+    const GONDER = {
+        tutanak: { yol: '/tutanak', sekme: 'tutanak', haritaYenile: true },
+        rapor: { yol: '/rapor', sekme: 'rapor' },
+        resim: { yol: '/resim', sekme: 'resim' },
     };
-
-    window.echResimYukle = function (e, id) {
+    document.addEventListener('submit', async e => {
+        const form = e.target.closest('form[data-gonder]');
+        if (!form) return;
         e.preventDefault();
-        const form = e.target, btn = form.querySelector('button[type=submit]');
+        const ayar = GONDER[form.dataset.gonder];
+        const id = +form.dataset.id;
+        const btn = form.querySelector('button[type=submit]');
+        const flash = form.querySelector('.ech-flash-yer');
         btn.disabled = true;
-        const fd = new FormData(form);
-        const flash = form.querySelector('#ech-resim-flash');
-        fetch(API.resimYukle + '/' + id + '/resim', {
-            method: 'POST', headers: { 'X-CSRF-TOKEN': API.csrf, 'Accept': 'application/json' }, body: fd,
-        }).then(r => {
-            if (r.ok) {
-                flash.innerHTML = '<div class="ech-flash is-ok">Resim yüklendi.</div>';
-                fetch(API.ozet + '/' + id).then(r => r.json()).then(v => renderResim(v));
-            } else {
-                flash.innerHTML = '<div class="ech-flash is-hata">Hata oluştu.</div>';
-            }
-        }).finally(() => btn.disabled = false);
-        return false;
-    };
-
-    function tr(iso) { try { return new Date(iso).toLocaleDateString('tr-TR'); } catch(e) { return iso; } }
-    function escapeHtml(s) {
-        if (s === null || s === undefined) return '';
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-    }
-    function escapeAttr(s) { return escapeHtml(s); }
-
-    // Flatpickr — dinamik formlarda da otomatik uygulanır
-    function fpBaslat() {
-        if (typeof flatpickr === 'undefined') return;
-        document.querySelectorAll('input[type="date"]:not(.fp-inited)').forEach(el => {
-            el.classList.add('fp-inited');
-            flatpickr(el, {
-                locale: (typeof flatpickr.l10ns !== 'undefined' && flatpickr.l10ns.tr) ? flatpickr.l10ns.tr : 'default',
-                dateFormat: 'Y-m-d',
-                altInput: true,
-                altFormat: 'd F Y, l',
-                allowInput: true,
-                monthSelectorType: 'static',
+        try {
+            const r = await fetch(API.kayit + '/' + id + ayar.yol, {
+                method: 'POST', headers: { 'X-CSRF-TOKEN': API.csrf, 'Accept': 'application/json' }, body: new FormData(form),
             });
-        });
-    }
-    fpBaslat();
-    new MutationObserver(fpBaslat).observe(document.body, { childList: true, subtree: true });
-
-    // Şık dosya yükleme davranışı — dinamik formlarda çalışır (event delegation)
-    document.addEventListener('change', function (e) {
-        if (e.target.matches('.ech-file-drop input[type="file"]')) {
-            const wrap = e.target.closest('.ech-file-drop');
-            const baslik = wrap.querySelector('[data-file-baslik]');
-            const alt = wrap.querySelector('[data-file-alt]');
-            const files = e.target.files;
-            if (files && files.length > 0) {
-                wrap.classList.add('has-file');
-                if (files.length === 1) {
-                    baslik.textContent = files[0].name;
-                    alt.textContent = (files[0].size / 1024 / 1024).toFixed(2) + ' MB · seçildi';
-                } else {
-                    baslik.textContent = files.length + ' dosya seçildi';
-                    alt.textContent = Array.from(files).map(f => f.name).slice(0, 3).join(', ') + (files.length > 3 ? '...' : '');
-                }
-            } else {
-                wrap.classList.remove('has-file');
+            const veri = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                const hatalar = veri.errors ? Object.values(veri.errors).flat() : [veri.message || 'Kayıt başarısız (' + r.status + ').'];
+                flash.innerHTML = '<div class="ech-flash is-hata">' + hatalar.map(escapeHtml).join('<br>') + '</div>';
+                return;
             }
+            bildir(veri.mesaj || 'Kaydedildi.');
+            await ozetYukle(id);
+            if (ayar.haritaYenile) haritayiYukle(mevcutFiltre, false);
+        } catch (err) {
+            flash.innerHTML = '<div class="ech-flash is-hata">Bağlantı hatası: ' + escapeHtml(err.message) + '</div>';
+        } finally {
+            btn.disabled = false;
         }
     });
-    document.addEventListener('dragover', function (e) {
-        const wrap = e.target.closest?.('.ech-file-drop');
-        if (wrap) { e.preventDefault(); wrap.classList.add('is-dragover'); }
-    });
-    document.addEventListener('dragleave', function (e) {
-        const wrap = e.target.closest?.('.ech-file-drop');
-        if (wrap) wrap.classList.remove('is-dragover');
-    });
-    document.addEventListener('drop', function (e) {
-        const wrap = e.target.closest?.('.ech-file-drop');
-        if (wrap) wrap.classList.remove('is-dragover');
-    });
+
+    function bildir(mesaj) {
+        let kutu = document.getElementById('ech-bildirim');
+        if (!kutu) {
+            kutu = document.createElement('div');
+            kutu.id = 'ech-bildirim';
+            kutu.className = 'ech-bildirim';
+            kutu.setAttribute('role', 'status');
+            document.body.appendChild(kutu);
+        }
+        kutu.textContent = mesaj;
+        kutu.classList.add('is-acik');
+        clearTimeout(kutu._t);
+        kutu._t = setTimeout(() => kutu.classList.remove('is-acik'), 3200);
+    }
+
+    function tr(iso) { try { return new Date(iso).toLocaleDateString('tr-TR'); } catch (e) { return iso; } }
+    function escapeHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
+    function escapeAttr(s) { return escapeHtml(s); }
 })();
 </script>
 @endpush

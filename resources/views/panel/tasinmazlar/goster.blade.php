@@ -13,6 +13,9 @@
         {{ session('basari') }}
     </div>
 @endif
+@if ($errors->has('sil'))
+    <div class="flash-error" role="alert">{{ $errors->first('sil') }}</div>
+@endif
 
 @php
     $koordinat = $tasinmaz->koordinat;
@@ -71,11 +74,19 @@
         : null;
 
     $isgalEtiket = match ($ekbilgi?->isgal_durumu) {
-        'bos' => 'Boş',
-        'isgal' => 'İşgalli',
-        'kismen' => 'Kısmen İşgalli',
+        'yok', 'bos' => 'Yok',
+        'var', 'isgal' => 'İşgalli',
+        'kismi', 'kismen' => 'Kısmen İşgalli',
         default => $ekbilgi?->isgal_durumu ?: '—',
     };
+
+    // Kullanım — diğer modüllerden salt okunur
+    $lojmanlar = $tasinmaz->lojmanlar;
+    $lojmanSayac = $lojmanlar->countBy(fn ($l) => $l->efektifDurum());
+    $suruyorIsgal = $tasinmaz->ecrimisiller->filter(fn ($e) => $e->durum() === 'devam-eden');
+    $hisseDosyalari = $tasinmaz->hisseBasvurulari->groupBy('grup_no');
+    $acikHisseDosyasi = $hisseDosyalari->first(fn ($g) => $g->contains(fn ($b) => ! in_array($b->durum?->value, ['tamamlandi', 'reddedildi'], true)));
+    $isgalTiki = in_array($ekbilgi?->isgal_durumu, ['var', 'kismi', 'isgal', 'kismen'], true) || $suruyorIsgal->isNotEmpty();
 @endphp
 
 <section class="page-hero td-hero">
@@ -106,9 +117,6 @@
         <small>
             {{ $tasinmaz->il->ad ?? '—' }} / {{ $tasinmaz->ilce->ad ?? '—' }} · {{ $tasinmaz->mahalle->ad ?? '—' }}
             · Ada <strong>{{ $tasinmaz->ada ?? '—' }}</strong> · Parsel <strong>{{ $tasinmaz->parsel ?? '—' }}</strong>
-            @if ($tasinmaz->mudurluk?->ad)
-                · {{ $tasinmaz->mudurluk->ad }}
-            @endif
         </small>
     </div>
     <div class="page-hero-actions">
@@ -183,7 +191,6 @@
             <div><dt>İl</dt><dd>{{ $tasinmaz->il->ad ?? '—' }}</dd></div>
             <div><dt>İlçe</dt><dd>{{ $tasinmaz->ilce->ad ?? '—' }}</dd></div>
             <div><dt>Mahalle</dt><dd>{{ $tasinmaz->mahalle->ad ?? '—' }}</dd></div>
-            <div><dt>Müdürlük</dt><dd>{{ $tasinmaz->mudurluk->ad ?? '—' }}</dd></div>
             <div><dt>Ada / Parsel</dt><dd class="td-mono"><span class="tl-badge">{{ $tasinmaz->ada ?? '—' }}</span> / <span class="tl-badge">{{ $tasinmaz->parsel ?? '—' }}</span></dd></div>
             <div><dt>Tapu Yüzölçüm</dt><dd class="td-mono">{{ $tasinmaz->alan !== null ? number_format((float) $tasinmaz->alan, 2, ',', '.').' m²' : '—' }}</dd></div>
             <div><dt>Nitelik (Tapu)</dt><dd>
@@ -235,6 +242,79 @@
         @else
             <p class="td-bos">Bu taşınmaz için tapu kaydı girilmemiş.</p>
         @endif
+    </div>
+
+    {{-- Kullanım (salt okunur — lojman, ecrimisil, hisse satışı ve değerleme modüllerinden) --}}
+    <div class="td-card td-card-kullanim">
+        <div class="td-card-head">
+            <span class="td-card-ikon td-card-ikon-navy">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-5 7 5v14"/><path d="M9 21v-6h6v6"/></svg>
+            </span>
+            <div class="td-card-baslik">
+                <h3>Kullanım</h3>
+                <small>Bilgi amaçlı · kayıtlar ilgili modülde yönetilir</small>
+            </div>
+        </div>
+        <div class="td-kullanim-tikler">
+            <span class="td-tik {{ $lojmanlar->isNotEmpty() ? 'is-var' : '' }}">Lojman</span>
+            <span class="td-tik {{ $tahsisVar ? 'is-var' : '' }}">Tahsis</span>
+            <span class="td-tik {{ $kiraVar ? 'is-var' : '' }}">Kira</span>
+            <span class="td-tik {{ $ustHakkiVar ? 'is-var' : '' }}">Üst Hakkı</span>
+            <span class="td-tik {{ $isgalTiki ? 'is-var is-uyari' : '' }}">İşgal</span>
+        </div>
+        <dl class="td-list">
+            <div><dt>Lojman</dt><dd>
+                @if ($lojmanlar->isEmpty())
+                    <span class="td-soluk">Lojman olarak kullanılmıyor</span>
+                @elseif ($lojmanlar->count() === 1)
+                    @php $lj = $lojmanlar->first(); $ljAktif = $lj->aktifTahsis(); @endphp
+                    <a href="{{ route('panel.lojman.detay', $lj->id) }}" class="td-link">{{ $lj->ad }}</a>
+                    <span class="td-lj-durum is-{{ $lj->efektifDurum() }}">{{ $lj->durumEtiketi() }}</span>
+                    @if ($ljAktif)<br><small class="td-soluk">{{ $ljAktif->ad_soyad }} · {{ $ljAktif->baslangic_tarihi->format('d.m.Y') }}’den beri</small>@endif
+                @else
+                    {{ $lojmanlar->count() }} lojman
+                    @foreach (\App\Models\Lojman::DURUMLAR as $k => $et)
+                        @if ($lojmanSayac[$k] ?? 0)<span class="td-lj-durum is-{{ $k }}">{{ $lojmanSayac[$k] }} {{ mb_strtolower($et) }}</span>@endif
+                    @endforeach
+                    @foreach ($lojmanlar->take(4) as $lj)
+                        <br><a href="{{ route('panel.lojman.detay', $lj->id) }}" class="td-link">{{ $lj->konumKisa() ?: $lj->ad }}</a> <small class="td-soluk">{{ $lj->durumEtiketi() }}</small>
+                    @endforeach
+                @endif
+            </dd></div>
+            <div><dt>İşgal Durumu</dt><dd>{{ $isgalEtiket }}</dd></div>
+            <div><dt>Ecrimisil</dt><dd>
+                @if ($tasinmaz->ecrimisiller->isEmpty())
+                    <span class="td-soluk">Kayıt yok</span>
+                @else
+                    {{ $tasinmaz->ecrimisiller->count() }} kayıt{{ $suruyorIsgal->isNotEmpty() ? ' · '.$suruyorIsgal->count().' işgal sürüyor' : '' }}
+                    @foreach ($tasinmaz->ecrimisiller->take(3) as $ec)
+                        <br><a href="{{ route('panel.ecrimisil.detay', $ec->id) }}" class="td-link">{{ $ec->ad_soyad_unvan }}</a> <small class="td-soluk">{{ $ec->durumEtiketi() }}</small>
+                    @endforeach
+                @endif
+            </dd></div>
+            <div><dt>Değerleme</dt><dd>
+                @php $sonDeg = $tasinmaz->degerlemeler->first(); @endphp
+                @if (! $sonDeg)
+                    <span class="td-soluk">Değerlenmemiş</span>
+                @else
+                    @if (auth()->user()->izinVarMi('degerleme.goruntule'))
+                        <a href="{{ route('panel.degerleme.detay', $sonDeg->id) }}" class="td-link">{{ number_format((float) $sonDeg->toplam_bedel, 2, ',', '.') }} TL</a>
+                    @else
+                        {{ number_format((float) $sonDeg->toplam_bedel, 2, ',', '.') }} TL
+                    @endif
+                    <small class="td-soluk">{{ $sonDeg->tip === 'bb' ? 'BB '.$sonDeg->bb_no : 'arsa' }}{{ $sonDeg->rapor_tarihi ? ' · '.$sonDeg->rapor_tarihi->format('d.m.Y') : '' }}{{ $tasinmaz->degerlemeler->count() > 1 ? ' · '.$tasinmaz->degerlemeler->count().' rapor' : '' }}</small>
+                @endif
+            </dd></div>
+            <div><dt>Hisse Satışı</dt><dd>
+                @if ($hisseDosyalari->isEmpty())
+                    <span class="td-soluk">Dosya yok</span>
+                @else
+                    @php $hd = $acikHisseDosyasi ?? $hisseDosyalari->first(); @endphp
+                    <a href="{{ route('panel.hisse-satisi.detay', $hd->first()->grup_no) }}" class="td-link">Dosya #{{ $hd->first()->grup_no }}</a>
+                    <small class="td-soluk">{{ $acikHisseDosyasi ? 'açık' : 'kapalı' }} · {{ $hd->count() }} başvuru</small>
+                @endif
+            </dd></div>
+        </dl>
     </div>
 
     {{-- İmar --}}

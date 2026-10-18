@@ -2,110 +2,10 @@
 
 @section('title', 'Hisse Satış Başvuruları')
 
+@section('shellClass', 'is-cam')
+
 @push('head')
-<style>
-    /* Kısayol chip şeridi */
-    .hsl-kisayol-bar {
-        display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
-        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px;
-    }
-    .hsl-kisayol {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 7px 12px; font-size: .78rem; font-weight: 600;
-        background: transparent; color: #4b5563; border: 1px solid transparent;
-        border-radius: 6px; cursor: pointer; text-decoration: none;
-        transition: all .12s ease; white-space: nowrap;
-    }
-    .hsl-kisayol:hover { background: #f3f4f6; color: #111827; }
-    .hsl-kisayol.is-aktif { background: #2563eb; color: #fff; }
-    .hsl-kisayol .say {
-        font-size: .68rem; padding: 1px 6px; border-radius: 999px;
-        background: #e5e7eb; color: #374151; font-weight: 700;
-    }
-    .hsl-kisayol.is-aktif .say { background: rgba(255,255,255,.28); color: #fff; }
-    .hsl-kisayol.is-yesil.is-aktif { background: #059669; }
-    .hsl-kisayol.is-turuncu.is-aktif { background: #d97706; }
-    .hsl-kisayol.is-kirmizi.is-aktif { background: #dc2626; }
-    .hsl-kisayol.is-mor.is-aktif { background: #7c3aed; }
-
-    /* Arama & araç şeridi */
-    .hsl-toolbar {
-        display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px;
-        margin-bottom: 12px;
-    }
-    .hsl-ara { flex: 1; min-width: 280px; position: relative; }
-    .hsl-ara input {
-        width: 100%; padding: 9px 12px 9px 36px;
-        border: 1px solid #d1d5db; border-radius: 8px; font-size: .88rem;
-    }
-    .hsl-ara input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
-    .hsl-ara-ikon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af; }
-    .hsl-btn {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 9px 14px; font-size: .82rem; font-weight: 600;
-        background: #2563eb; color: #fff; border: none; border-radius: 7px; cursor: pointer;
-        text-decoration: none; transition: background .12s ease;
-    }
-    .hsl-btn svg { width: 14px; height: 14px; }
-    .hsl-btn:hover { background: #1d4ed8; }
-    .hsl-btn.is-ghost { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .hsl-btn.is-ghost:hover { background: #f3f4f6; }
-    .hsl-btn.is-tehlike { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .hsl-btn.is-tehlike:hover { background: #fee2e2; }
-
-    /* Detaylı filtre paneli */
-    .hsl-filtre {
-        background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
-        padding: 14px; margin-bottom: 12px;
-    }
-    .hsl-filtre[hidden] { display: none; }
-    .hsl-filtre-baslik {
-        font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
-        color: #6b7280; font-weight: 700; margin-bottom: 12px;
-        display: flex; align-items: center; gap: 8px;
-    }
-    .hsl-filtre-baslik::after {
-        content: ''; flex: 1; height: 1px; background: #e5e7eb;
-    }
-    .hsl-filtre-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    @media (max-width: 1100px) { .hsl-filtre-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 600px)  { .hsl-filtre-grid { grid-template-columns: 1fr; } }
-    .hsl-alan label {
-        display: block; font-size: .7rem; text-transform: uppercase;
-        color: #6b7280; letter-spacing: .04em; font-weight: 700; margin-bottom: 4px;
-    }
-    .hsl-alan input, .hsl-alan select {
-        width: 100%; padding: 7px 10px; font-size: .84rem;
-        border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
-    }
-    .hsl-alan input:focus, .hsl-alan select:focus { outline: none; border-color: #2563eb; }
-    .hsl-filtre-eylem { display: flex; gap: 8px; margin-top: 14px; }
-
-    /* Aktif filtre chip'leri */
-    .hsl-aktif-cizgi {
-        display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-        margin-bottom: 12px;
-    }
-    .hsl-aktif-cizgi .lbl { font-size: .74rem; color: #6b7280; font-weight: 600; }
-    .hsl-aktif-chip {
-        display: inline-flex; align-items: center; gap: 6px;
-        padding: 3px 4px 3px 10px; font-size: .74rem;
-        background: #eff6ff; color: #1e40af; border-radius: 999px;
-        border: 1px solid #bfdbfe; text-decoration: none;
-    }
-    .hsl-aktif-chip strong { font-weight: 700; }
-    .hsl-aktif-chip .x {
-        display: inline-flex; align-items: center; justify-content: center;
-        width: 18px; height: 18px; border-radius: 50%; background: #dbeafe; color: #1e40af;
-    }
-    .hsl-aktif-chip .x:hover { background: #bfdbfe; }
-    .hsl-aktif-tumu-temizle {
-        color: #dc2626; font-size: .74rem; text-decoration: none; font-weight: 600;
-        display: inline-flex; align-items: center; gap: 4px; margin-left: 6px;
-    }
-    .hsl-aktif-tumu-temizle:hover { text-decoration: underline; }
-</style>
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
 @endpush
 
 @section('content')
@@ -115,10 +15,13 @@
 
 <section class="page-hero">
     <div class="page-hero-text">
-        <h2>Hisse Satış Başvuruları</h2>
-        <small>Toplam {{ $gruplar->total() }} başvuru grubu</small>
+        <p class="hs-eyebrow">Hisse Satışı</p>
+        <h2>Başvuru Dosyaları</h2>
+        <small><strong>{{ number_format($gruplar->total(), 0, ',', '.') }}</strong> dosya · her dosya bir taşınmazın birlikte yürüyen başvurularıdır</small>
     </div>
     <div class="page-hero-actions">
+        <a href="{{ route('panel.hisse-satisi.harita') }}" class="btn-cancel">Harita</a>
+        <a href="{{ route('panel.hisse-satisi.arsiv') }}" class="btn-cancel">Arşiv</a>
         <a href="{{ route('panel.hisse-satisi.index') }}" class="btn-submit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
             Yeni Başvuru
@@ -296,7 +199,7 @@
 @endif
 
 @if ($gruplar->isEmpty())
-    <div class="td-bos td-bos-block">Filtreye uygun kayıt bulunamadı.</div>
+    <div class="hs-bos-kart">Filtreye uygun dosya bulunamadı.</div>
 @else
     <div class="tl-tablo-wrap">
         <table class="tl-tablo">
@@ -306,8 +209,7 @@
                     <th>İlçe</th>
                     <th>Mahalle</th>
                     <th>Ada / Parsel</th>
-                    <th>Başvuran</th>
-                    <th>Başvuru Sayısı</th>
+                    <th>Başvuranlar</th>
                     <th>İlk Tarih</th>
                     <th>Aşama</th>
                     <th>İşlem</th>
@@ -321,12 +223,17 @@
                         <td>{{ optional($b->tasinmaz->ilce)->ad ?? '—' }}</td>
                         <td>{{ optional($b->tasinmaz->mahalle)->ad ?? '—' }}</td>
                         <td class="td-mono"><span class="tl-badge">{{ $b->tasinmaz->ada }}</span> / <span class="tl-badge">{{ $b->tasinmaz->parsel }}</span></td>
-                        <td>{{ $b->ad_soyad }}</td>
-                        <td class="td-mono">{{ $g->basvuru_sayisi }}</td>
-                        <td>{{ \Carbon\Carbon::parse($g->ilk_tarih)->format('d.m.Y') }}</td>
-                        <td><span class="tl-pill {{ $b->durum->pill() }}">{{ $b->durum->etiket() }}</span></td>
                         <td>
-                            <a href="{{ route('panel.hisse-satisi.detay', $g->grup_no) }}" class="btn-cancel" style="padding:5px 12px;font-size:0.78rem;">Detay</a>
+                            {{ $b->ad_soyad }}
+                            @if ($g->basvuru_sayisi > 1)
+                                <span class="tl-pill tl-pill-mute" title="Dosyadaki toplam başvuru">+{{ $g->basvuru_sayisi - 1 }}</span>
+                            @endif
+                        </td>
+                        <td>{{ \Carbon\Carbon::parse($g->ilk_tarih)->format('d.m.Y') }}</td>
+                        @php $gd = $grupDurumlari->get($g->grup_no) ?? $b->durum; @endphp
+                        <td><span class="tl-pill {{ $gd->pill() }}">{{ $gd->etiket() }}</span></td>
+                        <td>
+                            <a href="{{ route('panel.hisse-satisi.detay', $g->grup_no) }}" class="btn-cancel hs-mini-btn">Dosyayı Aç</a>
                         </td>
                     </tr>
                 @endforeach

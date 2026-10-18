@@ -92,7 +92,6 @@ class SayistayRaporController extends Controller
         }
 
         $sorgu = Tasinmaz::query()
-            ->mudurlukKapsami()
             ->with([
                 'il:id,ad',
                 'ilce:id,ad',

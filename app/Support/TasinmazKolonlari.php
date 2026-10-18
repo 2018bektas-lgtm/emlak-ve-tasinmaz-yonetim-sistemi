@@ -14,7 +14,6 @@ class TasinmazKolonlari
             'takbis' => 'TAKBİS Zemin No',
             'ilce' => 'İlçe',
             'mahalle' => 'Mahalle',
-            'mudurluk' => 'Müdürlük',
             'ada' => 'Ada No',
             'parsel' => 'Parsel No',
             'alan' => 'Tapu Yüzölçüm (m²)',
@@ -34,6 +33,7 @@ class TasinmazKolonlari
             'tahsis' => 'Tahsis',
             'ust_hakki' => 'Üst Hakkı',
             'kira' => 'Kira',
+            'kullanim' => 'Kullanım (Lojman / İşgal / Hisse)',
             'meclis' => 'Meclis Satış Kararı',
             'geometri' => 'Geometri',
             'ek_rapor' => 'Ek Rapor',
@@ -57,7 +57,7 @@ class TasinmazKolonlari
         return [
             'Kimlik & Konum' => [
                 'ikon' => 'pin',
-                'kolonlar' => array_intersect_key($k, array_flip(['tkgm_parsel', 'takbis', 'mudurluk', 'ilce', 'mahalle', 'ada', 'parsel'])),
+                'kolonlar' => array_intersect_key($k, array_flip(['tkgm_parsel', 'takbis', 'ilce', 'mahalle', 'ada', 'parsel'])),
             ],
             'Alan & Nitelik' => [
                 'ikon' => 'ruler',
@@ -73,7 +73,7 @@ class TasinmazKolonlari
             ],
             'Durum Bayrakları' => [
                 'ikon' => 'flag',
-                'kolonlar' => array_intersect_key($k, array_flip(['satis', 'tahsis', 'ust_hakki', 'kira', 'meclis'])),
+                'kolonlar' => array_intersect_key($k, array_flip(['satis', 'kullanim', 'tahsis', 'ust_hakki', 'kira', 'meclis'])),
             ],
             'Belge & Diğer' => [
                 'ikon' => 'file',

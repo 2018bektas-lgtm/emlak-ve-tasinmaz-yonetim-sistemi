@@ -14,12 +14,16 @@ class RolController extends Controller
     public function index(): View
     {
         $roller = Rol::query()
+            ->with('izinler:id,grup')
             ->withCount(['izinler', 'kullanicilar'])
             ->orderBy('sira')
             ->orderBy('id')
             ->get();
 
-        return view('panel.roller.index', compact('roller'));
+        return view('panel.roller.index', [
+            'roller' => $roller,
+            'izinSayilari' => Izin::query()->selectRaw('grup, COUNT(*) as adet')->groupBy('grup')->pluck('adet', 'grup'),
+        ]);
     }
 
     public function create(): View
@@ -101,7 +105,7 @@ class RolController extends Controller
      */
     private function dogrula(Request $request, ?Rol $rol = null): array
     {
-        return $request->validate([
+        $veri = $request->validate([
             'kod' => [
                 'required',
                 'string',
@@ -120,5 +124,17 @@ class RolController extends Controller
             'kod.unique' => 'Bu rol kodu zaten kullanılıyor.',
             'ad.required' => 'Rol adı zorunludur.',
         ]);
+
+        $veri['sira'] = (int) ($veri['sira'] ?? 0); // boş gelirse NOT NULL sütun hata veriyordu
+
+        // Bir bölümde oluşturma/düzenleme/silme izni varsa görüntüleme izni de verilir
+        $secili = Izin::query()->whereIn('id', $veri['izinler'] ?? [])->get(['id', 'kod', 'grup']);
+        $gorGerekli = $secili->reject(fn ($i) => str_ends_with($i->kod, '.goruntule'))->pluck('grup')->unique()
+            ->map(fn ($g) => $g.'.goruntule');
+        $veri['izinler'] = $secili->pluck('id')
+            ->merge(Izin::query()->whereIn('kod', $gorGerekli)->pluck('id'))
+            ->unique()->values()->all();
+
+        return $veri;
     }
 }

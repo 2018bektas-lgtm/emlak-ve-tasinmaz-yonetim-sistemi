@@ -4,12 +4,15 @@
 
 @push('head')
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-form.css') }}?v=5">
 @endpush
 
 @push('scripts')
     <script src="{{ asset('js/hisse-tablo.js') }}?v=2"></script>
-    <script src="{{ asset('js/yapi-tablo.js') }}?v=2"></script>
+    <script src="{{ asset('js/yapi-tablo.js') }}?v=4"></script>
 @endpush
+
+@section('shellClass', 'is-cam')
 
 @section('content')
 @if (session('basari'))
@@ -26,7 +29,7 @@
     </div>
 @endif
 
-<form method="POST" action="{{ $tasinmaz->rota('guncelle') }}" class="form-shell" enctype="multipart/form-data" novalidate>
+<form method="POST" action="{{ $tasinmaz->rota('guncelle') }}" class="form-shell tf-shell" enctype="multipart/form-data" novalidate>
     @csrf
     @method('PUT')
 
@@ -262,21 +265,28 @@
                 @error('parsel')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
-        <div class="form-row form-row-2" style="margin-top:14px">
-            <div class="form-field {{ $errors->has('mudurluk_id') ? 'has-error' : '' }}">
-                <label for="mudurluk_id">Müdürlük</label>
-                @if ($mudurlukSecilebilir ?? false)
-                    <select id="mudurluk_id" name="mudurluk_id" class="form-select">
-                        <option value="">— Seçin —</option>
-                        @foreach ($mudurlukler ?? [] as $m)
-                            <option value="{{ $m->id }}" @selected(old('mudurluk_id', $tasinmaz->mudurluk_id) == $m->id)>{{ $m->ad }}</option>
-                        @endforeach
-                    </select>
-                @else
-                    <input type="text" class="form-input" value="{{ $tasinmaz->mudurluk->ad ?? auth()->user()->mudurluk->ad ?? '—' }}" disabled>
-                @endif
-                @error('mudurluk_id')<span class="error">{{ $message }}</span>@enderror
+    </section>
+
+    {{-- Bağımsız Bölüm — kat mülkiyetlide kaydın kimliği; konumun hemen altında --}}
+    <section class="form-section" data-bolum="bbn">
+        <div class="form-section-head">
+            <span class="form-section-num">07</span>
+            <div class="form-section-head-text">
+                <h3>Bağımsız Bölüm Bilgisi</h3>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu kaydın ait olduğu bağımsız bölüm. Blok (varsa) ve BB No kaydı tekilleştirir.", "kat_mulkiyetsiz_bina": "Bina üzerindeki bölümler — ayrı tapuları yoktur, hepsi bu kayıt altında listelenir.", "varsayilan": "Kayıt tipine göre alanlar değişir."}'>Kayıt tipine göre alanlar değişir.</small>
             </div>
+        </div>
+        <div data-bbn-mode="tek">
+            @include('panel.tasinmazlar._yapi-panel', [
+                'yapiMevcut' => $tasinmaz->yapi ?? $tasinmaz->yapilar->first(),
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
+        </div>
+        <div data-bbn-mode="coklu">
+            @include('panel.tasinmazlar._yapi-panel-coklu', [
+                'yapilarEski' => $tasinmaz->yapilar->map->toFormArray()->values()->all(),
+                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
+            ])
         </div>
     </section>
 
@@ -286,13 +296,13 @@
             <span class="form-section-num">03</span>
             <div class="form-section-head-text">
                 <h3>Fiziksel Bilgiler</h3>
-                <small>Parselin toplam alanı ve niteliği.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bölümün bulunduğu ana taşınmazın (parselin) tapudaki yüzölçümü ve niteliği. Bölümün kendi m² bilgisi Bağımsız Bölüm alanındadır.", "varsayilan": "Parselin tapudaki yüzölçümü ve niteliği."}'>Parselin tapudaki yüzölçümü ve niteliği.</small>
             </div>
         </div>
 
         <div class="form-row form-row-2">
             <div class="form-field {{ $errors->has('alan') ? 'has-error' : '' }}">
-                <label for="alan">Alan (m²) <span class="required">*</span></label>
+                <label for="alan"><span data-tip-metin='{"kat_mulkiyetli": "Ana Taşınmaz Alanı (m²)", "varsayilan": "Parsel Alanı (m²)"}'>Parsel Alanı (m²)</span> <span class="required">*</span></label>
                 @php
                     $alanEski = old('alan', $tasinmaz->alan);
                     if ($alanEski !== null && $alanEski !== '') {
@@ -311,8 +321,8 @@
             </div>
 
             <div class="form-field {{ $errors->has('nitelik') ? 'has-error' : '' }}">
-                <label for="nitelik">Nitelik <span class="required">*</span></label>
-                <input id="nitelik" name="nitelik" type="text" class="form-input" value="{{ old('nitelik', $tasinmaz->nitelik) }}" required maxlength="100" placeholder="Arsa · Tarla · Bahçe · Bağ">
+                <label for="nitelik"><span data-tip-metin='{"kat_mulkiyetli": "Ana Taşınmaz Niteliği", "varsayilan": "Tapu Niteliği"}'>Tapu Niteliği</span> <span class="required">*</span></label>
+                <input id="nitelik" name="nitelik" type="text" class="form-input" value="{{ old('nitelik', $tasinmaz->nitelik) }}" required maxlength="100" placeholder="Arsa · Tarla · Bahçe · Bağ" data-tip-placeholder='{"bos_parsel": "Arsa · Tarla · Bahçe · Bağ", "kat_mulkiyetsiz_bina": "Kargir ev ve arsası · Betonarme bina ve arsası", "kat_mulkiyetli": "Arsa · Betonarme bina ve arsası", "varsayilan": "Arsa · Tarla · Bahçe · Bağ"}'>
                 @error('nitelik')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
@@ -403,7 +413,7 @@
             <span class="form-section-num">05</span>
             <div class="form-section-head-text">
                 <h3>Sınıflandırma</h3>
-                <small>Arsanın muhasebe/kayıt türü/kullanım bilgisi. Üzerinde bağımsız bölüm varsa her BBN kendi ayrı sınıflandırmasını Bölüm 07'de taşır.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu bağımsız bölümün muhasebe kaydı, kayıt türü ve mevcut kullanım şekli.", "kat_mulkiyetsiz_bina": "Taşınmazın (parselin tamamının) muhasebe kaydı, kayıt türü ve kullanımı — bina içindeki bölümler ayrıca sınıflandırılmaz.", "varsayilan": "Taşınmazın muhasebe kaydı, kayıt türü ve mevcut kullanım şekli."}'>Taşınmazın muhasebe kaydı, kayıt türü ve mevcut kullanım şekli.</small>
             </div>
         </div>
 
@@ -462,7 +472,7 @@
             <span class="form-section-num">06</span>
             <div class="form-section-head-text">
                 <h3>Ek Bilgi (Durum)</h3>
-                <small>İşgal / satış / meclis kararı / tahsis / üst hakkı / kira gibi durum bayrakları — arsa için. BBN'lerin kendi durumu Bölüm 07'de.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bu bağımsız bölümün işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu.", "kat_mulkiyetsiz_bina": "Taşınmazın (parselin tamamının) işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu — bölümler için ayrı tutulmaz.", "varsayilan": "Taşınmazın işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu."}'>Taşınmazın işgal, satış, meclis kararı, tahsis, üst hakkı ve kira durumu.</small>
             </div>
         </div>
 
@@ -535,36 +545,13 @@
         ])
     </section>
 
-    {{-- 07 · Bağımsız Bölüm Bilgisi — Kayıt tipine göre iki farklı panel --}}
-    <section class="form-section" data-bolum="bbn">
-        <div class="form-section-head">
-            <span class="form-section-num">07</span>
-            <div class="form-section-head-text">
-                <h3>Bağımsız Bölüm Bilgisi</h3>
-                <small>Kayıt tipine göre alanlar değişir.</small>
-            </div>
-        </div>
-        <div data-bbn-mode="tek">
-            @include('panel.tasinmazlar._yapi-panel', [
-                'yapiMevcut' => $tasinmaz->yapi ?? $tasinmaz->yapilar->first(),
-                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
-            ])
-        </div>
-        <div data-bbn-mode="coklu">
-            @include('panel.tasinmazlar._yapi-panel-coklu', [
-                'yapilarEski' => $tasinmaz->yapilar->map->toFormArray()->values()->all(),
-                'nitelikler' => ['Mesken', 'Dükkan', 'Depo', 'İşyeri', 'Büro', 'Ortak Alan'],
-            ])
-        </div>
-    </section>
-
     {{-- 08 · Tapu --}}
     <section class="form-section">
         <div class="form-section-head">
             <span class="form-section-num">08</span>
             <div class="form-section-head-text">
                 <h3>Tapu Bilgileri</h3>
-                <small>TAKBİS zemin, cilt / sayfa ve tapu kaydı. İsteğe bağlı.</small>
+                <small data-tip-metin='{"kat_mulkiyetli": "Bağımsız bölümün <strong>kendi</strong> tapu kaydı (kat mülkiyeti kütüğü): TAKBİS, cilt / sayfa ve tapu belgesi.", "varsayilan": "Parselin tapu kaydı: TAKBİS, cilt / sayfa ve tapu belgesi."}'>Parselin tapu kaydı: TAKBİS, cilt / sayfa ve tapu belgesi.</small>
             </div>
         </div>
 
@@ -651,7 +638,7 @@
 
         <div class="hisse-shell" id="hisse-shell"
              data-eski='@json($hisselerEski)'
-             data-hisse-base="{{ route('panel.tasinmazlar.hisseler.store', $tasinmaz->duzenleParams()) }}">
+             data-hisse-base="{{ $tasinmaz->rota('hisseler.store') }}">
             <div class="hisse-tablo-kabuk">
                 <table class="hisse-tablo" id="hisse-tablo">
                     <thead>
@@ -764,7 +751,11 @@
     </section>
 
     <div class="form-actions">
-        <a href="{{ route('panel.dashboard') }}" class="btn-cancel">Vazgeç</a>
+        <div class="tf-ozet-kutu">
+            <span class="tf-ozet-etiket">#{{ $tasinmaz->id }} · Kayıt tipi</span>
+            <strong data-tf-ozet>—</strong>
+        </div>
+        <a href="{{ $tasinmaz->rota('detay') }}" class="btn-cancel">Vazgeç</a>
         <button type="submit" class="btn-submit">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M5 12 l5 5 L20 7"/>

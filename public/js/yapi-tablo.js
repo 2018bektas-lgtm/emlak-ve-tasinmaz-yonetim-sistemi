@@ -11,6 +11,11 @@
     const kaydetBtn = document.getElementById('yapi-modal-kaydet');
     if (!shell || !body || !ekleBtn || !hiddenEl || !modal || !kaydetBtn) return;
 
+    // Modal, BBN bölüm kartının içinde tanımlı. Kartlar backdrop-filter'lı cam
+    // olduğu için position:fixed modal kartın içine hapsolurdu → body'ye taşı.
+    // (Modal alanları name değil data-fld kullanır; formdan çıkması gönderimi etkilemez.)
+    if (modal.parentElement !== document.body) document.body.appendChild(modal);
+
     const baslikEl = document.getElementById('yapi-modal-baslik');
     const btnMetni = modal.querySelector('[data-yapi-modal-btn]');
     const mesajEl = document.getElementById('yapi-modal-mesaj');
@@ -63,17 +68,9 @@
         body.innerHTML = '';
         bosEl.hidden = kayitlar.length > 0;
         kayitlar.forEach(function (h, i) {
-            const sd = h.satis_durumu || 'envanterde';
+            // Satış / durum bayrakları bölüm bazında düzenlenmez (parsel düzeyinde,
+            // Ek Bilgi bölümünde tutulur) — tabloda gösterilmez.
             const net = trParse(h.net_alan);
-            const rozetler = [];
-            if (String(h.kira_var) === '1' || h.kira_var === true || h.kira_var === 1) rozetler.push('Kira');
-            if (String(h.tahsis_var) === '1' || h.tahsis_var === true || h.tahsis_var === 1) rozetler.push('Tahsis');
-            if (String(h.ust_hakki_var) === '1' || h.ust_hakki_var === true || h.ust_hakki_var === 1) rozetler.push('Üst Hakkı');
-            if (String(h.meclis_satis_karari_var) === '1' || h.meclis_satis_karari_var === true || h.meclis_satis_karari_var === 1) rozetler.push('Meclis');
-            const durumHtml = rozetler.length
-                ? rozetler.map(function (r) { return '<span class="tl-pill tl-pill-info" style="margin-right:2px">' + esc(r) + '</span>'; }).join('')
-                : '<span class="tl-pill tl-pill-mute">—</span>';
-
             const tr = document.createElement('tr');
             tr.dataset.idx = String(i);
             tr.innerHTML =
@@ -81,8 +78,6 @@
                 '<td>' + esc(adres(h)) + '</td>' +
                 '<td>' + esc(h.nitelik || '—') + '</td>' +
                 '<td class="hisse-td-alan">' + (net !== null ? trFormat(net) : '<span class="hisse-td-mute">—</span>') + '</td>' +
-                '<td><span class="tl-pill ' + (SATIS_PILL[sd] || 'tl-pill-mute') + '">' + esc(SATIS_ETIKET[sd] || sd) + '</span></td>' +
-                '<td>' + durumHtml + '</td>' +
                 '<td class="hisse-td-eylem">' +
                     '<button type="button" class="hisse-td-btn hisse-td-btn-edit" data-duzenle="' + i + '" title="Düzenle">' +
                         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5 a2.121 2.121 0 0 1 3 3 L7 19 l-4 1 1-4z"/></svg>' +
@@ -101,7 +96,8 @@
         if (canliMi) return;
         kayitlar.forEach(function (h, i) {
             Object.keys(h).forEach(function (k) {
-                if (k === 'id') return;
+                // id de gönderilir: sunucu mevcut bölümü günceller (silip yeniden
+                // oluşturmaz) — bölüme bağlı tapu/karar/resim kaybolmaz.
                 const v = h[k];
                 if (v === null || v === undefined || v === '') return;
                 const inp = document.createElement('input');

@@ -1,0 +1,297 @@
+/* ==========================================================================
+   ETYS · Taşınmaz haritası — Liquid Glass
+   corporate.css ve sayfadaki inline Esri stilinden SONRA yüklenir.
+   Harita tam ekran; araç çubuğu, paneller ve bilgi hapları üzerinde yüzer.
+
+   Not: Yüzen paneller (.hrm-float-panel) position:fixed'tir ve araç çubuğunun
+   DIŞINDA durur (bkz. harita.blade.php). Çubuğa backdrop-filter verildiği için
+   panel içinde kalsaydı çubuğa hapsolurdu.
+   ========================================================================== */
+
+.hrm-shell {
+    --hm-cam: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.66));
+    --hm-cam-koyu: linear-gradient(180deg, rgba(17, 24, 39, 0.72), rgba(17, 24, 39, 0.64));
+    --hm-blur: blur(20px) saturate(180%);
+    --hm-golge: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.45), 0 14px 36px -14px rgba(15, 23, 42, 0.5);
+    --hm-amber: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%);
+    --hm-ink: #0b1220;
+    --hm-text: #334155;
+    --hm-muted: #64748b;
+    --hm-line: rgba(15, 23, 42, 0.07);
+    --hm-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    display: block;
+    background: #0b1220;
+}
+
+/* corporate.css ≤400px'te `.app-content { padding: 14px 12px !important }` veriyor;
+   tam ekran haritanın çevresinde açık renkli çerçeve kalıyordu. */
+.app-shell.is-map-full .app-content.is-flush { padding: 0 !important; }
+
+/* Harita tüm alanı kaplar */
+.hrm-shell .hrm-map {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+}
+
+/* ---------- Araç çubuğu: yüzen cam kapsül ---------- */
+.hrm-shell .hrm-toolbar {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 20;
+    gap: 2px;
+    max-width: calc(100% - 32px);
+    padding: 6px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--hm-cam);
+    -webkit-backdrop-filter: var(--hm-blur);
+    backdrop-filter: var(--hm-blur);
+    box-shadow: var(--hm-golge);
+    flex-wrap: wrap;
+}
+.hrm-shell .hrm-tool {
+    gap: 7px;
+    padding: 9px 13px;
+    border: 0;
+    border-radius: 14px;
+    color: var(--hm-text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    transition: background 0.2s, color 0.2s, box-shadow 0.25s, transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.hrm-shell .hrm-tool svg { width: 17px; height: 17px; color: #64748b; transition: color 0.2s; }
+.hrm-shell .hrm-tool:hover {
+    color: var(--hm-ink);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 4px 12px -6px rgba(15, 23, 42, 0.3);
+}
+.hrm-shell .hrm-tool:hover svg { color: #ea580c; }
+.hrm-shell .hrm-tool:active { transform: scale(0.95); }
+.hrm-shell .hrm-tool:focus-visible { outline: 2px solid #ff8a5b; outline-offset: 1px; }
+.hrm-shell .hrm-tool.is-aktif,
+.hrm-shell .hrm-tool[aria-expanded="true"],
+.hrm-shell .hrm-tool[aria-pressed="true"] {
+    color: #2a1408;
+    background: var(--hm-amber);
+    border: 0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 16px -6px rgba(255, 122, 69, 0.75);
+}
+.hrm-shell .hrm-tool.is-aktif svg,
+.hrm-shell .hrm-tool[aria-expanded="true"] svg,
+.hrm-shell .hrm-tool[aria-pressed="true"] svg { color: #2a1408; }
+
+.hrm-shell .hrm-toolbar-meta { margin-left: 6px; padding-right: 2px; }
+.hrm-shell .hrm-chip {
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 12px;
+    color: var(--hm-muted);
+    background: rgba(15, 23, 42, 0.05);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+.hrm-shell .hrm-chip svg { color: #ea580c; }
+.hrm-shell .hrm-chip strong { color: var(--hm-ink); font-family: inherit; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Filtre bilgisi: sağ üstte koyu cam hap */
+.hrm-filtre-bar {
+    top: 16px;
+    right: 16px;
+    padding: 6px 6px 6px 16px;
+    color: #fff;
+    background: var(--hm-cam-koyu, rgba(17, 24, 39, 0.7));
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 14px 32px -14px rgba(0, 0, 0, 0.6);
+}
+.hrm-filtre-bar svg { color: #ffc98b; }
+.hrm-filtre-bar strong { color: #ffc98b; }
+.hrm-filtre-temizle {
+    padding: 7px 14px;
+    color: #2a1408;
+    background: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%);
+}
+.hrm-filtre-temizle:hover { color: #2a1408; background: linear-gradient(135deg, #ffe2bd 0%, #ffd29a 35%, #ff9466 100%); }
+
+/* ---------- Yüzen paneller (Katmanlar / Ada-Parsel / Arama) ---------- */
+.hrm-float-panel {
+    top: 84px;
+    left: 16px;
+    max-height: calc(100vh - 104px);
+    border: 0;
+    border-radius: 22px;
+    background: linear-gradient(170deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.78));
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    backdrop-filter: blur(26px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+        0 30px 70px -26px rgba(15, 23, 42, 0.55);
+    animation: hm-panel-gir 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes hm-panel-gir { from { opacity: 0; transform: translateY(-8px) scale(0.98); } }
+/* corporate.css'teki `#hrm-panel { display:flex }` (id özgüllüğü) [hidden]'ı eziyordu:
+   Katmanlar paneli hiç kapanmıyor, kapat (✕) düğmesi işe yaramıyordu. */
+#hrm-panel[hidden] { display: none; }
+.hrm-float-panel.is-suruklenyor { box-shadow: inset 0 1px 0 #fff, 0 40px 90px -26px rgba(15, 23, 42, 0.65); }
+
+.hrm-panel-head {
+    padding: 14px 12px 12px 10px;
+    background: transparent;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.hrm-panel-head strong { color: #0b1220; font-size: 0.92rem; font-weight: 800; letter-spacing: -0.01em; }
+.hrm-panel-head-baslik svg { color: #ea580c; }
+.hrm-panel-tut { color: #cbd5e1; }
+.hrm-panel-kapat {
+    border: 0;
+    border-radius: 11px;
+    color: #475569;
+    background: rgba(15, 23, 42, 0.05);
+}
+.hrm-panel-kapat:hover { color: #fff; background: #ef4444; }
+
+/* Katman paneli içi */
+.hrm-katman-eylem-satir { border-bottom-color: rgba(15, 23, 42, 0.06); }
+.hrm-katman-ara {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.75);
+}
+.hrm-katman-ara:focus {
+    border-color: rgba(255, 138, 91, 0.75);
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(255, 138, 91, 0.14);
+}
+.hrm-katman-hepsi-kapa { border-radius: 10px; border-color: rgba(15, 23, 42, 0.1); background: rgba(255, 255, 255, 0.7); }
+.hrm-katman-hepsi-kapa:hover { color: #fff; background: #ef4444; border-color: transparent; }
+
+.hrm-details { border-bottom-color: rgba(15, 23, 42, 0.05); }
+.hrm-summary,
+.hrm-grup > .hrm-grup-summary { background: transparent; color: #475569; }
+.hrm-summary:hover,
+.hrm-grup > .hrm-grup-summary:hover { background: rgba(255, 237, 213, 0.5); color: #0b1220; }
+.hrm-grup-sayac { border-radius: 999px; }
+.hrm-grup-sayac.is-aktif,
+.hrm-grup-sayac.is-tam { color: #9a3412; background: rgba(255, 201, 139, 0.4); border-color: transparent; }
+
+.hrm-katman-kart {
+    border: 0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+    transition: background 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+.hrm-katman-kart[data-aktif="1"] {
+    border: 0;
+    background: linear-gradient(150deg, rgba(255, 237, 213, 0.9), rgba(255, 247, 237, 0.7));
+    box-shadow: inset 0 0 0 1.5px rgba(255, 138, 91, 0.4), 0 8px 18px -12px rgba(234, 88, 12, 0.45);
+}
+.hrm-katman-ikon { border-radius: 11px; }
+
+/* Anahtarlar ve kaydırıcılar: amber */
+.hrm-switch input:checked + .hrm-switch-slider { background: linear-gradient(135deg, #ffc98b, #ff8a5b); }
+.hrm-switch.hrm-switch-mini input:indeterminate + .hrm-switch-slider { background: rgba(255, 138, 91, 0.45); }
+.hrm-switch input:focus-visible + .hrm-switch-slider { box-shadow: 0 0 0 3px rgba(255, 138, 91, 0.3); }
+.hrm-range::-webkit-slider-thumb { background: #ff8a5b; border-color: #fff; }
+.hrm-range::-moz-range-thumb { background: #ff8a5b; border-color: #fff; }
+.hrm-opaklik-deger { color: #9a3412; }
+
+/* Altlık katmanı kutucukları */
+.hrm-float-panel .hrt-layer-tile { border-radius: 14px; background: rgba(255, 255, 255, 0.6); }
+.hrm-float-panel .hrt-layer-tile.is-aktif { border-color: #ff8a5b; background: rgba(255, 237, 213, 0.85); box-shadow: 0 6px 16px -8px rgba(255, 122, 69, 0.6); }
+.hrm-float-panel .hrt-layer-thumb { border-radius: 10px; }
+
+.hrm-panel-alt {
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    background: rgba(248, 250, 252, 0.5);
+    color: #64748b;
+}
+.hrm-panel-alt svg { color: #ea580c; }
+
+/* Form öğeleri (Ada/Parsel ve Arama panelleri) */
+.hrm-form-satir label { color: #64748b; letter-spacing: 0.08em; }
+.hrm-form-input,
+.hrm-form-select {
+    padding: 10px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.78);
+}
+.hrm-form-input:focus,
+.hrm-form-select:focus {
+    border-color: rgba(255, 138, 91, 0.75);
+    background-color: #fff;
+    box-shadow: 0 0 0 4px rgba(255, 138, 91, 0.14);
+}
+.hrm-form-btn {
+    padding: 11px 14px;
+    border-radius: 13px;
+    color: #2a1408;
+    background: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 10px 22px -10px rgba(255, 120, 70, 0.75);
+}
+.hrm-form-btn:hover:not(:disabled) { background: linear-gradient(135deg, #ffe2bd 0%, #ffd29a 35%, #ff9466 100%); }
+.hrm-form-mesaj { border-radius: 12px; }
+
+/* Arama sonuçları */
+.hrm-arama-liste { border-top-color: rgba(15, 23, 42, 0.06); }
+.hrm-arama-basli strong { color: #ea580c; font-family: inherit; }
+.hrm-arama-satir {
+    border: 0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+    transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.hrm-arama-satir:hover {
+    border: 0;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 138, 91, 0.35), 0 8px 18px -12px rgba(15, 23, 42, 0.35);
+    transform: translateY(-1px);
+}
+.hrm-arama-tag { color: #9a3412; background: rgba(255, 201, 139, 0.45); border-radius: 8px; font-family: inherit; }
+.hrm-arama-satir-alt { font-family: inherit; }
+.hrm-arama-goster { color: #2a1408; background: linear-gradient(135deg, #ffd9a8 0%, #ffc98b 35%, #ff8a5b 100%); border-radius: 10px; }
+.hrm-arama-goster:hover:not(:disabled) { background: linear-gradient(135deg, #ffe2bd 0%, #ffd29a 35%, #ff9466 100%); }
+.hrm-arama-duzen { border-radius: 10px; border-color: rgba(15, 23, 42, 0.1); }
+.hrm-arama-duzen:hover { color: #2a1408; background: #fff; border-color: rgba(255, 138, 91, 0.5); }
+
+/* Kaydırma çubuğu */
+.hrm-panel-scroll::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.15); border-radius: 8px; }
+
+/* ---------- Parsel bilgi penceresi (Esri popup): koyu cam ---------- */
+.hrm-shell .esri-popup__main-container {
+    border: 0;
+    border-radius: 20px;
+    background: linear-gradient(170deg, rgba(17, 24, 39, 0.88), rgba(17, 24, 39, 0.8));
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    backdrop-filter: blur(22px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 26px 60px -20px rgba(0, 0, 0, 0.7);
+}
+.hrm-shell .esri-popup__header { background: transparent; border-bottom-color: rgba(255, 255, 255, 0.08); }
+.hrm-shell .esri-popup__pointer-direction { background: rgba(17, 24, 39, 0.86); border: 0; }
+.hrm-shell .esri-popup__footer,
+.hrm-shell .esri-popup__navigation { background: transparent; }
+.hrm-shell .esri-popup__button { border-radius: 10px; }
+.hrm-pop-hero-kutu,
+.hrm-pop-olcu-kutu { border-radius: 12px; }
+.hrm-pop-eylem { border-radius: 11px; }
+
+/* ---------- Dar ekran ---------- */
+@media (max-width: 720px) {
+    .hrm-shell .hrm-toolbar { top: 10px; left: 10px; right: 10px; max-width: none; justify-content: space-between; }
+    .hrm-shell .hrm-tool span { display: none; }
+    .hrm-shell .hrm-tool { padding: 10px; }
+    .hrm-shell .hrm-toolbar-meta { margin-left: 0; }
+    .hrm-float-panel { top: auto; bottom: 10px; left: 10px !important; right: 10px; width: auto !important; max-height: 70vh; }
+    .hrm-filtre-bar { top: auto; bottom: 10px; right: 10px; left: 10px; justify-content: space-between; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hrm-float-panel { animation: none; }
+    .hrm-shell .hrm-tool { transition: none; }
+}

@@ -3,11 +3,16 @@
 namespace App\Http\Requests;
 
 use App\Enums\SatisDurumu;
+use App\Http\Requests\Concerns\TasinmazTekillikKurali;
+use App\Models\Tasinmaz;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateTasinmazRequest extends FormRequest
 {
+    use TasinmazTekillikKurali;
+
     public function authorize(): bool
     {
         return auth()->check();
@@ -18,7 +23,6 @@ class UpdateTasinmazRequest extends FormRequest
         return [
             // Lokasyon
             'mahalle_id' => ['required', 'integer', 'exists:mahalleler,id'],
-            'mudurluk_id' => ['nullable', 'integer', 'exists:mudurlukler,id'],
             'ada' => ['required', 'string', 'max:20'],
             'parsel' => ['required', 'string', 'max:20'],
 
@@ -82,7 +86,7 @@ class UpdateTasinmazRequest extends FormRequest
             'yapi' => ['nullable', 'array'],
             'yapi.blok_no' => ['nullable', 'string', 'max:20'],
             'yapi.kat_no' => ['nullable', 'string', 'max:10'],
-            'yapi.bagimsiz_bolum_no' => ['nullable', 'string', 'max:20'],
+            'yapi.bagimsiz_bolum_no' => ['required_if:kayit_tipi,kat_mulkiyetli', 'nullable', 'string', 'max:20'],
             'yapi.nitelik' => ['nullable', 'string', 'max:50'],
             'yapi.brut_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
             'yapi.net_alan' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
@@ -92,6 +96,9 @@ class UpdateTasinmazRequest extends FormRequest
 
             // Yapılar — çoklu BBN (kat_mulkiyetsiz_bina tipinde)
             'yapilar' => ['nullable', 'array'],
+            // Mevcut bölümün id'si — controller günceller (silip yeniden oluşturmaz).
+            // Kayda ait olmayan id'ler controller'da yok sayılır.
+            'yapilar.*.id' => ['nullable', 'integer'],
             'yapilar.*.blok_no' => ['nullable', 'string', 'max:20'],
             'yapilar.*.kat_no' => ['nullable', 'string', 'max:10'],
             'yapilar.*.bagimsiz_bolum_no' => ['nullable', 'string', 'max:20'],
@@ -109,6 +116,7 @@ class UpdateTasinmazRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'yapi.bagimsiz_bolum_no.required_if' => 'Kat mülkiyetli kayıtta Bağımsız Bölüm No zorunludur.',
             'mahalle_id.required' => 'Mahalle seçimi zorunludur.',
             'ada.required' => 'Ada zorunludur.',
             'parsel.required' => 'Parsel zorunludur.',
@@ -124,6 +132,26 @@ class UpdateTasinmazRequest extends FormRequest
             'ekbilgi.satis_durumu.required' => 'Satış durumu zorunludur.',
             'tapu.required' => 'Tapu bilgileri zorunludur.',
         ];
+    }
+
+    public function after(): array
+    {
+        return [fn (Validator $validator) => $this->tekillikKontrolu($validator, $this->mevcutTasinmazId())];
+    }
+
+    /** Düzenlenen kaydın kendisi çakışma sayılmasın diye hariç tutulur. */
+    private function mevcutTasinmazId(): ?int
+    {
+        try {
+            return Tasinmaz::slugIleBul(
+                (int) $this->route('mahalleTkgmId'),
+                (string) $this->route('ada'),
+                (string) $this->route('parsel'),
+                $this->attributes->get(\App\Http\Middleware\TasinmazBolumParametresi::ATTRIBUTE),
+            )->id;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+            return null;
+        }
     }
 
     protected function prepareForValidation(): void

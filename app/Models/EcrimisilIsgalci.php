@@ -13,7 +13,6 @@ class EcrimisilIsgalci extends Model
     protected $fillable = [
         'tasinmaz_id',
         'kullanici_id',
-        'mudurluk_id',
         'ad_soyad_unvan',
         'tc_vergi_no',
         'adres',
@@ -44,11 +43,6 @@ class EcrimisilIsgalci extends Model
         return $this->belongsTo(Kullanici::class, 'kullanici_id');
     }
 
-    public function mudurluk(): BelongsTo
-    {
-        return $this->belongsTo(Mudurluk::class, 'mudurluk_id');
-    }
-
     public function tutanaklar(): HasMany
     {
         return $this->hasMany(EcrimisilTutanak::class, 'isgalci_id')->orderBy('tutanak_tarihi')->orderBy('id');
@@ -64,20 +58,53 @@ class EcrimisilIsgalci extends Model
         return $this->hasMany(EcrimisilRapor::class, 'isgalci_id')->orderByDesc('rapor_tarihi')->orderByDesc('id');
     }
 
-    /**
-     * Müdürlük kapsamı — hisse satışıyla aynı mantık.
-     * tasinmaz.tumunu-gor izni olanlar tüm işgal kayıtlarını görür.
-     */
-    public function scopeMudurlukKapsami($query, ?Kullanici $kullanici = null)
-    {
-        $kullanici ??= auth()->user();
-        if (! $kullanici instanceof Kullanici || $kullanici->izinVarMi('tasinmaz.tumunu-gor')) {
-            return $query;
-        }
-        if (! $kullanici->mudurluk_id) {
-            return $query->whereRaw('0 = 1');
-        }
+    /** Harita ve listede kullanılan durum anahtarları ve etiketleri. */
+    public const DURUMLAR = [
+        'yeni' => 'Tutanak yok',
+        'devam-eden' => 'İşgal devam ediyor',
+        'sonlanmis' => 'İşgal sonlandı',
+    ];
 
-        return $query->where('mudurluk_id', $kullanici->mudurluk_id);
+    /**
+     * İşgal durumu tutanaklardan türetilir: hiç tutanak yoksa "yeni"; bitiş
+     * tarihi boş ya da bugün/ileri olan bir tutanak varsa "devam-eden";
+     * aksi halde "sonlanmis". (Önceden yalnızca son tutanağa bakılıyordu ve
+     * liste/harita farklı sıralamayla farklı sonuç verebiliyordu.)
+     */
+    public function durum(): string
+    {
+        $tutanaklar = $this->relationLoaded('tutanaklar') ? $this->tutanaklar : $this->tutanaklar()->get();
+        if ($tutanaklar->isEmpty()) {
+            return 'yeni';
+        }
+        $bugun = now()->startOfDay();
+
+        return $tutanaklar->contains(fn ($t) => ! $t->isgal_bitis_tarihi || $t->isgal_bitis_tarihi->gte($bugun))
+            ? 'devam-eden' : 'sonlanmis';
+    }
+
+    public function durumEtiketi(): string
+    {
+        return self::DURUMLAR[$this->durum()];
+    }
+
+    /** Tutanaklardaki işgal günlerinin toplamı (açık tutanaklar bugüne kadar). */
+    public function toplamIsgalGunu(): int
+    {
+        return (int) $this->tutanaklar->sum(fn ($t) => $t->isgalGunSayisi() ?? 0);
+    }
+
+    /** Sorgu düzeyinde durum filtresi (listede sayfalama bozulmasın diye). */
+    public function scopeDurumu($query, ?string $durum)
+    {
+        $bugun = now()->toDateString();
+        $acik = fn ($t) => $t->where(fn ($w) => $w->whereNull('isgal_bitis_tarihi')->orWhereDate('isgal_bitis_tarihi', '>=', $bugun));
+
+        return match ($durum) {
+            'yeni' => $query->whereDoesntHave('tutanaklar'),
+            'devam-eden' => $query->whereHas('tutanaklar', $acik),
+            'sonlanmis' => $query->whereHas('tutanaklar')->whereDoesntHave('tutanaklar', $acik),
+            default => $query,
+        };
     }
 }

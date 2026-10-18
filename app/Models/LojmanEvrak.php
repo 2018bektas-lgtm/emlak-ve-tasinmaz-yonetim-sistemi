@@ -9,6 +9,15 @@ class LojmanEvrak extends Model
 {
     protected $table = 'lojman_evraklari';
 
+    public const KATEGORILER = [
+        'basvuru' => 'Başvuru',
+        'gorus-gelen' => 'Görüş (Gelen)',
+        'gorus-giden' => 'Görüş (Giden)',
+        'encumen' => 'Encümen',
+        'tahsis' => 'Tahsis',
+        'diger' => 'Diğer',
+    ];
+
     protected $fillable = [
         'basvuru_id', 'lojman_id', 'kategori', 'evrak_no',
         'evrak_tarihi', 'dosya_yolu', 'aciklama',

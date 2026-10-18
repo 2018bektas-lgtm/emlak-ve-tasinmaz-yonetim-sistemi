@@ -2,27 +2,11 @@
 
 @section('title', 'Ecrimisil — İşgal Kayıtları')
 
-@push('head')
-<style>
-    .ec-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-    .ec-ara { flex: 1; min-width: 260px; position: relative; }
-    .ec-ara input { width: 100%; padding: 9px 12px 9px 36px; border: 1px solid #d1d5db; border-radius: 8px; font-size: .88rem; }
-    .ec-ara input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
-    .ec-ara-ikon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af; }
-    .ec-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; font-size: .82rem; font-weight: 600; background: #2563eb; color: #fff; border: none; border-radius: 7px; cursor: pointer; text-decoration: none; }
-    .ec-btn svg { width: 14px; height: 14px; }
-    .ec-btn:hover { background: #1d4ed8; }
-    .ec-btn.is-ghost { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .ec-btn.is-ghost:hover { background: #f3f4f6; }
-    .ec-btn.is-tehlike { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+@section('shellClass', 'is-cam')
 
-    .ec-filtre { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
-    .ec-filtre[hidden] { display: none; }
-    .ec-filtre-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    @media (max-width: 1100px) { .ec-filtre-grid { grid-template-columns: repeat(2, 1fr); } }
-    .ec-alan label { display: block; font-size: .7rem; text-transform: uppercase; color: #6b7280; letter-spacing: .04em; font-weight: 700; margin-bottom: 4px; }
-    .ec-alan input, .ec-alan select { width: 100%; padding: 7px 10px; font-size: .84rem; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
-</style>
+@push('head')
+    <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
+    <link rel="stylesheet" href="{{ asset('css/ecrimisil.css') }}?v=1">
 @endpush
 
 @section('content')
@@ -32,10 +16,15 @@
 
 <section class="page-hero">
     <div class="page-hero-text">
-        <h2>Ecrimisil — İşgal Kayıtları</h2>
-        <small>Toplam {{ $kayitlar->total() }} kayıt</small>
+        <p class="hs-eyebrow">Ecrimisil</p>
+        <h2>İşgal Kayıtları</h2>
+        <small><strong>{{ number_format($sayac['tumu'], 0, ',', '.') }}</strong> kayıt · izinsiz kullanım tespitleri, tutanakları ve raporları</small>
     </div>
     <div class="page-hero-actions">
+        <a href="{{ route('panel.ecrimisil.harita') }}" class="btn-cancel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
+            Harita
+        </a>
         @if (auth()->user()->izinVarMi('ecrimisil.olustur'))
             <a href="{{ route('panel.ecrimisil.olustur') }}" class="btn-submit">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -45,90 +34,148 @@
     </div>
 </section>
 
+@php
+    $aktifDurum = $filtre['durum'] ?? '';
+    $detayFiltreAktif = collect($filtre)->except(['q', 'durum'])->filter(fn ($v) => filled($v))->isNotEmpty();
+    $sekmeler = [
+        ['ad' => 'Tümü', 'k' => '', 'renk' => '', 'say' => $sayac['tumu']],
+        ['ad' => 'İşgal Devam Ediyor', 'k' => 'devam-eden', 'renk' => 'is-kirmizi', 'say' => $sayac['devam-eden']],
+        ['ad' => 'Tutanak Yok', 'k' => 'yeni', 'renk' => 'is-mor', 'say' => $sayac['yeni']],
+        ['ad' => 'İşgal Sonlandı', 'k' => 'sonlanmis', 'renk' => 'is-yesil', 'say' => $sayac['sonlanmis']],
+    ];
+    $sorguDurumsuz = collect(request()->query())->except(['durum', 'page'])->all();
+@endphp
+
+<div class="hsl-kisayol-bar" role="tablist" aria-label="Duruma göre">
+    @foreach ($sekmeler as $s)
+        <a href="{{ route('panel.ecrimisil.index', $s['k'] === '' ? $sorguDurumsuz : $sorguDurumsuz + ['durum' => $s['k']]) }}"
+           class="hsl-kisayol {{ $s['renk'] }} {{ $aktifDurum === $s['k'] ? 'is-aktif' : '' }}"
+           role="tab" aria-selected="{{ $aktifDurum === $s['k'] ? 'true' : 'false' }}">
+            @if ($s['k'] !== '')<span class="ec-nokta is-{{ $s['k'] }}"></span>@endif
+            {{ $s['ad'] }}
+            <span class="say">{{ $s['say'] }}</span>
+        </a>
+    @endforeach
+</div>
+
 <form method="GET" action="{{ route('panel.ecrimisil.index') }}" id="ec-form">
-    <div class="ec-toolbar">
-        <div class="ec-ara">
-            <svg class="ec-ara-ikon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-            <input type="search" name="q" value="{{ $filtre['q'] ?? '' }}" placeholder="Ad soyad/ünvan, TC/vergi no, ada veya parsel ile ara...">
+    @if ($aktifDurum)
+        <input type="hidden" name="durum" value="{{ $aktifDurum }}">
+    @endif
+    <div class="hsl-toolbar">
+        <div class="hsl-ara">
+            <svg class="hsl-ara-ikon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="search" name="q" value="{{ $filtre['q'] ?? '' }}" placeholder="Ad soyad / ünvan, TC / vergi no, nitelik, ada veya parsel...">
         </div>
-        <button type="submit" class="ec-btn">Ara</button>
-        <button type="button" class="ec-btn is-ghost" id="ec-filtre-toggle">Detaylı Filtre</button>
+        <button type="submit" class="hsl-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Ara</button>
+        <button type="button" class="hsl-btn is-ghost" id="ec-filtre-toggle" aria-expanded="{{ $detayFiltreAktif ? 'true' : 'false' }}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></svg>
+            Detaylı Filtre
+        </button>
         @if (collect($filtre)->filter(fn ($v) => filled($v))->isNotEmpty())
-            <a href="{{ route('panel.ecrimisil.index') }}" class="ec-btn is-tehlike">Temizle</a>
+            <a href="{{ route('panel.ecrimisil.index') }}" class="hsl-btn is-tehlike">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                Temizle
+            </a>
         @endif
     </div>
 
-    <div class="ec-filtre" id="ec-filtre" {{ collect($filtre)->except('q')->filter(fn ($v) => filled($v))->isNotEmpty() ? '' : 'hidden' }}>
-        <div class="ec-filtre-grid">
-            <div class="ec-alan"><label>İl</label>
+    <div class="hsl-filtre" id="ec-filtre" {{ $detayFiltreAktif ? '' : 'hidden' }}>
+        <div class="hsl-filtre-baslik">Konum & Sorumlu</div>
+        <div class="hsl-filtre-grid">
+            <div class="hsl-alan"><label>İl</label>
                 <select name="il_id" id="ec-f-il">
                     <option value="">— Tümü —</option>
                     @foreach ($iller as $il)<option value="{{ $il->id }}" @selected(($filtre['ilId'] ?? '') == $il->id)>{{ $il->ad }}</option>@endforeach
                 </select>
             </div>
-            <div class="ec-alan"><label>İlçe</label>
+            <div class="hsl-alan"><label>İlçe</label>
                 <select name="ilce_id" id="ec-f-ilce" @disabled(! ($filtre['ilId'] ?? null))>
                     <option value="">— Tümü —</option>
                     @foreach ($ilceler as $x)<option value="{{ $x->id }}" @selected(($filtre['ilceId'] ?? '') == $x->id)>{{ $x->ad }}</option>@endforeach
                 </select>
             </div>
-            <div class="ec-alan"><label>Mahalle</label>
+            <div class="hsl-alan"><label>Mahalle</label>
                 <select name="mahalle_id" id="ec-f-mahalle" @disabled(! ($filtre['ilceId'] ?? null))>
                     <option value="">— Tümü —</option>
                     @foreach ($mahalleler as $x)<option value="{{ $x->id }}" @selected(($filtre['mahalleId'] ?? '') == $x->id)>{{ $x->ad }}</option>@endforeach
                 </select>
             </div>
-            <div class="ec-alan"><label>Sorumlu Kullanıcı</label>
+            <div class="hsl-alan"><label>Sorumlu Kullanıcı</label>
                 <select name="kullanici_id">
                     <option value="">— Tümü —</option>
                     @foreach ($kullanicilar as $k)<option value="{{ $k->id }}" @selected(($filtre['kullaniciId'] ?? '') == $k->id)>{{ $k->ad }} {{ $k->soyad }}</option>@endforeach
                 </select>
             </div>
-            <div class="ec-alan"><label>Ada</label><input type="text" name="ada" value="{{ $filtre['ada'] ?? '' }}"></div>
-            <div class="ec-alan"><label>Parsel</label><input type="text" name="parsel" value="{{ $filtre['parsel'] ?? '' }}"></div>
+            <div class="hsl-alan"><label>Ada</label><input type="text" name="ada" value="{{ $filtre['ada'] ?? '' }}" autocomplete="off"></div>
+            <div class="hsl-alan"><label>Parsel</label><input type="text" name="parsel" value="{{ $filtre['parsel'] ?? '' }}" autocomplete="off"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:14px;">
-            <button type="submit" class="ec-btn">Uygula</button>
-            <a href="{{ route('panel.ecrimisil.index') }}" class="ec-btn is-ghost">Temizle</a>
+        <div class="hs-ara-aksiyon">
+            <button type="submit" class="hsl-btn">Uygula</button>
         </div>
     </div>
 </form>
 
 @if ($kayitlar->isEmpty())
-    <div class="td-bos td-bos-block">Kayıt bulunamadı.</div>
+    <div class="hs-bos-kart">
+        @if ($sayac['tumu'] === 0 && collect($filtre)->filter(fn ($v) => filled($v))->isEmpty())
+            Henüz işgal kaydı yok. Sağ üstteki <strong>Yeni Kayıt</strong> ile ilk tespiti girebilirsiniz.
+        @else
+            Filtreye uygun kayıt bulunamadı.
+        @endif
+    </div>
 @else
     <div class="tl-tablo-wrap">
-        <table class="tl-tablo">
+        <table class="tl-tablo ec-liste">
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Ad Soyad / Ünvan</th>
-                    <th>TC / Vergi No</th>
+                    <th>İşgalci</th>
                     <th>Taşınmaz</th>
-                    <th>İlçe / Mahalle</th>
-                    <th>Sorumlu Kullanıcı</th>
-                    <th>Tutanak</th>
-                    <th>Kayıt Tarihi</th>
-                    <th>İşlem</th>
+                    <th>Sorumlu</th>
+                    <th>Kayıtlar</th>
+                    <th>Durum</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
                 @foreach ($kayitlar as $k)
+                    @php $d = $k->durum(); @endphp
                     <tr>
-                        <td class="td-mono">#{{ $k->id }}</td>
-                        <td><strong>{{ $k->ad_soyad_unvan }}</strong></td>
-                        <td class="td-mono">{{ $k->tc_vergi_no ?? '—' }}</td>
+                        <td>
+                            <div class="ec-kisi">
+                                <strong>{{ $k->ad_soyad_unvan }}</strong>
+                                <small>
+                                    @if ($k->nitelik)<span class="ec-nitelik">{{ $k->nitelik }}</span>@endif
+                                    {{ $k->tc_vergi_no ?? 'TC / VKN yok' }}
+                                </small>
+                            </div>
+                        </td>
                         <td>
                             @if ($k->tasinmaz)
-                                <span class="tl-badge">{{ $k->tasinmaz->ada }}</span> / <span class="tl-badge">{{ $k->tasinmaz->parsel }}</span>
-                            @else — @endif
+                                <div class="ec-kisi">
+                                    <strong class="td-mono">{{ $k->tasinmaz->ada }} / {{ $k->tasinmaz->parsel }}</strong>
+                                    <small>{{ $k->tasinmaz->ilce?->ad ?? '—' }} · {{ $k->tasinmaz->mahalle?->ad ?? '—' }}</small>
+                                </div>
+                            @else
+                                <span class="ec-soluk">Bağlı değil</span>
+                            @endif
                         </td>
-                        <td>{{ optional(optional($k->tasinmaz)->ilce)->ad ?? '—' }}<div style="font-size:.72rem;color:#6b7280;">{{ optional(optional($k->tasinmaz)->mahalle)->ad ?? '' }}</div></td>
                         <td>{{ $k->kullanici ? $k->kullanici->ad.' '.$k->kullanici->soyad : '—' }}</td>
-                        <td class="td-mono">{{ $k->tutanaklar_count }}</td>
-                        <td>{{ $k->created_at?->format('d.m.Y') }}</td>
                         <td>
-                            <a href="{{ route('panel.ecrimisil.detay', $k->id) }}" class="btn-cancel" style="padding:5px 12px;font-size:.78rem;">Detay</a>
+                            <div class="ec-sayilar">
+                                <span title="Tutanak">{{ $k->tutanaklar_count }} tutanak</span>
+                                <span title="Rapor">{{ $k->raporlar_count }} rapor</span>
+                                <span title="Resim">{{ $k->resimler_count }} resim</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="ec-durum is-{{ $d }}">{{ \App\Models\EcrimisilIsgalci::DURUMLAR[$d] }}</span>
+                            @if ($d !== 'yeni')
+                                <small class="ec-gun">{{ number_format($k->toplamIsgalGunu(), 0, ',', '.') }} gün</small>
+                            @endif
+                        </td>
+                        <td class="ec-sag">
+                            <a href="{{ route('panel.ecrimisil.detay', $k->id) }}" class="btn-cancel hs-mini-btn">Aç</a>
                         </td>
                     </tr>
                 @endforeach
@@ -140,9 +187,11 @@
 
 <script>
 (function () {
-    document.getElementById('ec-filtre-toggle')?.addEventListener('click', () => {
+    const btn = document.getElementById('ec-filtre-toggle');
+    btn?.addEventListener('click', () => {
         const p = document.getElementById('ec-filtre');
         p.hidden = !p.hidden;
+        btn.setAttribute('aria-expanded', p.hidden ? 'false' : 'true');
     });
 
     const ilcelerUrl = @json(url('/panel/ajax/ilceler'));
@@ -153,7 +202,7 @@
 
     il?.addEventListener('change', async () => {
         ilce.innerHTML = '<option value="">— Tümü —</option>';
-        mah.innerHTML = '<option value="">— Önce ilçe —</option>';
+        mah.innerHTML = '<option value="">— Tümü —</option>';
         mah.disabled = true;
         if (!il.value) { ilce.disabled = true; return; }
         ilce.disabled = false;

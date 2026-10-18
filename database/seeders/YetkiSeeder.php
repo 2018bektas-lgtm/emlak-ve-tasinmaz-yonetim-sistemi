@@ -16,7 +16,6 @@ class YetkiSeeder extends Seeder
             ['kod' => 'tasinmaz.olustur', 'grup' => 'tasinmaz', 'ad' => 'Taşınmaz ekle', 'aciklama' => null],
             ['kod' => 'tasinmaz.duzenle', 'grup' => 'tasinmaz', 'ad' => 'Taşınmaz düzenle', 'aciklama' => null],
             ['kod' => 'tasinmaz.sil', 'grup' => 'tasinmaz', 'ad' => 'Taşınmaz sil', 'aciklama' => null],
-            ['kod' => 'tasinmaz.tumunu-gor', 'grup' => 'tasinmaz', 'ad' => 'Tüm müdürlüklerin taşınmazlarını gör', 'aciklama' => 'Müdürlük kapsamı olmadan tüm kayıtları listeler.'],
             ['kod' => 'tasinmaz.toplu-islem', 'grup' => 'tasinmaz', 'ad' => 'Toplu içe aktarım (Excel)', 'aciklama' => 'Excel/CSV üzerinden çoklu taşınmaz ve hisse yükleme.'],
 
             ['kod' => 'hisse.goruntule', 'grup' => 'hisse', 'ad' => 'Hisseleri görüntüle', 'aciklama' => null],
@@ -39,10 +38,6 @@ class YetkiSeeder extends Seeder
             ['kod' => 'rol.goruntule', 'grup' => 'rol', 'ad' => 'Rolleri görüntüle', 'aciklama' => null],
             ['kod' => 'rol.duzenle', 'grup' => 'rol', 'ad' => 'Rol ve izinleri düzenle', 'aciklama' => null],
 
-            ['kod' => 'mudurluk.goruntule', 'grup' => 'mudurluk', 'ad' => 'Müdürlükleri görüntüle', 'aciklama' => null],
-            ['kod' => 'mudurluk.olustur', 'grup' => 'mudurluk', 'ad' => 'Müdürlük ekle', 'aciklama' => null],
-            ['kod' => 'mudurluk.duzenle', 'grup' => 'mudurluk', 'ad' => 'Müdürlük düzenle', 'aciklama' => null],
-            ['kod' => 'mudurluk.sil', 'grup' => 'mudurluk', 'ad' => 'Müdürlük sil', 'aciklama' => null],
 
             ['kod' => 'rapor.goruntule', 'grup' => 'rapor', 'ad' => 'Raporları görüntüle', 'aciklama' => null],
 
@@ -60,6 +55,11 @@ class YetkiSeeder extends Seeder
             ['kod' => 'lojman.olustur', 'grup' => 'lojman', 'ad' => 'Yeni lojman/başvuru oluştur', 'aciklama' => null],
             ['kod' => 'lojman.duzenle', 'grup' => 'lojman', 'ad' => 'Lojman/başvuru/tahsis/evrak düzenle', 'aciklama' => null],
             ['kod' => 'lojman.sil', 'grup' => 'lojman', 'ad' => 'Lojman/başvuru/tahsis/evrak sil', 'aciklama' => null],
+
+            ['kod' => 'degerleme.goruntule', 'grup' => 'degerleme', 'ad' => 'Değerleme raporlarını görüntüle', 'aciklama' => 'Arsa ve bağımsız bölüm değerleme listesi, detay ve rapor çıktısı.'],
+            ['kod' => 'degerleme.olustur', 'grup' => 'degerleme', 'ad' => 'Yeni değerleme oluştur', 'aciklama' => 'Tekil kayıt ve Excel ile toplu içe aktarım.'],
+            ['kod' => 'degerleme.duzenle', 'grup' => 'degerleme', 'ad' => 'Değerleme/evrak düzenle', 'aciklama' => null],
+            ['kod' => 'degerleme.sil', 'grup' => 'degerleme', 'ad' => 'Değerleme sil', 'aciklama' => null],
         ];
 
         $izinIdleri = [];
@@ -88,8 +88,8 @@ class YetkiSeeder extends Seeder
             ],
             [
                 'kod' => 'yonetici',
-                'ad' => 'Müdürlük Yöneticisi',
-                'aciklama' => 'Taşınmaz CRUD ve kullanıcı yönetimi. Rol tanımını değiştiremez.',
+                'ad' => 'Yönetici',
+                'aciklama' => 'Tüm kayıtları yönetir ve kullanıcı ekler; rol ve izin tanımlarını değiştiremez.',
                 'sistem_mi' => true,
                 'sira' => 2,
                 'izinler' => array_values(array_filter(
@@ -100,7 +100,7 @@ class YetkiSeeder extends Seeder
             [
                 'kod' => 'kullanici',
                 'ad' => 'Kullanıcı',
-                'aciklama' => 'Kendi müdürlüğünün taşınmazlarını görür, ekler ve düzenler. Silemez.',
+                'aciklama' => 'Kayıtları görür, ekler ve düzenler; silemez.',
                 'sistem_mi' => true,
                 'sira' => 3,
                 'izinler' => [
@@ -121,12 +121,15 @@ class YetkiSeeder extends Seeder
                     'lojman.goruntule',
                     'lojman.olustur',
                     'lojman.duzenle',
+                    'degerleme.goruntule',
+                    'degerleme.olustur',
+                    'degerleme.duzenle',
                 ],
             ],
             [
                 'kod' => 'goruntuleyici',
                 'ad' => 'Görüntüleyici',
-                'aciklama' => 'Sadece görüntüleme. Kendi müdürlüğünün kayıtlarıyla sınırlıdır.',
+                'aciklama' => 'Yalnız görüntüler; kayıt ekleyemez ya da değiştiremez.',
                 'sistem_mi' => true,
                 'sira' => 4,
                 'izinler' => [
@@ -137,6 +140,7 @@ class YetkiSeeder extends Seeder
                     'rapor.goruntule',
                     'ecrimisil.goruntule',
                     'lojman.goruntule',
+                    'degerleme.goruntule',
                 ],
             ],
         ];

@@ -26,7 +26,7 @@ class KullaniciYetkiYukle
             ]);
         }
 
-        $kullanici->loadMissing(['rol.izinler', 'mudurluk']);
+        $kullanici->loadMissing(['rol.izinler']);
 
         return $next($request);
     }

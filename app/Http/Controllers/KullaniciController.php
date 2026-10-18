@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Kullanici;
-use App\Models\Mudurluk;
 use App\Models\Rol;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,10 +15,10 @@ class KullaniciController extends Controller
     {
         $q = trim((string) $request->query('q', ''));
         $rolId = $request->query('rol_id');
-        $mudurlukId = $request->query('mudurluk_id');
+        $durum = in_array($request->query('durum'), ['aktif', 'pasif'], true) ? $request->query('durum') : null;
 
         $kullanicilar = Kullanici::query()
-            ->with(['rol:id,kod,ad', 'mudurluk:id,ad'])
+            ->with(['rol:id,kod,ad'])
             ->when($q !== '', function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ad', 'like', "%{$q}%")
@@ -29,7 +28,7 @@ class KullaniciController extends Controller
                 });
             })
             ->when($rolId, fn ($s) => $s->where('rol_id', $rolId))
-            ->when($mudurlukId, fn ($s) => $s->where('mudurluk_id', $mudurlukId))
+            ->when($durum, fn ($s) => $s->where('aktif_mi', $durum === 'aktif'))
             ->orderBy('ad')
             ->orderBy('soyad')
             ->paginate(20)
@@ -37,12 +36,17 @@ class KullaniciController extends Controller
 
         return view('panel.kullanicilar.index', [
             'kullanicilar' => $kullanicilar,
-            'roller' => Rol::query()->orderBy('sira')->get(['id', 'ad']),
-            'mudurlukler' => Mudurluk::query()->orderBy('sira')->get(['id', 'ad']),
+            'roller' => Rol::query()->withCount('kullanicilar')->orderBy('sira')->get(['id', 'kod', 'ad']),
+            'sayac' => [
+                'toplam' => Kullanici::query()->count(),
+                'aktif' => Kullanici::query()->where('aktif_mi', true)->count(),
+                'pasif' => Kullanici::query()->where('aktif_mi', false)->count(),
+                'rolsuz' => Kullanici::query()->whereNull('rol_id')->count(),
+            ],
             'filtre' => [
                 'q' => $q,
                 'rol_id' => $rolId,
-                'mudurluk_id' => $mudurlukId,
+                'durum' => $durum,
             ],
         ]);
     }
@@ -51,8 +55,7 @@ class KullaniciController extends Controller
     {
         return view('panel.kullanicilar.form', [
             'kullanici' => new Kullanici(['aktif_mi' => true]),
-            'roller' => Rol::query()->orderBy('sira')->get(['id', 'kod', 'ad']),
-            'mudurlukler' => Mudurluk::query()->aktif()->orderBy('sira')->get(['id', 'ad']),
+            'roller' => $this->rolSecenekleri(),
         ]);
     }
 
@@ -70,15 +73,17 @@ class KullaniciController extends Controller
 
     public function edit(Kullanici $kullanici): View
     {
+        $this->adminHesapKorumasi($kullanici);
+
         return view('panel.kullanicilar.form', [
             'kullanici' => $kullanici,
-            'roller' => Rol::query()->orderBy('sira')->get(['id', 'kod', 'ad']),
-            'mudurlukler' => Mudurluk::query()->orderBy('sira')->get(['id', 'ad']),
+            'roller' => $this->rolSecenekleri(),
         ]);
     }
 
     public function update(Request $request, Kullanici $kullanici): RedirectResponse
     {
+        $this->adminHesapKorumasi($kullanici);
         $veri = $this->dogrula($request, $kullanici);
 
         if (empty($veri['sifre'])) {
@@ -91,6 +96,10 @@ class KullaniciController extends Controller
 
         if (array_key_exists('rol_id', $veri) && (int) $veri['rol_id'] !== (int) $kullanici->rol_id) {
             $this->adminRoluKorumasi($veri['rol_id']);
+            $this->sonAdminKorumasi($kullanici);
+        }
+        // Rol aynı kalsa da son aktif admin pasifleştirilemez
+        if (array_key_exists('aktif_mi', $veri) && ! $veri['aktif_mi'] && $kullanici->aktif_mi) {
             $this->sonAdminKorumasi($kullanici);
         }
 
@@ -106,6 +115,7 @@ class KullaniciController extends Controller
         if ($kullanici->id === auth()->id()) {
             return back()->with('hata', 'Kendi hesabınızı silemezsiniz.');
         }
+        $this->adminHesapKorumasi($kullanici);
 
         $this->sonAdminKorumasi($kullanici);
 
@@ -133,7 +143,6 @@ class KullaniciController extends Controller
             'kullanici_adi' => ['required', 'string', 'max:60', Rule::unique('kullanicilar', 'kullanici_adi')->ignore($kullanici)],
             'sifre' => $sifreKurali,
             'rol_id' => ['required', 'integer', 'exists:roller,id'],
-            'mudurluk_id' => ['nullable', 'integer', 'exists:mudurlukler,id'],
             'aktif_mi' => ['sometimes', 'boolean'],
         ], [
             'ad.required' => 'Ad zorunludur.',
@@ -148,11 +157,26 @@ class KullaniciController extends Controller
         ]);
 
         $veri['aktif_mi'] = $request->boolean('aktif_mi');
-        if (array_key_exists('mudurluk_id', $veri) && $veri['mudurluk_id'] === '') {
-            $veri['mudurluk_id'] = null;
-        }
 
         return $veri;
+    }
+
+    /** Rol seçim kartları: açıklama ve izin sayısıyla. */
+    private function rolSecenekleri()
+    {
+        return Rol::query()->withCount('izinler')->orderBy('sira')->get(['id', 'kod', 'ad', 'aciklama', 'sistem_mi']);
+    }
+
+    /**
+     * Admin hesabını yalnız admin düzenleyebilir/silebilir. Önceden admin
+     * rolünü atamak engelliydi ama kullanıcı yönetimi izni olan biri admin
+     * hesabının şifresini değiştirip onu pasifleştirebiliyordu.
+     */
+    private function adminHesapKorumasi(Kullanici $kullanici): void
+    {
+        if ($kullanici->adminMi() && ! auth()->user()?->adminMi()) {
+            abort(403, 'Admin hesabını yalnızca admin düzenleyebilir.');
+        }
     }
 
     private function adminRoluKorumasi(mixed $rolId): void

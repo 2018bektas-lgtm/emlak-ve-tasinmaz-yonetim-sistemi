@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EcrimisilIsgalci;
+use App\Models\EcrimisilRapor;
 use App\Models\EcrimisilResim;
 use App\Models\EcrimisilTutanak;
 use App\Models\Il;
@@ -10,24 +11,32 @@ use App\Models\Ilce;
 use App\Models\Kullanici;
 use App\Models\Mahalle;
 use App\Models\Tasinmaz;
+use App\Models\TasinmazKoordinat;
+use App\Rules\TcVergiNo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
  * Ecrimisil (izinsiz kullanım tespiti) modülü — sade sürüm.
  *
  * KAPSAM DIŞI (referans projede vardı, burada YOK):
- *  - Rapor oluşturma, yazı bedel bilgisi, hesaplama motorları
- *  - Süreç durumu / aşama takibi
+ *  - Bedel hesaplama motorları, ihbarname / tahsilat takibi
  *
  * KAPSAMDA:
- *  - İşgalci kaydı (kişi/şirket + taşınmaz + atanan kullanıcı)
+ *  - İşgalci kaydı (kişi/şirket + işgal alanı poligonu + taşınmaz + sorumlu)
  *  - Tutanak (seri no + tutanak tarihi + işgal başlangıç/bitiş)
+ *  - Rapor (rapor no, tarih, bedel, ek dosya)
  *  - Resim yükleme (işgalciye veya ayrıca bir tutanağa bağlı)
+ *
+ * Durum (tutanak yok / devam eden / sonlanmış) tutanaklardan türetilir:
+ * bkz. EcrimisilIsgalci::durum().
  */
 class EcrimisilController extends Controller
 {
@@ -41,15 +50,20 @@ class EcrimisilController extends Controller
         $kullaniciId = $request->query('kullanici_id');
         $ada = trim((string) $request->query('ada', ''));
         $parsel = trim((string) $request->query('parsel', ''));
+        $durum = $request->query('durum');
+        $durum = array_key_exists((string) $durum, EcrimisilIsgalci::DURUMLAR) ? $durum : null;
 
         $sorgu = EcrimisilIsgalci::query()
-            ->mudurlukKapsami()
-            ->with(['tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad', 'kullanici:id,ad,soyad'])
-            ->withCount('tutanaklar')
+            ->with([
+                'tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad', 'kullanici:id,ad,soyad',
+                'tutanaklar:id,isgalci_id,tutanak_tarihi,isgal_baslangic_tarihi,isgal_bitis_tarihi',
+            ])
+            ->withCount(['tutanaklar', 'resimler', 'raporlar'])
             ->when($q !== '', function ($w) use ($q) {
                 $w->where(function ($x) use ($q) {
                     $x->where('ad_soyad_unvan', 'like', "%{$q}%")
                         ->orWhere('tc_vergi_no', 'like', "%{$q}%")
+                        ->orWhere('nitelik', 'like', "%{$q}%")
                         ->orWhereHas('tasinmaz', fn ($t) => $t->where('ada', 'like', "%{$q}%")->orWhere('parsel', 'like', "%{$q}%"));
                 });
             })
@@ -62,83 +76,55 @@ class EcrimisilController extends Controller
                         ->when($ada !== '', fn ($s) => $s->where('ada', $ada))
                         ->when($parsel !== '', fn ($s) => $s->where('parsel', $parsel));
                 });
-            })
-            ->orderByDesc('id');
+            });
+
+        // Durum sayaçları filtrelerden (durum hariç) bağımsız değil: arama/konum
+        // filtresine uyan kayıtlar içinde sayılır.
+        $sayac = [];
+        foreach (array_keys(EcrimisilIsgalci::DURUMLAR) as $d) {
+            $sayac[$d] = (clone $sorgu)->durumu($d)->count();
+        }
+        $sayac['tumu'] = array_sum($sayac);
 
         return view('panel.ecrimisil.index', [
-            'kayitlar' => $sorgu->paginate(20)->withQueryString(),
+            'kayitlar' => $sorgu->durumu($durum)->orderByDesc('id')->paginate(20)->withQueryString(),
+            'sayac' => $sayac,
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             'ilceler' => $ilId ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad']) : collect(),
             'mahalleler' => $ilceId ? Mahalle::where('ilce_id', $ilceId)->orderBy('ad')->get(['id', 'ad']) : collect(),
-            'kullanicilar' => Kullanici::query()->where('aktif_mi', true)->orderBy('ad')->get(['id', 'ad', 'soyad']),
-            'filtre' => compact('q', 'ilId', 'ilceId', 'mahalleId', 'ada', 'parsel', 'kullaniciId'),
+            'kullanicilar' => $this->kullaniciListesi(),
+            'filtre' => compact('q', 'ilId', 'ilceId', 'mahalleId', 'ada', 'parsel', 'kullaniciId', 'durum'),
         ]);
     }
 
     public function olustur(Request $request): View
     {
-        $tasinmazId = $request->query('tasinmaz_id');
+        $tasinmazId = old('tasinmaz_id', $request->query('tasinmaz_id'));
         $tasinmaz = $tasinmazId ? Tasinmaz::with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'koordinat'])->find($tasinmazId) : null;
 
         return view('panel.ecrimisil.olustur', [
+            'kayit' => null,
             'tasinmaz' => $tasinmaz,
-            'iller' => Il::orderBy('ad')->get(['id', 'ad']),
-            'kullanicilar' => Kullanici::query()->where('aktif_mi', true)->orderBy('ad')->get(['id', 'ad', 'soyad']),
+            'kullanicilar' => $this->kullaniciListesi(),
         ]);
     }
 
     public function kaydet(Request $request): RedirectResponse
     {
-        $veri = $request->validate([
-            'tasinmaz_id' => 'nullable|integer|exists:tasinmazlar,id',
-            'kullanici_id' => 'nullable|integer|exists:kullanicilar,id',
-            'ad_soyad_unvan' => 'required|string|max:200',
-            'tc_vergi_no' => 'nullable|string|max:20',
-            'adres' => 'nullable|string|max:500',
-            'cadde_sokak' => 'nullable|string|max:200',
-            'nitelik' => 'nullable|string|max:150',
-            'koordinat' => 'nullable|string',
-            'lat' => 'nullable|numeric|between:-90,90',
-            'lng' => 'nullable|numeric|between:-180,180',
-            'aciklama' => 'nullable|string|max:5000',
-        ]);
-        // koordinat form'dan JSON string olarak gelir; array'e çevir
-        if (! empty($veri['koordinat'])) {
-            $decoded = json_decode($veri['koordinat'], true);
-            $veri['koordinat'] = is_array($decoded) ? $decoded : null;
-        } else {
-            $veri['koordinat'] = null;
-        }
-        $veri['mudurluk_id'] = auth()->user()->mudurluk_id ?? null;
-
-        // Otomatik eşleme: tasinmaz_id yoksa ama koordinat varsa, poligon içinde
-        // kalan taşınmaz bulunmaya çalışılır. Aynı taşınmaza birden fazla
-        // ecrimisil serbesttir — mevcut kayıt varsa engellenmez.
-        if (empty($veri['tasinmaz_id']) && ! empty($veri['koordinat'])) {
-            $bulunanId = $this->koordinattanTasinmazBul($veri['koordinat']);
-            if ($bulunanId) {
-                $veri['tasinmaz_id'] = $bulunanId;
-            }
-        }
-
-        if ($veri['tasinmaz_id']) {
-            $t = Tasinmaz::findOrFail($veri['tasinmaz_id']);
-            abort_unless($t->mudurlukErisilebilirMi(), 403);
-        }
-
+        $veri = $this->kayitVerisi($request);
         $kayit = EcrimisilIsgalci::create($veri);
 
-        return redirect()->route('panel.ecrimisil.detay', $kayit->id)->with('basari', 'İşgal kaydı oluşturuldu.');
+        return redirect()->route('panel.ecrimisil.detay', $kayit->id)
+            ->with('basari', 'İşgal kaydı oluşturuldu. Şimdi tutanak, rapor ve resim ekleyebilirsiniz.');
     }
 
     public function detay(int $id): View
     {
         $kayit = EcrimisilIsgalci::with([
             'tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad',
-            'kullanici:id,ad,soyad,mail', 'mudurluk:id,ad',
-            'tutanaklar', 'resimler', 'raporlar',
+            'kullanici:id,ad,soyad,mail',
+            'tasinmaz.koordinat', 'tutanaklar.resimler', 'resimler.tutanak', 'raporlar',
         ])->findOrFail($id);
-        $this->yetkiKontrolu($kayit);
 
         return view('panel.ecrimisil.detay', [
             'kayit' => $kayit,
@@ -148,107 +134,67 @@ class EcrimisilController extends Controller
     public function duzenle(int $id): View
     {
         $kayit = EcrimisilIsgalci::with(['tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad', 'tasinmaz.koordinat'])->findOrFail($id);
-        $this->yetkiKontrolu($kayit);
+
+        $tasinmaz = $kayit->tasinmaz;
+        if (old('tasinmaz_id') !== null && (int) old('tasinmaz_id') !== (int) $kayit->tasinmaz_id) {
+            $tasinmaz = Tasinmaz::with(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad', 'koordinat'])->find(old('tasinmaz_id'));
+        }
 
         return view('panel.ecrimisil.duzenle', [
             'kayit' => $kayit,
-            'tasinmaz' => $kayit->tasinmaz,
-            'kullanicilar' => Kullanici::query()->where('aktif_mi', true)->orderBy('ad')->get(['id', 'ad', 'soyad']),
+            'tasinmaz' => $tasinmaz,
+            'kullanicilar' => $this->kullaniciListesi(),
         ]);
     }
 
     public function guncelle(Request $request, int $id): RedirectResponse
     {
         $kayit = EcrimisilIsgalci::findOrFail($id);
-        $this->yetkiKontrolu($kayit);
 
-        $veri = $request->validate([
-            'tasinmaz_id' => 'nullable|integer|exists:tasinmazlar,id',
-            'kullanici_id' => 'nullable|integer|exists:kullanicilar,id',
-            'ad_soyad_unvan' => 'required|string|max:200',
-            'tc_vergi_no' => 'nullable|string|max:20',
-            'adres' => 'nullable|string|max:500',
-            'cadde_sokak' => 'nullable|string|max:200',
-            'nitelik' => 'nullable|string|max:150',
-            'koordinat' => 'nullable|string',
-            'lat' => 'nullable|numeric|between:-90,90',
-            'lng' => 'nullable|numeric|between:-180,180',
-            'aciklama' => 'nullable|string|max:5000',
-        ]);
-        if (! empty($veri['koordinat'])) {
-            $decoded = json_decode($veri['koordinat'], true);
-            $veri['koordinat'] = is_array($decoded) ? $decoded : null;
-        } else {
-            $veri['koordinat'] = null;
-        }
-        // Otomatik eşleme (aynı akış — güncellemede de)
-        if (empty($veri['tasinmaz_id']) && ! empty($veri['koordinat'])) {
-            $bulunanId = $this->koordinattanTasinmazBul($veri['koordinat']);
-            if ($bulunanId) {
-                $veri['tasinmaz_id'] = $bulunanId;
-            }
-        }
-        $kayit->update($veri);
+        $kayit->update($this->kayitVerisi($request, $kayit));
 
         return redirect()->route('panel.ecrimisil.detay', $kayit->id)->with('basari', 'İşgal kaydı güncellendi.');
     }
 
     public function sil(int $id): RedirectResponse
     {
-        $kayit = EcrimisilIsgalci::findOrFail($id);
-        $this->yetkiKontrolu($kayit);
+        $kayit = EcrimisilIsgalci::with(['resimler', 'raporlar'])->findOrFail($id);
 
-        // Resim dosyalarını da temizle
-        foreach ($kayit->resimler as $r) {
-            if ($r->dosya_yolu) {
-                Storage::disk('public')->delete($r->dosya_yolu);
-            }
-        }
-        $kayit->delete();
+        // Satırlar cascade ile silinir; dosyaları ayrıca temizle (raporlar dahil —
+        // önceden yalnız resimler siliniyor, rapor ekleri diskte kalıyordu).
+        $dosyalar = $kayit->resimler->pluck('dosya_yolu')
+            ->merge($kayit->raporlar->pluck('dosya_yolu'))
+            ->filter()->values()->all();
+        DB::transaction(fn () => $kayit->delete());
+        Storage::disk('public')->delete($dosyalar);
 
         return redirect()->route('panel.ecrimisil.index')->with('basari', 'İşgal kaydı silindi.');
     }
 
     // -------------- Tutanak --------------
 
-    public function tutanakKaydet(Request $request, int $isgalciId): RedirectResponse
+    public function tutanakKaydet(Request $request, int $isgalciId): RedirectResponse|JsonResponse
     {
         $kayit = EcrimisilIsgalci::findOrFail($isgalciId);
-        $this->yetkiKontrolu($kayit);
 
-        $veri = $request->validate([
-            'seri_no' => 'nullable|string|max:100',
-            'tutanak_tarihi' => 'nullable|date',
-            'isgal_baslangic_tarihi' => 'nullable|date',
-            'isgal_bitis_tarihi' => 'nullable|date|after_or_equal:isgal_baslangic_tarihi',
-            'aciklama' => 'nullable|string|max:2000',
-        ]);
-        EcrimisilTutanak::create(array_merge($veri, ['isgalci_id' => $isgalciId]));
+        $t = EcrimisilTutanak::create(array_merge($this->tutanakVerisi($request), ['isgalci_id' => $isgalciId]));
 
-        return back()->with('basari', 'Tutanak eklendi.');
+        return $this->yanit($request, 'Tutanak eklendi.', ['tutanak' => $t]);
     }
 
-    public function tutanakGuncelle(Request $request, int $tutanakId): RedirectResponse
+    public function tutanakGuncelle(Request $request, int $tutanakId): RedirectResponse|JsonResponse
     {
         $t = EcrimisilTutanak::findOrFail($tutanakId);
-        $this->yetkiKontrolu($t->isgalci);
 
-        $veri = $request->validate([
-            'seri_no' => 'nullable|string|max:100',
-            'tutanak_tarihi' => 'nullable|date',
-            'isgal_baslangic_tarihi' => 'nullable|date',
-            'isgal_bitis_tarihi' => 'nullable|date|after_or_equal:isgal_baslangic_tarihi',
-            'aciklama' => 'nullable|string|max:2000',
-        ]);
-        $t->update($veri);
+        $t->update($this->tutanakVerisi($request, $t));
 
-        return back()->with('basari', 'Tutanak güncellendi.');
+        return $this->yanit($request, 'Tutanak güncellendi.', ['tutanak' => $t]);
     }
 
     public function tutanakSil(int $tutanakId): JsonResponse
     {
         $t = EcrimisilTutanak::findOrFail($tutanakId);
-        $this->yetkiKontrolu($t->isgalci);
+        // Tutanağa bağlı resimler silinmez, kayda bağlı kalır (FK nullOnDelete).
         $t->delete();
 
         return response()->json(['ok' => true]);
@@ -256,56 +202,41 @@ class EcrimisilController extends Controller
 
     // -------------- Rapor --------------
 
-    public function raporKaydet(Request $request, int $isgalciId): RedirectResponse
+    public function raporKaydet(Request $request, int $isgalciId): RedirectResponse|JsonResponse
     {
         $kayit = EcrimisilIsgalci::findOrFail($isgalciId);
-        $this->yetkiKontrolu($kayit);
 
-        $veri = $request->validate([
-            'rapor_no' => 'nullable|string|max:100',
-            'rapor_tarihi' => 'nullable|date',
-            'fiyat' => 'nullable|numeric|min:0',
-            'dosya' => 'nullable|file|mimes:pdf,doc,docx|max:20480',
-            'aciklama' => 'nullable|string|max:5000',
-        ]);
+        $veri = $this->raporVerisi($request);
         if ($request->hasFile('dosya')) {
             $veri['dosya_yolu'] = $request->file('dosya')->store('ecrimisil/raporlar/'.now()->format('Y/m'), 'public');
         }
-        unset($veri['dosya']);
+        $r = EcrimisilRapor::create(array_merge($veri, ['isgalci_id' => $isgalciId]));
 
-        \App\Models\EcrimisilRapor::create(array_merge($veri, ['isgalci_id' => $isgalciId]));
-
-        return back()->with('basari', 'Rapor eklendi.');
+        return $this->yanit($request, 'Rapor eklendi.', ['rapor' => $r]);
     }
 
-    public function raporGuncelle(Request $request, int $raporId): RedirectResponse
+    public function raporGuncelle(Request $request, int $raporId): RedirectResponse|JsonResponse
     {
-        $r = \App\Models\EcrimisilRapor::findOrFail($raporId);
-        $this->yetkiKontrolu($r->isgalci);
+        $r = EcrimisilRapor::findOrFail($raporId);
 
-        $veri = $request->validate([
-            'rapor_no' => 'nullable|string|max:100',
-            'rapor_tarihi' => 'nullable|date',
-            'fiyat' => 'nullable|numeric|min:0',
-            'dosya' => 'nullable|file|mimes:pdf,doc,docx|max:20480',
-            'aciklama' => 'nullable|string|max:5000',
-        ]);
+        $veri = $this->raporVerisi($request);
+        $eskiDosya = $r->dosya_yolu;
         if ($request->hasFile('dosya')) {
-            if ($r->dosya_yolu) {
-                Storage::disk('public')->delete($r->dosya_yolu);
-            }
             $veri['dosya_yolu'] = $request->file('dosya')->store('ecrimisil/raporlar/'.now()->format('Y/m'), 'public');
+        } elseif ($request->boolean('dosya_kaldir')) {
+            $veri['dosya_yolu'] = null;
         }
-        unset($veri['dosya']);
         $r->update($veri);
+        if ($eskiDosya && $eskiDosya !== $r->dosya_yolu) {
+            Storage::disk('public')->delete($eskiDosya);
+        }
 
-        return back()->with('basari', 'Rapor güncellendi.');
+        return $this->yanit($request, 'Rapor güncellendi.', ['rapor' => $r]);
     }
 
     public function raporSil(int $raporId): JsonResponse
     {
-        $r = \App\Models\EcrimisilRapor::findOrFail($raporId);
-        $this->yetkiKontrolu($r->isgalci);
+        $r = EcrimisilRapor::findOrFail($raporId);
         if ($r->dosya_yolu) {
             Storage::disk('public')->delete($r->dosya_yolu);
         }
@@ -316,39 +247,47 @@ class EcrimisilController extends Controller
 
     // -------------- Resim --------------
 
-    public function resimYukle(Request $request, int $isgalciId): RedirectResponse
+    public function resimYukle(Request $request, int $isgalciId): RedirectResponse|JsonResponse
     {
         $kayit = EcrimisilIsgalci::findOrFail($isgalciId);
-        $this->yetkiKontrolu($kayit);
 
         $veri = $request->validate([
+            'resimler' => 'required|array|min:1|max:20',
             'resimler.*' => 'required|image|mimes:jpg,jpeg,png,webp|max:8192',
-            'tutanak_id' => 'nullable|integer|exists:ecrimisil_tutanaklari,id',
+            // Yalnızca bu kaydın tutanağına bağlanabilir
+            'tutanak_id' => ['nullable', 'integer', Rule::exists('ecrimisil_tutanaklari', 'id')->where('isgalci_id', $isgalciId)],
             'aciklama' => 'nullable|string|max:300',
+        ], [
+            'resimler.required' => 'En az bir resim seçin.',
+            'resimler.max' => 'Tek seferde en fazla 20 resim yüklenebilir.',
+            'tutanak_id.exists' => 'Seçilen tutanak bu işgal kaydına ait değil.',
         ]);
 
-        DB::transaction(function () use ($request, $isgalciId, $veri) {
-            foreach ((array) $request->file('resimler') as $dosya) {
-                if (! $dosya) {
-                    continue;
+        $yollar = [];
+        try {
+            DB::transaction(function () use ($request, $isgalciId, $veri, &$yollar) {
+                foreach ($request->file('resimler') as $dosya) {
+                    $yol = $dosya->store('ecrimisil/resimler/'.now()->format('Y/m'), 'public');
+                    $yollar[] = $yol;
+                    EcrimisilResim::create([
+                        'isgalci_id' => $isgalciId,
+                        'tutanak_id' => $veri['tutanak_id'] ?? null,
+                        'dosya_yolu' => $yol,
+                        'aciklama' => $veri['aciklama'] ?? null,
+                    ]);
                 }
-                $yol = $dosya->store('ecrimisil/resimler/'.now()->format('Y/m'), 'public');
-                EcrimisilResim::create([
-                    'isgalci_id' => $isgalciId,
-                    'tutanak_id' => $veri['tutanak_id'] ?? null,
-                    'dosya_yolu' => $yol,
-                    'aciklama' => $veri['aciklama'] ?? null,
-                ]);
-            }
-        });
+            });
+        } catch (\Throwable $e) {
+            Storage::disk('public')->delete($yollar);
+            throw $e;
+        }
 
-        return back()->with('basari', 'Resim(ler) yüklendi.');
+        return $this->yanit($request, count($yollar).' resim yüklendi.');
     }
 
     public function resimSil(int $resimId): JsonResponse
     {
         $r = EcrimisilResim::findOrFail($resimId);
-        $this->yetkiKontrolu($r->isgalci);
         if ($r->dosya_yolu) {
             Storage::disk('public')->delete($r->dosya_yolu);
         }
@@ -360,83 +299,99 @@ class EcrimisilController extends Controller
     // -------------- Taşınmaz Otomatik Eşleme --------------
 
     /**
-     * Ecrimisil kaydında çizilen poligonun herhangi bir noktası mevcut bir
-     * taşınmaz sınırının içindeyse o taşınmazı döner.
+     * Çizilen işgal poligonu bir taşınmaz sınırıyla örtüşüyorsa o taşınmazı
+     * döner. Örtüşme: poligonun bir köşesi parselin içinde VEYA parselin bir
+     * köşesi poligonun içinde (önceden yalnız ilki aranıyordu; parseli tamamen
+     * kapsayan bir çizimde eşleşme bulunamıyordu).
      * İstek gövdesi: { koordinatlar: [[lng, lat], ...] }
      *
-     * Aynı taşınmaza birden fazla ecrimisil kaydı serbest — bu endpoint
-     * sadece bilgi/otomatik eşleme amaçlıdır, "zaten var" engeli koymaz.
+     * Aynı taşınmaza birden fazla ecrimisil kaydı serbest — "zaten var" engeli yok.
      */
     public function tasinmazBul(Request $request): JsonResponse
     {
         $veri = $request->validate([
-            'koordinatlar' => 'required|array|min:1',
+            'koordinatlar' => 'required|array|min:3|max:2000',
             'koordinatlar.*' => 'array|size:2',
+            'koordinatlar.*.0' => 'numeric|between:-180,180',
+            'koordinatlar.*.1' => 'numeric|between:-90,90',
         ]);
 
-        $noktalar = $veri['koordinatlar'];
+        $t = $this->ortusenTasinmaz($veri['koordinatlar']);
+        if (! $t) {
+            return response()->json(['bulundu' => false]);
+        }
+        $t->loadMissing(['il:id,ad', 'ilce:id,ad', 'mahalle:id,ad']);
+
+        return response()->json([
+            'bulundu' => true,
+            'tasinmaz' => [
+                'id' => $t->id,
+                'ada' => $t->ada,
+                'parsel' => $t->parsel,
+                'il' => $t->il?->ad,
+                'ilce' => $t->ilce?->ad,
+                'mahalle' => $t->mahalle?->ad,
+            ],
+        ]);
+    }
+
+    /** @param array<int, array{0: float|string, 1: float|string}> $noktalar */
+    private function ortusenTasinmaz(array $noktalar): ?Tasinmaz
+    {
+        $noktalar = array_map(fn ($n) => [(float) $n[0], (float) $n[1]], array_values($noktalar));
         $minLng = min(array_column($noktalar, 0));
         $maxLng = max(array_column($noktalar, 0));
         $minLat = min(array_column($noktalar, 1));
         $maxLat = max(array_column($noktalar, 1));
 
-        // Kaba bbox filtresi — MySQL üzerinde JSON içeriğine göre değil, tüm
-        // koordinatları çekip PHP tarafında elenir. Küçük–orta veri için OK.
-        $koordinatKayitlari = \App\Models\TasinmazKoordinat::query()
+        // JSON içinde mekânsal sorgu yok — kapsamdaki koordinatlar PHP'de elenir.
+        $koordinatlar = TasinmazKoordinat::query()
             ->whereNotNull('koordinat')
-            ->with(['tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad'])
-            ->whereHas('tasinmaz', fn ($q) => $q->mudurlukKapsami())
+            ->with('tasinmaz')
             ->get();
 
-        foreach ($koordinatKayitlari as $k) {
-            $g = $k->koordinat;
-            if (is_string($g)) {
-                $g = json_decode($g, true);
-            }
-            $halka = null;
-            if (is_array($g) && isset($g['type'], $g['coordinates']) && $g['type'] === 'Polygon') {
-                $halka = $g['coordinates'][0] ?? null;
-            } elseif (is_array($g) && isset($g[0][0]) && is_numeric($g[0][0])) {
-                $halka = $g;
-            }
-            if (! is_array($halka) || count($halka) < 3) {
+        foreach ($koordinatlar as $k) {
+            $halka = $this->halka($k->koordinat);
+            if ($halka === null) {
                 continue;
             }
-
-            // bbox hızlı elenme
             $lngs = array_column($halka, 0);
             $lats = array_column($halka, 1);
             if (max($lngs) < $minLng || min($lngs) > $maxLng || max($lats) < $minLat || min($lats) > $maxLat) {
                 continue;
             }
-
-            // Herhangi bir noktanın poligon içinde olmasını ara
             foreach ($noktalar as $n) {
-                if ($this->noktaPoligonIcinde((float) $n[0], (float) $n[1], $halka)) {
-                    $t = $k->tasinmaz;
-
-                    return response()->json([
-                        'bulundu' => true,
-                        'tasinmaz' => [
-                            'id' => $t->id,
-                            'ada' => $t->ada,
-                            'parsel' => $t->parsel,
-                            'il' => $t->il?->ad,
-                            'ilce' => $t->ilce?->ad,
-                            'mahalle' => $t->mahalle?->ad,
-                        ],
-                    ]);
+                if ($this->noktaPoligonIcinde($n[0], $n[1], $halka)) {
+                    return $k->tasinmaz;
+                }
+            }
+            foreach ($halka as $p) {
+                if ($this->noktaPoligonIcinde((float) $p[0], (float) $p[1], $noktalar)) {
+                    return $k->tasinmaz;
                 }
             }
         }
 
-        return response()->json(['bulundu' => false]);
+        return null;
     }
 
-    /**
-     * Ray casting algorithm — nokta poligon içinde mi.
-     * $poligon: [[lng, lat], ...]
-     */
+    /** Polygon GeoJSON'u ya da düz [[lng,lat],...] dizisini dış halkaya çevirir. */
+    private function halka(mixed $g): ?array
+    {
+        if (is_string($g)) {
+            $g = json_decode($g, true);
+        }
+        $halka = null;
+        if (is_array($g) && ($g['type'] ?? null) === 'Polygon') {
+            $halka = $g['coordinates'][0] ?? null;
+        } elseif (is_array($g) && isset($g[0][0]) && is_numeric($g[0][0])) {
+            $halka = $g;
+        }
+
+        return is_array($halka) && count($halka) >= 3 ? array_values($halka) : null;
+    }
+
+    /** Ray casting — nokta poligon içinde mi. $poligon: [[lng, lat], ...] */
     private function noktaPoligonIcinde(float $lng, float $lat, array $poligon): bool
     {
         $inside = false;
@@ -457,76 +412,26 @@ class EcrimisilController extends Controller
     }
 
     /**
-     * kaydet/guncelle içinde çağırılır — kullanıcı elle tasinmaz_id vermediyse
-     * ve koordinat çizmişse, otomatik olarak eşleşen taşınmazı bulur.
-     */
-    private function koordinattanTasinmazBul(?array $koordinat): ?int
-    {
-        if (! is_array($koordinat)) {
-            return null;
-        }
-        $noktalar = null;
-        if (isset($koordinat['type'], $koordinat['coordinates']) && $koordinat['type'] === 'Polygon') {
-            $noktalar = $koordinat['coordinates'][0] ?? null;
-        } elseif (isset($koordinat[0][0]) && is_numeric($koordinat[0][0])) {
-            $noktalar = $koordinat;
-        }
-        if (! is_array($noktalar) || empty($noktalar)) {
-            return null;
-        }
-
-        $req = new Request(['koordinatlar' => $noktalar]);
-        $sonuc = json_decode($this->tasinmazBul($req)->getContent(), true);
-
-        return $sonuc['bulundu'] ?? false ? (int) $sonuc['tasinmaz']['id'] : null;
-    }
-
-    /**
      * Ecrimisil kayıt/düzenleme haritasında mevcut ecrimisil kayıtlarını
      * göstermek için GeoJSON. Kullanıcı bir tanesine tıklayınca o poligonu
      * kopyalayıp aynı yere yeni bir ecrimisil kesebilir.
      *
-     * ?hariç=<id> — düzenleme sayfasında kendi kaydını hariç tut.
+     * ?haric=<id> — düzenleme sayfasında kendi kaydını hariç tut.
      */
     public function mevcutEcrimisiller(Request $request): JsonResponse
     {
         $haric = $request->query('haric');
         $isgalciler = EcrimisilIsgalci::query()
-            ->mudurlukKapsami()
-            ->with(['tasinmaz.koordinat:id,tasinmaz_id,lat,lng,koordinat', 'tasinmaz:id,ada,parsel', 'tutanaklar:id,isgalci_id,isgal_bitis_tarihi'])
+            ->with(['tasinmaz:id,ada,parsel', 'tasinmaz.koordinat:id,tasinmaz_id,lat,lng,koordinat', 'tutanaklar:id,isgalci_id,isgal_bitis_tarihi'])
             ->when($haric, fn ($q) => $q->where('id', '!=', (int) $haric))
             ->get(['id', 'tasinmaz_id', 'ad_soyad_unvan', 'nitelik', 'koordinat', 'lat', 'lng']);
 
         $features = [];
         foreach ($isgalciler as $k) {
-            $geometry = null;
-            if (! empty($k->koordinat)) {
-                $g = $k->koordinat;
-                if (isset($g['type'], $g['coordinates'])) {
-                    $geometry = $g;
-                } elseif (isset($g[0][0]) && is_numeric($g[0][0])) {
-                    $h = $g;
-                    if ($h[0] !== end($h)) {
-                        $h[] = $h[0];
-                    }
-                    $geometry = ['type' => 'Polygon', 'coordinates' => [$h]];
-                }
-            }
-            if ($geometry === null && $k->tasinmaz && $k->tasinmaz->koordinat) {
-                $geometry = $this->koordinatGeoJson($k->tasinmaz->koordinat);
-            }
+            $geometry = $this->kayitGeometrisi($k);
             if ($geometry === null) {
                 continue;
             }
-
-            // Durum
-            $sonTut = $k->tutanaklar->sortByDesc('id')->first();
-            $durum = 'yeni';
-            if ($sonTut) {
-                $durum = (! $sonTut->isgal_bitis_tarihi || $sonTut->isgal_bitis_tarihi >= now()->toDateString())
-                    ? 'devam-eden' : 'sonlanmis';
-            }
-
             $features[] = [
                 'type' => 'Feature',
                 'id' => $k->id,
@@ -538,7 +443,7 @@ class EcrimisilController extends Controller
                     'ada' => $k->tasinmaz?->ada,
                     'parsel' => $k->tasinmaz?->parsel,
                     'tasinmaz_id' => $k->tasinmaz_id,
-                    'durum' => $durum,
+                    'durum' => $k->durum(),
                 ],
             ];
         }
@@ -549,24 +454,20 @@ class EcrimisilController extends Controller
     // -------------- Harita --------------
 
     /**
-     * Ecrimisil haritası — hisse satışı haritasıyla aynı dark corporate dizayn.
-     * Sadece ecrimisil kaydı olan ve koordinatı bulunan taşınmazlar renkli
-     * poligon olarak gösterilir. Renk: tutanak durumuna göre.
+     * Ecrimisil haritası — kendi işgal poligonu, yoksa bağlı taşınmazın
+     * sınırı, o da yoksa merkez noktası gösterilir. Renk: durum.
      */
     public function harita(): View
     {
         return view('panel.ecrimisil.harita', [
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
-            'kullanicilar' => Kullanici::query()->where('aktif_mi', true)->orderBy('ad')->get(['id', 'ad', 'soyad']),
+            'kullanicilar' => $this->kullaniciListesi(),
         ]);
     }
 
     /**
-     * Harita için GeoJSON — sadece ecrimisil kaydı olan taşınmazlar.
-     * properties.durum:
-     *   yeni            → tutanak yok
-     *   devam-eden      → tutanak var + bitiş tarihi yok veya gelecekte
-     *   sonlanmis       → tutanak var + bitiş tarihi geçmiş
+     * Harita için GeoJSON.
+     * properties.durum: yeni | devam-eden | sonlanmis (bkz. EcrimisilIsgalci::durum)
      */
     public function haritaGeojson(Request $request): JsonResponse
     {
@@ -579,9 +480,7 @@ class EcrimisilController extends Controller
         $kullaniciId = $request->query('kullanici_id');
         $durum = $request->query('durum');
 
-        // Ecrimisil kayıtları — kendi koordinatı VEYA taşınmaz koordinatı olanlar
         $isgalciler = EcrimisilIsgalci::query()
-            ->mudurlukKapsami()
             ->with([
                 'tasinmaz.il:id,ad', 'tasinmaz.ilce:id,ad', 'tasinmaz.mahalle:id,ad,tkgm_id',
                 'tasinmaz.koordinat:id,tasinmaz_id,lat,lng,koordinat',
@@ -590,8 +489,10 @@ class EcrimisilController extends Controller
             ])
             ->where(function ($q) {
                 $q->whereNotNull('koordinat')
+                    ->orWhere(fn ($w) => $w->whereNotNull('lat')->whereNotNull('lng'))
                     ->orWhereHas('tasinmaz.koordinat');
             })
+            ->durumu(array_key_exists((string) $durum, EcrimisilIsgalci::DURUMLAR) ? $durum : null)
             ->when($kullaniciId, fn ($s) => $s->where('kullanici_id', $kullaniciId))
             ->when($q !== '', function ($w) use ($q) {
                 $w->where(function ($x) use ($q) {
@@ -613,46 +514,12 @@ class EcrimisilController extends Controller
 
         $features = [];
         foreach ($isgalciler as $k) {
+            $geometry = $this->kayitGeometrisi($k);
+            if ($geometry === null) {
+                continue;
+            }
             $t = $k->tasinmaz;
-            // Öncelik: ecrimisil kendi koordinatı → sonra taşınmaz koordinatı
-            $geometry = null;
-            if (! empty($k->koordinat)) {
-                $g = $k->koordinat;
-                if (isset($g['type'], $g['coordinates'])) {
-                    $geometry = $g;
-                } elseif (isset($g[0][0]) && is_numeric($g[0][0])) {
-                    $h = $g;
-                    if ($h[0] !== end($h)) {
-                        $h[] = $h[0];
-                    }
-                    $geometry = ['type' => 'Polygon', 'coordinates' => [$h]];
-                }
-            }
-            if ($geometry === null) {
-                $geometry = $this->koordinatGeoJson($t?->koordinat);
-            }
-            if ($geometry === null && $k->lat !== null && $k->lng !== null) {
-                $geometry = ['type' => 'Point', 'coordinates' => [(float) $k->lng, (float) $k->lat]];
-            }
-            if ($geometry === null) {
-                continue;
-            }
-
-            // Durum hesabı
-            $sonTutanak = $k->tutanaklar->sortByDesc('tutanak_tarihi')->first();
-            $kayitDurumu = 'yeni';
-            if ($sonTutanak) {
-                $bitis = $sonTutanak->isgal_bitis_tarihi;
-                if (! $bitis || $bitis >= now()->toDateString()) {
-                    $kayitDurumu = 'devam-eden';
-                } else {
-                    $kayitDurumu = 'sonlanmis';
-                }
-            }
-
-            if ($durum && $durum !== 'tumu' && $kayitDurumu !== $durum) {
-                continue;
-            }
+            $sonTutanak = $k->tutanaklar->sortByDesc(fn ($x) => [$x->tutanak_tarihi?->timestamp ?? 0, $x->id])->first();
 
             $features[] = [
                 'type' => 'Feature',
@@ -663,15 +530,16 @@ class EcrimisilController extends Controller
                     'ad_soyad_unvan' => $k->ad_soyad_unvan,
                     'tc_vergi_no' => $k->tc_vergi_no,
                     'nitelik' => $k->nitelik,
-                    'ada' => $t->ada,
-                    'parsel' => $t->parsel,
-                    'il' => $t->il?->ad,
-                    'ilce' => $t->ilce?->ad,
-                    'mahalle' => $t->mahalle?->ad,
+                    // Taşınmaza bağlanmamış kayıtlar da haritada (önceden burada 500 veriyordu)
+                    'ada' => $t?->ada,
+                    'parsel' => $t?->parsel,
+                    'il' => $t?->il?->ad,
+                    'ilce' => $t?->ilce?->ad,
+                    'mahalle' => $t?->mahalle?->ad,
                     'kullanici' => $k->kullanici ? $k->kullanici->ad.' '.$k->kullanici->soyad : null,
                     'tutanak_sayisi' => $k->tutanaklar->count(),
-                    'son_tutanak_tarihi' => optional($sonTutanak?->tutanak_tarihi)->toDateString(),
-                    'durum' => $kayitDurumu,
+                    'son_tutanak_tarihi' => $sonTutanak?->tutanak_tarihi?->toDateString(),
+                    'durum' => $k->durum(),
                     'detay_url' => route('panel.ecrimisil.detay', $k->id),
                 ],
             ];
@@ -680,9 +548,7 @@ class EcrimisilController extends Controller
         return response()->json(['type' => 'FeatureCollection', 'features' => $features]);
     }
 
-    /**
-     * Bir ecrimisil kaydının detay AJAX'ı — harita İşlemler paneli için.
-     */
+    /** Bir ecrimisil kaydının detay AJAX'ı — harita İşlemler paneli için. */
     public function haritaKayitOzet(int $id): JsonResponse
     {
         $k = EcrimisilIsgalci::with([
@@ -690,7 +556,6 @@ class EcrimisilController extends Controller
             'kullanici:id,ad,soyad,mail',
             'tutanaklar', 'resimler', 'raporlar',
         ])->findOrFail($id);
-        $this->yetkiKontrolu($k);
 
         return response()->json([
             'kayit' => [
@@ -706,6 +571,8 @@ class EcrimisilController extends Controller
                 'il' => $k->tasinmaz?->il?->ad,
                 'ilce' => $k->tasinmaz?->ilce?->ad,
                 'mahalle' => $k->tasinmaz?->mahalle?->ad,
+                'durum' => $k->durum(),
+                'toplam_gun' => $k->toplamIsgalGunu(),
                 'kullanici' => $k->kullanici ? [
                     'ad_soyad' => $k->kullanici->ad.' '.$k->kullanici->soyad,
                     'mail' => $k->kullanici->mail,
@@ -714,12 +581,12 @@ class EcrimisilController extends Controller
             'tutanaklar' => $k->tutanaklar->map(fn ($t) => [
                 'id' => $t->id,
                 'seri_no' => $t->seri_no,
-                'tutanak_tarihi' => optional($t->tutanak_tarihi)->toDateString(),
-                'isgal_baslangic_tarihi' => optional($t->isgal_baslangic_tarihi)->toDateString(),
-                'isgal_bitis_tarihi' => optional($t->isgal_bitis_tarihi)->toDateString(),
+                'tutanak_tarihi' => $t->tutanak_tarihi?->toDateString(),
+                'isgal_baslangic_tarihi' => $t->isgal_baslangic_tarihi?->toDateString(),
+                'isgal_bitis_tarihi' => $t->isgal_bitis_tarihi?->toDateString(),
                 'aciklama' => $t->aciklama,
                 'gun_sayisi' => $t->isgalGunSayisi(),
-                'devam_ediyor' => ! $t->isgal_bitis_tarihi,
+                'devam_ediyor' => ! $t->isgal_bitis_tarihi || $t->isgal_bitis_tarihi->gte(now()->startOfDay()),
             ]),
             'resimler' => $k->resimler->map(fn ($r) => [
                 'id' => $r->id,
@@ -729,7 +596,7 @@ class EcrimisilController extends Controller
             'raporlar' => $k->raporlar->map(fn ($r) => [
                 'id' => $r->id,
                 'rapor_no' => $r->rapor_no,
-                'rapor_tarihi' => optional($r->rapor_tarihi)->toDateString(),
+                'rapor_tarihi' => $r->rapor_tarihi?->toDateString(),
                 'fiyat' => $r->fiyat,
                 'aciklama' => $r->aciklama,
                 'dosya_url' => $r->dosya_yolu ? asset('storage/'.$r->dosya_yolu) : null,
@@ -742,28 +609,111 @@ class EcrimisilController extends Controller
         ]);
     }
 
+    // -------------- Yardımcılar --------------
+
     /**
-     * TasinmazKoordinat kaydını GeoJSON'a çevirir (HisseSatisController ile aynı mantık).
+     * Kayıt formu doğrulaması + koordinat çözümü + taşınmaz eşleme + yetki.
+     * Oluşturma ve güncelleme aynı kuralları kullanır (önceden güncellemede
+     * taşınmaz erişim kontrolü yapılmıyordu).
      */
-    private function koordinatGeoJson(?\App\Models\TasinmazKoordinat $k): ?array
+    private function kayitVerisi(Request $request, ?EcrimisilIsgalci $kayit = null): array
     {
-        if (! $k) {
-            return null;
+        $request->merge(['tc_vergi_no' => preg_replace('/\D/', '', (string) $request->input('tc_vergi_no')) ?: null]);
+
+        $veri = $request->validate([
+            'tasinmaz_id' => 'nullable|integer|exists:tasinmazlar,id',
+            // Aktif bir kullanıcı ya da kayıtta zaten atanmış olan kişi
+            'kullanici_id' => ['nullable', 'integer', Rule::in($this->kullaniciListesi()->pluck('id')->push($kayit?->kullanici_id)->filter()->all())],
+            'ad_soyad_unvan' => 'required|string|max:200',
+            'tc_vergi_no' => ['nullable', new TcVergiNo],
+            'adres' => 'nullable|string|max:500',
+            'cadde_sokak' => 'nullable|string|max:200',
+            'nitelik' => 'nullable|string|max:150',
+            'koordinat' => 'nullable|string|max:200000',
+            'lat' => 'nullable|numeric|between:-90,90',
+            'lng' => 'nullable|numeric|between:-180,180',
+            'aciklama' => 'nullable|string|max:5000',
+        ], [
+            'kullanici_id.in' => 'Sorumlu kullanıcı aktif bir kullanıcı olmalı.',
+        ]);
+
+        // Koordinat formdan GeoJSON metni olarak gelir; geçerli bir poligon değilse reddet
+        $veri['koordinat'] = filled($veri['koordinat'] ?? null) ? json_decode($veri['koordinat'], true) : null;
+        if ($veri['koordinat'] !== null && $this->halka($veri['koordinat']) === null) {
+            throw ValidationException::withMessages(['koordinat' => 'Çizilen işgal alanı okunamadı; poligonu yeniden çizin.']);
         }
-        $g = $k->koordinat;
-        if (is_string($g)) {
-            $g = json_decode($g, true);
+
+        // Taşınmaz yoksa çizilen alandan otomatik eşle — kullanıcı bağlantıyı
+        // formda bilerek kaldırdıysa (tasinmaz_elle=1) yeniden bağlama.
+        $veri['tasinmaz_id'] = $veri['tasinmaz_id'] ?? null;
+        if (! $veri['tasinmaz_id'] && $veri['koordinat'] !== null && ! $request->boolean('tasinmaz_elle')) {
+            $veri['tasinmaz_id'] = $this->ortusenTasinmaz($this->halka($veri['koordinat']))?->id;
         }
-        if (is_array($g) && isset($g['type'], $g['coordinates'])) {
-            return $g;
+
+        return $veri;
+    }
+
+    private function tutanakVerisi(Request $request, ?EcrimisilTutanak $tutanak = null): array
+    {
+        return $request->validate([
+            'seri_no' => ['nullable', 'string', 'max:100', Rule::unique('ecrimisil_tutanaklari', 'seri_no')->ignore($tutanak?->id)],
+            'tutanak_tarihi' => 'nullable|date|before_or_equal:today',
+            'isgal_baslangic_tarihi' => 'nullable|date|before_or_equal:today|required_with:isgal_bitis_tarihi',
+            'isgal_bitis_tarihi' => 'nullable|date|after_or_equal:isgal_baslangic_tarihi',
+            'aciklama' => 'nullable|string|max:2000',
+        ], [
+            'seri_no.unique' => 'Bu seri numarasıyla kayıtlı bir tutanak zaten var.',
+            'tutanak_tarihi.before_or_equal' => 'Tutanak tarihi ileri bir tarih olamaz.',
+            'isgal_baslangic_tarihi.before_or_equal' => 'İşgal başlangıcı ileri bir tarih olamaz.',
+            'isgal_bitis_tarihi.after_or_equal' => 'İşgal bitişi başlangıçtan önce olamaz.',
+            'isgal_baslangic_tarihi.required_with' => 'Bitiş tarihi girildiyse işgal başlangıcı da girilmeli.',
+        ]) + ['isgal_bitis_tarihi' => null];
+    }
+
+    private function raporVerisi(Request $request): array
+    {
+        // "12.500,75" gibi Türkçe sayı girişini kabul et
+        $fiyat = trim((string) $request->input('fiyat'));
+        if ($fiyat !== '' && str_contains($fiyat, ',')) {
+            $request->merge(['fiyat' => str_replace(['.', ' ', '₺', ','], ['', '', '', '.'], $fiyat)]);
         }
-        if (is_array($g) && isset($g[0][0]) && is_numeric($g[0][0])) {
-            $h = $g;
-            if ($h[0] !== end($h)) {
-                $h[] = $h[0];
+
+        $veri = $request->validate([
+            'rapor_no' => 'nullable|string|max:100',
+            'rapor_tarihi' => 'nullable|date|before_or_equal:today',
+            'fiyat' => 'nullable|numeric|min:0|max:9999999999999',
+            'dosya' => 'nullable|file|mimes:pdf,doc,docx|max:20480',
+            'aciklama' => 'nullable|string|max:5000',
+        ], [
+            'rapor_tarihi.before_or_equal' => 'Rapor tarihi ileri bir tarih olamaz.',
+        ]);
+        unset($veri['dosya']);
+
+        return $veri;
+    }
+
+    /** Harita paneli JSON bekler; sayfa formları geri yönlenir. */
+    private function yanit(Request $request, string $mesaj, array $ek = []): RedirectResponse|JsonResponse
+    {
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json(['ok' => true, 'mesaj' => $mesaj] + $ek);
+        }
+
+        return back()->with('basari', $mesaj);
+    }
+
+    /** Kaydın kendi poligonu → bağlı taşınmazın sınırı → kendi merkez noktası. */
+    private function kayitGeometrisi(EcrimisilIsgalci $k): ?array
+    {
+        if ($halka = $this->halka($k->koordinat)) {
+            if ($halka[0] !== end($halka)) {
+                $halka[] = $halka[0];
             }
 
-            return ['type' => 'Polygon', 'coordinates' => [$h]];
+            return ['type' => 'Polygon', 'coordinates' => [$halka]];
+        }
+        if ($g = $this->koordinatGeoJson($k->tasinmaz?->koordinat)) {
+            return $g;
         }
         if ($k->lat !== null && $k->lng !== null) {
             return ['type' => 'Point', 'coordinates' => [(float) $k->lng, (float) $k->lat]];
@@ -772,16 +722,36 @@ class EcrimisilController extends Controller
         return null;
     }
 
-    /** Kayıtın kullanıcının müdürlük kapsamında olduğunu doğrular. */
-    private function yetkiKontrolu(EcrimisilIsgalci $kayit): void
+    /** TasinmazKoordinat kaydını GeoJSON'a çevirir (HisseSatisController ile aynı mantık). */
+    private function koordinatGeoJson(?TasinmazKoordinat $k): ?array
     {
-        $u = auth()->user();
-        if (! $u instanceof Kullanici) {
-            abort(403);
+        if (! $k) {
+            return null;
         }
-        if ($u->izinVarMi('tasinmaz.tumunu-gor')) {
-            return;
+        $g = is_string($k->koordinat) ? json_decode($k->koordinat, true) : $k->koordinat;
+        if (is_array($g) && isset($g['type'], $g['coordinates'])) {
+            return $g;
         }
-        abort_unless($kayit->mudurluk_id === $u->mudurluk_id, 403);
+        if ($halka = $this->halka($g)) {
+            if ($halka[0] !== end($halka)) {
+                $halka[] = $halka[0];
+            }
+
+            return ['type' => 'Polygon', 'coordinates' => [$halka]];
+        }
+        if ($k->lat !== null && $k->lng !== null) {
+            return ['type' => 'Point', 'coordinates' => [(float) $k->lng, (float) $k->lat]];
+        }
+
+        return null;
+    }
+
+    /** Sorumlu atanabilecek kullanıcılar: aktif olanlar. */
+    private function kullaniciListesi(): Collection
+    {
+        return Kullanici::query()
+            ->where('aktif_mi', true)
+            ->orderBy('ad')->orderBy('soyad')
+            ->get(['id', 'ad', 'soyad']);
     }
 }
