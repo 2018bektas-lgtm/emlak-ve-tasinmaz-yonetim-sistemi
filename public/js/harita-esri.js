@@ -758,9 +758,10 @@
                     ['Kullanım', d.kullanim],
                     ['Alt Kullanım', d.alt_kullanim],
                     ['Yapı Düzeni', d.yapi_duzeni],
+                    ['Emsal', d.emsal],
+                    ['Çekme (Ön/Yan/Arka)', d.cekme],
                     ['Daire Sayısı', d.daire_sayisi],
-                    ['Fonksiyon', d.fonksiyon],
-                    ['Plan Notu', d.plan_notu],
+                    ['Plan Adası', d.plan_adasi],
                 ]) +
             '</div>';
         }
@@ -812,23 +813,40 @@
         }
 
         /**
-         * e-İmar sorgusunu yapar, popup içindeki kutuyu doldurur ve plan adası
-         * geometrisini haritaya işler. Hem "Bilgi Sorgu" hem "Ada/Parsel" yolu kullanır.
-         * Ankara kapsama alanı dışında hata döner — bu bir arıza değil, dipnot olarak gösterilir.
+         * e-İmar isteğini hemen yola çıkarır ve bir söz döner. Çağıran taraf
+         * bunu beklemeden TKGM sorgusuna veya kamera animasyonuna devam eder;
+         * iki istek böylece sırayla değil birlikte gider.
+         *
+         * Hiçbir durumda reddetmez — hatayı da sonuç olarak taşır, yoksa
+         * beklemeye alınmadığı anlarda sahipsiz ret uyarısı üretirdi.
          */
-        async function eimarYukle(kap, lat, lng) {
+        function eimarGetir(lat, lng) {
+            return jsonGetir(API.eimar + '?lat=' + lat + '&lng=' + lng).then(
+                function (veri) { return { tamam: true, veri: veri }; },
+                function (e) { return { tamam: false, mesaj: e.message }; }
+            );
+        }
+
+        /**
+         * Bekleyen e-İmar isteğini popup içindeki kutuya yazar ve plan adası
+         * geometrisini haritaya işler. Hem "Bilgi Sorgu" hem "Ada/Parsel" yolu
+         * kullanır. Kapsama alanı dışında veya planı olmayan yerde hata döner —
+         * bu bir arıza değil, dipnot olarak gösterilir.
+         */
+        async function eimarYaz(kap, sozu) {
             let kutu = kap && kap.querySelector ? kap.querySelector('#hrm-eimar-kutu') : null;
             if (!kutu) kutu = document.querySelector('#hrm-eimar-kutu');
             if (!kutu) return;
-            kutu.innerHTML = popYukleniyor('e-İmar sorgulanıyor…');
-            try {
-                const eimar = await jsonGetir(API.eimar + '?lat=' + lat + '&lng=' + lng);
-                kutu.innerHTML = eimarGovde(eimar);
-                const eGeom = geoJsonGeometri(eimar.geometry);
-                if (eGeom) sorguKatman.add(new Graphic({ geometry: eGeom, symbol: SEM_EIMAR }));
-            } catch (e) {
-                kutu.innerHTML = '<div class="hrm-pop-dipnot">e-İmar: ' + kacis(e.message) + '</div>';
+
+            const sonuc = await sozu;
+            if (!sonuc.tamam) {
+                kutu.innerHTML = '<div class="hrm-pop-dipnot">e-İmar: ' + kacis(sonuc.mesaj) + '</div>';
+                return;
             }
+
+            kutu.innerHTML = eimarGovde(sonuc.veri);
+            const eGeom = geoJsonGeometri(sonuc.veri.geometry);
+            if (eGeom) sorguKatman.add(new Graphic({ geometry: eGeom, symbol: SEM_EIMAR }));
         }
 
         view.on('click', async function (evt) {
@@ -841,6 +859,9 @@
 
             sorguKatman.removeAll();
             popupAc(evt.mapPoint, 'Parsel Bilgisi', popYukleniyor('TKGM sorgulanıyor…'));
+
+            // İmar isteği TKGM'yi beklemesin; ikisi aynı anda yola çıkar.
+            const eimarSozu = eimarGetir(lat, lng);
 
             let parsel;
             try {
@@ -858,7 +879,7 @@
             kap.innerHTML = tkgmPopupGovde(parsel.properties, popYukleniyor('e-İmar sorgulanıyor…'));
             popupAc(evt.mapPoint, 'Parsel Bilgisi', kap);
 
-            await eimarYukle(kap, lat, lng);
+            await eimarYaz(kap, eimarSozu);
         });
 
         /* =========================================================
@@ -954,12 +975,15 @@
                 sorguKatman.removeAll();
                 sorguKatman.add(new Graphic({ geometry: geom, symbol: SEM_TKGM }));
 
-                const e = geometriExtent(geom);
-                if (e) await view.goTo(e.expand(1.6)).catch(function () {});
-
-                // Bilgi sorgu ile aynı: görünüm noktasından WGS84 lat/lng → e-İmar identify
+                // Bilgi sorgu ile aynı: görünüm noktasından WGS84 lat/lng → e-İmar identify.
+                // Nokta goTo'dan bağımsız hesaplanır, böylece imar isteği kamera
+                // animasyonunu beklemeden yola çıkabilir.
                 const nokta = parselNoktasi(geom);
                 const ll = cografiLatLng(nokta);
+                const eimarSozu = ll ? eimarGetir(ll.lat, ll.lng) : null;
+
+                const e = geometriExtent(geom);
+                if (e) await view.goTo(e.expand(1.6)).catch(function () {});
 
                 const kap = document.createElement('div');
                 kap.className = 'hrm-pop';
@@ -968,8 +992,8 @@
 
                 apMesajVer('Parsel bulundu ve haritaya işlendi.', 'ok');
 
-                if (ll) {
-                    await eimarYukle(kap, ll.lat, ll.lng);
+                if (eimarSozu) {
+                    await eimarYaz(kap, eimarSozu);
                 } else {
                     const kutu = kap.querySelector('#hrm-eimar-kutu');
                     if (kutu) kutu.innerHTML = '<div class="hrm-pop-dipnot">e-İmar: parsel merkezi hesaplanamadı</div>';
