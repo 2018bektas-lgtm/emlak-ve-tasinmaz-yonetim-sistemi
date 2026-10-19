@@ -25,7 +25,8 @@
         'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
             'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0, 'zoom' => 15],
         'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
-            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
+            // Hazır kareleri 96 DPI; tek resim (export) ekran ölçeğinde çizildiği için ada/parsel numaraları net
+            'tip' => 'export', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
         'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
             'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0, 'zoom' => 15],
         'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
@@ -246,25 +247,51 @@
             return L.tileLayer(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
         }
 
-        // Dinamik servis: her kare için bbox hesaplanıp /export çağrılır
-        const katman = L.tileLayer('', ayar);
-        katman.getTileUrl = function (c) {
-            const nwP = c.multiplyBy(256), seP = nwP.add(L.point(256, 256));
-            const nw = L.CRS.EPSG3857.project(this._map.unproject(nwP, c.z));
-            const se = L.CRS.EPSG3857.project(this._map.unproject(seP, c.z));
-            return url + '/export?' + new URLSearchParams({
-                bbox: [nw.x, se.y, se.x, nw.y].join(','),
+        return abbDinamik(url, kart.dataset.katman, opak, ayar.minZoom);
+    }
+
+    // Dinamik servis (/export): taşınmaz haritasındaki ArcGIS MapImageLayer gibi görünüm
+    // başına tek resim, ekranın piksel yoğunluğunda (size × oran, dpi 96 × oran) istenir.
+    // Kare kare (256 px, 96 dpi) istemek yüksek DPI ekranlarda yazıları bulanıklaştırıyor,
+    // görünüm başına 35+ istek de baskentcbs'nin sınırına (429) takılıyordu.
+    function abbDinamik(url, katmanNo, opak, minZoom) {
+        const grup = L.layerGroup();
+        let harita = null, resim = null, istekNo = 0, zamanlayici = null;
+        function guncelle() {
+            if (!harita) return;
+            if (harita.getZoom() < minZoom) {
+                if (resim) { grup.removeLayer(resim); resim = null; }
+                return;
+            }
+            const sinir = harita.getBounds(), boyut = harita.getSize();
+            const oran = Math.min(window.devicePixelRatio || 1, 2);
+            const gb = L.CRS.EPSG3857.project(sinir.getSouthWest()), kd = L.CRS.EPSG3857.project(sinir.getNorthEast());
+            const no = ++istekNo;
+            const img = new Image();
+            img.onload = () => {
+                if (no !== istekNo || !harita) return;
+                const yeni = L.imageOverlay(img, sinir, { opacity: grup.opak, interactive: false }).addTo(grup);
+                if (resim) grup.removeLayer(resim);
+                resim = yeni;
+            };
+            img.src = url + '/export?' + new URLSearchParams({
+                bbox: [gb.x, gb.y, kd.x, kd.y].map(v => v.toFixed(2)).join(','),
                 bboxSR: '3857',
                 imageSR: '3857',
-                size: '256,256',
-                dpi: '96',
+                size: Math.round(boyut.x * oran) + ',' + Math.round(boyut.y * oran),
+                dpi: String(Math.round(96 * oran)),
                 format: 'png32',
                 transparent: 'true',
-                layers: 'show:' + kart.dataset.katman,
+                layers: 'show:' + katmanNo,
                 f: 'image',
             });
-        };
-        return katman;
+        }
+        const zamanla = () => { clearTimeout(zamanlayici); zamanlayici = setTimeout(guncelle, 150); };
+        grup.opak = opak;
+        grup.setOpacity = o => { grup.opak = o; if (resim) resim.setOpacity(o); return grup; };
+        grup.on('add', e => { harita = e.target._map; harita.on('moveend', zamanla); guncelle(); });
+        grup.on('remove', () => { if (harita) harita.off('moveend', zamanla); harita = null; istekNo++; resim = null; });
+        return grup;
     }
     document.querySelectorAll('.dgh-ov').forEach(kart => {
         const kutu = kart.querySelector('input[type=checkbox]');

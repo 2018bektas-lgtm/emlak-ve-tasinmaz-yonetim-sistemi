@@ -72,9 +72,8 @@
         /* =========================================================
          * 2) VERİ KATMANLARI
          * ========================================================= */
-        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3) ve aktif kadastro
-        // parselleri (ortak/ParselAktifCached). Önbellekli servisler, kareler doğrudan
-        // baskentcbs'den: /tile/{z}/{y}/{x}, 256 px, EPSG:3857.
+        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3). Önbellekli servis,
+        // kareler doğrudan baskentcbs'den: /tile/{z}/{y}/{x}, 256 px, EPSG:3857.
         // Servis 24 seviye tanımlıyor ama karesi yalnızca 19'a kadar var (20+ → 404);
         // seviyeler 0–19 verilir, daha yakın zoomda harita 19'un karesini büyütür
         // (yoksa katman 19'dan sonra kayboluyordu).
@@ -90,9 +89,12 @@
             visible: false,
         });
 
-        const parselasyonKatman = new WebTileLayer({
-            urlTemplate: BASKENTCBS + '/ortak/ParselAktifCached/MapServer/tile/{level}/{row}/{col}',
-            tileInfo: ABB_KARE_SEVIYE,
+        // Parselasyon hazır kareleri 96 DPI; tek resim (export) ekranın piksel
+        // yoğunluğunda çizildiği için ada/parsel numaraları yüksek DPI ekranda net.
+        const parselasyonKatman = new MapImageLayer({
+            title: 'ABB · Parselasyon',
+            url: BASKENTCBS + '/ortak/ParselAktifCached/MapServer',
+            sublayers: [{ id: 0, visible: true }],
             minScale: 9100, // zoom 16+
             opacity: 0.80,
             visible: false,
