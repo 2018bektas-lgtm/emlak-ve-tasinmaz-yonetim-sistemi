@@ -586,5 +586,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=34"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=39"></script>
 @endpush

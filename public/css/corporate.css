@@ -5322,6 +5322,20 @@ input[type="password"] {
     color: #6f7889;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
+.hrm-pop-not-baslik {
+    margin-top: 8px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #9aa3b5;
+}
+.hrm-pop-notlar p {
+    margin: 4px 0 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: #dfe3ea;
+}
 .hrm-pop-bos {
     margin: 0;
     padding: 10px 0;

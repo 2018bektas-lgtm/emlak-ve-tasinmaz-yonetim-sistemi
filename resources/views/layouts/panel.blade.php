@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=99">
+    <link rel="stylesheet" href="{{ asset('css/corporate.css') }}?v=100">
     <link rel="stylesheet" href="{{ asset('css/panel-glass.css') }}?v=2">
     <script src="{{ asset('js/ozel-select.js') }}?v=3" defer></script>
     @stack('head')

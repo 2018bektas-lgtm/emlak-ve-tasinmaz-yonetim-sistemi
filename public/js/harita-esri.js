@@ -17,8 +17,9 @@
         'esri/Basemap',
         'esri/views/MapView',
         'esri/layers/WebTileLayer',
+        'esri/layers/BaseTileLayer',
+        'esri/layers/BaseDynamicLayer',
         'esri/layers/support/TileInfo',
-        'esri/layers/MapImageLayer',
         'esri/layers/GraphicsLayer',
         'esri/Graphic',
         'esri/geometry/Polygon',
@@ -27,7 +28,7 @@
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
         'esri/core/reactiveUtils',
-    ], function (EsriMap, Basemap, MapView, WebTileLayer, TileInfo, MapImageLayer, GraphicsLayer,
+    ], function (EsriMap, Basemap, MapView, WebTileLayer, BaseTileLayer, BaseDynamicLayer, TileInfo, GraphicsLayer,
                  Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils, reactiveUtils) {
 
         /* =========================================================
@@ -81,23 +82,120 @@
         // daha uzakta istek atılmaz. İmar 15+, parselasyon 16+, yapı 17+, numarataj 19+.
         const ABB_KARE_SEVIYE = TileInfo.create({ size: 256, numLODs: 20, spatialReference: { wkid: 3857 } });
 
-        const imarKatman = new WebTileLayer({
-            urlTemplate: BASKENTCBS + '/plan/uip_esri3/MapServer/tile/{level}/{row}/{col}',
-            tileInfo: ABB_KARE_SEVIYE,
-            minScale: 18100, // zoom 15+
-            opacity: 0.75,
-            visible: false,
+        // baskentcbs aynı anda gelen çok isteği 429 ile kesiyor. 429 cevabında
+        // CORS başlığı olmadığı için tarayıcı bunu "CORS hatası" diye gösteriyor.
+        // WebTileLayer başarısız kareyi her karede yeniden istediğinden sınır
+        // bir kez dolunca istek hiç durmuyordu. Burada en fazla 3 istek aynı
+        // anda çıkar, başarısız kare bir kez bekleyip yeniden dener, olmazsa
+        // boş döner (SDK'nın sonsuz yeniden denemesi devreye girmez).
+        const ABB_AYNI_ANDA = 3;
+        const kareOnbellek = new Map();
+        const kuyruk = [];
+        let kuyrukAktif = 0;
+
+        function kuyrukBosalt() {
+            while (kuyrukAktif < ABB_AYNI_ANDA && kuyruk.length) {
+                const is = kuyruk.shift();
+                if (is.sinyal && is.sinyal.aborted) {
+                    is.reject(new DOMException('İptal', 'AbortError'));
+                    continue;
+                }
+                kuyrukAktif++;
+                is.calistir().then(is.resolve, is.reject).then(function () {
+                    kuyrukAktif--;
+                    setTimeout(kuyrukBosalt, 80);
+                });
+            }
+        }
+
+        function sirayaAl(calistir, sinyal) {
+            return new Promise(function (resolve, reject) {
+                kuyruk.push({ calistir: calistir, sinyal: sinyal, resolve: resolve, reject: reject });
+                kuyrukBosalt();
+            });
+        }
+
+        function imgYukle(adres, sinyal) {
+            return new Promise(function (resolve, reject) {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                const vazgec = function () { img.src = ''; reject(new DOMException('İptal', 'AbortError')); };
+                if (sinyal) {
+                    if (sinyal.aborted) { vazgec(); return; }
+                    sinyal.addEventListener('abort', vazgec, { once: true });
+                }
+                img.onload = function () {
+                    if (sinyal) sinyal.removeEventListener('abort', vazgec);
+                    resolve(img);
+                };
+                img.onerror = function () {
+                    if (sinyal) sinyal.removeEventListener('abort', vazgec);
+                    reject(new Error('kare'));
+                };
+                img.src = adres;
+            });
+        }
+
+        function kareYukle(adres, sinyal) {
+            const hazir = kareOnbellek.get(adres);
+            if (hazir) return hazir;
+            const istek = sirayaAl(function () { return imgYukle(adres, sinyal); }, sinyal).catch(function (hata) {
+                if (hata && hata.name === 'AbortError') throw hata;
+                return new Promise(function (resolve) { setTimeout(resolve, 1200); })
+                    .then(function () { return sirayaAl(function () { return imgYukle(adres, sinyal); }, sinyal); });
+            });
+            const saklanan = istek.then(function (img) { return img; });
+            kareOnbellek.set(adres, saklanan);
+            saklanan.catch(function () {
+                if (kareOnbellek.get(adres) === saklanan) kareOnbellek.delete(adres);
+            });
+            return saklanan;
+        }
+
+        function bosKare() {
+            const tuval = document.createElement('canvas');
+            tuval.width = 256;
+            tuval.height = 256;
+            return tuval;
+        }
+
+        const AbbKareKatman = BaseTileLayer.createSubclass({
+            properties: { servis: null },
+            getTileUrl: function (level, row, col) {
+                return this.servis + '/tile/' + level + '/' + row + '/' + col;
+            },
+            fetchTile: function (level, row, col, options) {
+                const sinyal = options && options.signal;
+                return kareYukle(this.getTileUrl(level, row, col), sinyal).catch(function (hata) {
+                    if (hata && hata.name === 'AbortError') throw hata;
+                    return bosKare();
+                });
+            },
         });
 
-        // Parselasyon hazır kareleri 96 DPI; tek resim (export) ekranın piksel
-        // yoğunluğunda çizildiği için ada/parsel numaraları yüksek DPI ekranda net.
-        const parselasyonKatman = new MapImageLayer({
+        function onbellekKatmani(servis, secenek) {
+            return new AbbKareKatman({
+                servis: servis,
+                tileInfo: ABB_KARE_SEVIYE,
+                minScale: secenek.minScale,
+                opacity: secenek.opacity,
+                visible: false,
+                title: secenek.title,
+            });
+        }
+
+        const imarKatman = onbellekKatmani(BASKENTCBS + '/plan/uip_esri3/MapServer', {
+            title: 'ABB · İmar Planı',
+            minScale: 18100, // zoom 15+
+            opacity: 0.75,
+        });
+
+        // ParselAktifCached hazır kareleri 11–19. seviyede duruyor; daha yakında
+        // son kare büyütülür. Yazılar kareden geldiği için net, istek de önbellekten.
+        const parselasyonKatman = onbellekKatmani(BASKENTCBS + '/ortak/ParselAktifCached/MapServer', {
             title: 'ABB · Parselasyon',
-            url: BASKENTCBS + '/ortak/ParselAktifCached/MapServer',
-            sublayers: [{ id: 0, visible: true }],
             minScale: 9100, // zoom 16+
             opacity: 0.80,
-            visible: false,
         });
 
         /* ---------------------------------------------------------
@@ -118,47 +216,71 @@
 
         // Belediye Taşınmazları — hisse_duru (TAM / HİSSELİ / HATALI)
         // ayrımı sunucu sembolojisinde hazır geliyor.
-        const belediyeKatman = new MapImageLayer({
-            title: 'ABB · Belediye Taşınmazları',
-            url: BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer',
-            sublayers: [{ id: 0, visible: true }],
-            opacity: 0.80,
-            visible: false,
+        // Önbelleği olmayan servis. MapImageLayer her karede fetch() kullanıyor;
+        // 429 olunca CORS'suz cevap yüzünden katman sonsuza dek yeniden deniyordu.
+        // İstek kare kuyruğuna girer. Kaydırma sırasında son resim yerinde kalır,
+        // yeni resim ancak görüntü durunca istenir.
+        const gorunum = { view: null };
+
+        const AbbExportKatman = BaseDynamicLayer.createSubclass({
+            properties: { servis: null, katmanNo: '0' },
+            fetchImage: function (extent, width, height) {
+                const gorunen = gorunum.view;
+                if (gorunen && !gorunen.stationary && this._son) {
+                    const katman = this;
+                    if (!katman._yenileme) {
+                        katman._yenileme = gorunen.watch('stationary', function (durdu) {
+                            if (!durdu) return;
+                            katman._yenileme.remove();
+                            katman._yenileme = null;
+                            if (katman.visible) katman.refresh();
+                        });
+                    }
+                    return Promise.resolve(this._son);
+                }
+                let w = Math.max(1, Math.round(width));
+                let h = Math.max(1, Math.round(height));
+                const sigdir = Math.min(1, 4096 / Math.max(w, h));
+                w = Math.max(1, Math.round(w * sigdir));
+                h = Math.max(1, Math.round(h * sigdir));
+                const adres = this.servis + '/export?' + new URLSearchParams({
+                    bbox: [extent.xmin, extent.ymin, extent.xmax, extent.ymax].map(function (v) { return v.toFixed(2); }).join(','),
+                    bboxSR: '3857',
+                    imageSR: '3857',
+                    size: w + ',' + h,
+                    dpi: String(Math.max(96, Math.round(96 * sigdir))),
+                    format: 'png32',
+                    transparent: 'true',
+                    layers: 'show:' + this.katmanNo,
+                    f: 'image',
+                }).toString();
+                const katman = this;
+                return kareYukle(adres, null).then(function (img) {
+                    katman._son = img;
+                    return img;
+                }).catch(function (hata) {
+                    if (hata && hata.name === 'AbortError') throw hata;
+                    return katman._son || bosKare();
+                });
+            },
         });
 
-        const abbIlceKatman = new MapImageLayer({
-            title: 'ABB · İlçe Sınırı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 4, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
+        function abbDinamik(baslik, url, katmanId, secenek) {
+            return new AbbExportKatman({
+                title: baslik,
+                servis: url,
+                katmanNo: String(katmanId),
+                opacity: secenek.opacity,
+                minScale: secenek.minScale || 0,
+                visible: false,
+            });
+        }
 
-        const abbMahalleKatman = new MapImageLayer({
-            title: 'ABB · Mahalle Sınırı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 3, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
-
-        const abbYapiKatman = new MapImageLayer({
-            title: 'ABB · Yapı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 2, visible: true }],
-            opacity: 0.85,
-            minScale: 4550, // zoom 17+
-            visible: false,
-        });
-
-        const abbNumaratajKatman = new MapImageLayer({
-            title: 'ABB · Numarataj',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 0, visible: true }],
-            opacity: 0.90,
-            minScale: 1500, // zoom 19+
-            visible: false,
-        });
+        const belediyeKatman = abbDinamik('ABB · Belediye Taşınmazları', BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer', 0, { opacity: 0.80 });
+        const abbIlceKatman = abbDinamik('ABB · İlçe Sınırı', ADRES_SERVIS, 4, { opacity: 0.80 });
+        const abbMahalleKatman = abbDinamik('ABB · Mahalle Sınırı', ADRES_SERVIS, 3, { opacity: 0.80 });
+        const abbYapiKatman = abbDinamik('ABB · Yapı', ADRES_SERVIS, 2, { opacity: 0.85, minScale: 4550 });
+        const abbNumaratajKatman = abbDinamik('ABB · Numarataj', ADRES_SERVIS, 0, { opacity: 0.90, minScale: 1500 });
 
         const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
@@ -183,7 +305,7 @@
         const ADRES_MERKEZ = (ADRES.get('merkez') || '').split(',').map(Number);
         const ADRES_KONUM = ADRES_MERKEZ.length === 2 && ADRES_MERKEZ.every(Number.isFinite);
 
-        const view = new MapView({
+        const view = gorunum.view = new MapView({
             container: 'hrm-map',
             map: harita,
             center: ADRES_KONUM ? [ADRES_MERKEZ[1], ADRES_MERKEZ[0]] : [32.85, 39.92],
@@ -860,6 +982,15 @@
                     }).join('') + '</div>'
                 : '';
 
+            const yazilar = Array.isArray(d.plan_yazilari)
+                ? d.plan_yazilari.filter(function (t) { return t !== null && String(t).trim() !== ''; })
+                : [];
+            const yaziBlok = yazilar.length
+                ? '<div class="hrm-pop-not-baslik">Plan Yazıları</div><div class="hrm-pop-notlar">' +
+                    yazilar.map(function (t) { return '<p>' + kacis(t) + '</p>'; }).join('') +
+                  '</div>'
+                : '';
+
             return '<div class="hrm-pop-bolum">' +
                 popBolumBaslik('e-İmar · Plan Adası', 'is-eimar') +
                 olcuBlok +
@@ -872,6 +1003,7 @@
                     ['Daire Sayısı', d.daire_sayisi],
                     ['Plan Adası', d.plan_adasi],
                 ]) +
+                yaziBlok +
             '</div>';
         }
 

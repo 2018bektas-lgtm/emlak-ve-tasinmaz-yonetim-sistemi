@@ -17,16 +17,15 @@
     // Önceden bu katmanlar iç ağdaki abbcbs proxy'si ve gisserver WMS'i
     // üzerinden geliyordu; ikisi de yalnızca belediye ağından erişilebiliyor.
     // baskentcbs dışarıdan da açık ve aynı verileri yayınlıyor.
-    //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x}
-    //   tip = export → dinamik servis, /export?bbox=...&layers=show:<katman>
+    //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x} (kareler 19. seviyeye kadar)
+    //   tip = export → önbelleği olmayan servis, /export?bbox=...&layers=show:<katman>
     //   zoom = katmanın görünmeye başladığı yakınlaştırma (daha uzakta istek atılmaz)
     $BCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
     $abbKatmanlar = [
         'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
             'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0, 'zoom' => 15],
         'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
-            // Hazır kareleri 96 DPI; tek resim (export) ekran ölçeğinde çizildiği için ada/parsel numaraları net
-            'tip' => 'export', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
+            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
         'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
             'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0, 'zoom' => 15],
         'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
@@ -236,24 +235,56 @@
     }));
 
     // ---- ABB katmanları (baskentcbs — doğrudan, proxy yok) ----
+    // Sunucu aynı anda gelen isteği 429 ile kesiyor. Kareler üçer üçer gider.
     const ovKatman = {};
+    const abbKuyruk = [];
+    let abbAktif = 0;
+    function abbSirayaAl(calistir) {
+        return new Promise(function (resolve, reject) {
+            abbKuyruk.push({ calistir: calistir, resolve: resolve, reject: reject });
+            abbBosalt();
+        });
+    }
+    function abbBosalt() {
+        while (abbAktif < 3 && abbKuyruk.length) {
+            const is = abbKuyruk.shift();
+            abbAktif++;
+            Promise.resolve().then(is.calistir).then(is.resolve, is.reject).then(function () {
+                abbAktif--;
+                setTimeout(abbBosalt, 80);
+            });
+        }
+    }
+    const AbbKare = L.TileLayer.extend({
+        createTile: function (coords, done) {
+            const img = document.createElement('img');
+            const adres = this.getTileUrl(coords);
+            abbSirayaAl(function () {
+                return new Promise(function (resolve) {
+                    img.onload = img.onerror = function () { resolve(); };
+                    img.src = adres;
+                });
+            }).then(function () { done(null, img); });
+            return img;
+        },
+    });
     function ovOlustur(kart) {
         const opak = kart.querySelector('.dgh-opak').value / 100;
         const url = kart.dataset.url;
         const ayar = { opacity: opak, maxZoom: 22, minZoom: Number(kart.dataset.zoom) || 15, tileSize: 256 };
 
-        // Önbellekli servis: ArcGIS tile şeması /tile/{z}/{y}/{x}
+        // Önbellekli servis. Hazır kare /tile/{z}/{y}/{x}; 19'dan yakında son kare büyür.
+        // İstekler sıraya girer, aksi halde baskentcbs 429 döner.
         if (kart.dataset.tip === 'tile') {
-            return L.tileLayer(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
+            return new AbbKare(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
         }
 
         return abbDinamik(url, kart.dataset.katman, opak, ayar.minZoom);
     }
 
-    // Dinamik servis (/export): taşınmaz haritasındaki ArcGIS MapImageLayer gibi görünüm
-    // başına tek resim, ekranın piksel yoğunluğunda (size × oran, dpi 96 × oran) istenir.
-    // Kare kare (256 px, 96 dpi) istemek yüksek DPI ekranlarda yazıları bulanıklaştırıyor,
-    // görünüm başına 35+ istek de baskentcbs'nin sınırına (429) takılıyordu.
+    // Önbelleği olmayan servis. Görünüm başına tek resim; piksel sayısı ekran
+    // yoğunluğu kadar, servis sınırı 4096. Sınırı aşan istek orantılı küçülür,
+    // yoksa sunucu keser ve resim ekrana gerilip bulanıklaşır.
     function abbDinamik(url, katmanNo, opak, minZoom) {
         const grup = L.layerGroup();
         let harita = null, resim = null, istekNo = 0, zamanlayici = null;
@@ -265,25 +296,34 @@
             }
             const sinir = harita.getBounds(), boyut = harita.getSize();
             const oran = Math.min(window.devicePixelRatio || 1, 2);
+            let w = Math.round(boyut.x * oran), h = Math.round(boyut.y * oran);
+            const sigdir = Math.min(1, 4096 / Math.max(w, h));
+            w = Math.max(1, Math.round(w * sigdir));
+            h = Math.max(1, Math.round(h * sigdir));
             const gb = L.CRS.EPSG3857.project(sinir.getSouthWest()), kd = L.CRS.EPSG3857.project(sinir.getNorthEast());
             const no = ++istekNo;
             const img = new Image();
-            img.onload = () => {
-                if (no !== istekNo || !harita) return;
-                const yeni = L.imageOverlay(img, sinir, { opacity: grup.opak, interactive: false }).addTo(grup);
-                if (resim) grup.removeLayer(resim);
-                resim = yeni;
-            };
-            img.src = url + '/export?' + new URLSearchParams({
+            const adres = url + '/export?' + new URLSearchParams({
                 bbox: [gb.x, gb.y, kd.x, kd.y].map(v => v.toFixed(2)).join(','),
                 bboxSR: '3857',
                 imageSR: '3857',
-                size: Math.round(boyut.x * oran) + ',' + Math.round(boyut.y * oran),
-                dpi: String(Math.round(96 * oran)),
+                size: w + ',' + h,
+                dpi: String(Math.max(96, Math.round(96 * oran * sigdir))),
                 format: 'png32',
                 transparent: 'true',
                 layers: 'show:' + katmanNo,
                 f: 'image',
+            });
+            abbSirayaAl(function () {
+                return new Promise(function (resolve) {
+                    img.onload = img.onerror = function () { resolve(); };
+                    img.src = adres;
+                });
+            }).then(function () {
+                if (no !== istekNo || !harita || !img.naturalWidth) return;
+                const yeni = L.imageOverlay(img, sinir, { opacity: grup.opak, interactive: false }).addTo(grup);
+                if (resim) grup.removeLayer(resim);
+                resim = yeni;
             });
         }
         const zamanla = () => { clearTimeout(zamanlayici); zamanlayici = setTimeout(guncelle, 150); };
