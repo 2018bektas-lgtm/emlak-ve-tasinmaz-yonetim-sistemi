@@ -19,18 +19,19 @@
     // baskentcbs dışarıdan da açık ve aynı verileri yayınlıyor.
     //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x}
     //   tip = export → dinamik servis, /export?bbox=...&layers=show:<katman>
+    //   zoom = katmanın görünmeye başladığı yakınlaştırma (daha uzakta istek atılmaz)
     $BCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
     $abbKatmanlar = [
         'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
-            'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0],
+            'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0, 'zoom' => 15],
         'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
-            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0],
+            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
         'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
-            'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0],
+            'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0, 'zoom' => 15],
         'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 0],
+            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 0, 'zoom' => 19],
         'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2],
+            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2, 'zoom' => 17],
     ];
 @endphp
 
@@ -120,14 +121,14 @@
             <div class="ech-katman-grup">
                 <div class="ech-katman-baslik">Ankara BB · İmar ve Kadastro</div>
                 @foreach ($abbKatmanlar as $kod => $k)
-                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ $k['url'] }}" data-katman="{{ $k['katman'] }}">
+                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ $k['url'] }}" data-katman="{{ $k['katman'] }}" data-zoom="{{ $k['zoom'] }}">
                         <span class="ech-katman-ikon" style="background:{{ $k['renk'] }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></span>
-                        <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $k['ad'] }}</span><span class="ech-katman-alt">{{ $k['alt'] }}</span>
+                        <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $k['ad'] }}</span><span class="ech-katman-alt">{{ $k['alt'] }} · {{ $k['zoom'] }}+ zoom</span>
                             <input type="range" min="10" max="100" value="70" class="dgh-opak" aria-label="{{ $k['ad'] }} saydamlığı" hidden></div>
                         <label class="ech-switch"><input type="checkbox"><span class="ech-switch-slider"></span></label>
                     </div>
                 @endforeach
-                <p class="ech-not dgh-not">ABB katmanları 15. yakınlaştırma düzeyinden itibaren görünür.</p>
+                <p class="ech-not dgh-not">ABB katmanları yalnızca kartta yazan yakınlaştırma düzeyinden itibaren görünür; daha uzakta istek atılmaz.</p>
             </div>
 
             <div class="ech-lejant" id="dgh-lejant-tur">
@@ -238,7 +239,7 @@
     function ovOlustur(kart) {
         const opak = kart.querySelector('.dgh-opak').value / 100;
         const url = kart.dataset.url;
-        const ayar = { opacity: opak, maxZoom: 22, minZoom: 15, tileSize: 256 };
+        const ayar = { opacity: opak, maxZoom: 22, minZoom: Number(kart.dataset.zoom) || 15, tileSize: 256 };
 
         // Önbellekli servis: ArcGIS tile şeması /tile/{z}/{y}/{x}
         if (kart.dataset.tip === 'tile') {
@@ -273,7 +274,8 @@
             aralik.hidden = !kutu.checked;
             if (kutu.checked) {
                 ovKatman[kod] = ovOlustur(kart).addTo(map);
-                if (map.getZoom() < 15) map.setZoom(15);
+                const enAz = Number(kart.dataset.zoom) || 15;
+                if (map.getZoom() < enAz) bildir(`${kart.querySelector('.ech-katman-ad').textContent} ${enAz}+ zoomda görünür, yakınlaştırın.`);
             } else if (ovKatman[kod]) {
                 map.removeLayer(ovKatman[kod]);
                 delete ovKatman[kod];

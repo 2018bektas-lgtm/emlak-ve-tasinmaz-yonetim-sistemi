@@ -260,7 +260,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">İmar Planı (UIP)</span>
-                    <span class="hrm-katman-alt">Ankara BB · baskentcbs uip_esri3</span>
+                    <span class="hrm-katman-alt">Ankara BB · baskentcbs uip_esri3 · 15+ zoom</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-imar">
@@ -282,7 +282,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Parselasyon</span>
-                    <span class="hrm-katman-alt">Ankara BB · ParselAktifCached</span>
+                    <span class="hrm-katman-alt">Ankara BB · ParselAktifCached · 16+ zoom</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-parselasyon">
@@ -399,7 +399,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Yapı</span>
-                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Yapı</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Yapı · 17+ zoom</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-yapi">
@@ -421,7 +421,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Numarataj</span>
-                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Numarataj</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Numarataj · 19+ zoom</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-numarataj">
@@ -586,5 +586,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=32"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=33"></script>
 @endpush

@@ -78,21 +78,22 @@
         // Servis 24 seviye tanımlıyor ama karesi yalnızca 19'a kadar var (20+ → 404);
         // seviyeler 0–19 verilir, daha yakın zoomda harita 19'un karesini büyütür
         // (yoksa katman 19'dan sonra kayboluyordu).
+        // minScale: katmanın görünmeye başladığı yakınlaştırma (ölçek = 591.657.527 / 2^zoom);
+        // daha uzakta istek atılmaz. İmar 15+, parselasyon 16+, yapı 17+, numarataj 19+.
         const ABB_KARE_SEVIYE = TileInfo.create({ size: 256, numLODs: 20, spatialReference: { wkid: 3857 } });
 
         const imarKatman = new WebTileLayer({
             urlTemplate: BASKENTCBS + '/plan/uip_esri3/MapServer/tile/{level}/{row}/{col}',
             tileInfo: ABB_KARE_SEVIYE,
-            minScale: 2311162,
+            minScale: 18100, // zoom 15+
             opacity: 0.75,
             visible: false,
         });
 
-        // Parselasyon 1:288.895'ten küçük ölçekte çizilmez.
         const parselasyonKatman = new WebTileLayer({
             urlTemplate: BASKENTCBS + '/ortak/ParselAktifCached/MapServer/tile/{level}/{row}/{col}',
             tileInfo: ABB_KARE_SEVIYE,
-            minScale: 288895,
+            minScale: 9100, // zoom 16+
             opacity: 0.80,
             visible: false,
         });
@@ -144,6 +145,7 @@
             url: ADRES_SERVIS,
             sublayers: [{ id: 2, visible: true }],
             opacity: 0.85,
+            minScale: 4550, // zoom 17+
             visible: false,
         });
 
@@ -152,6 +154,7 @@
             url: ADRES_SERVIS,
             sublayers: [{ id: 0, visible: true }],
             opacity: 0.90,
+            minScale: 1500, // zoom 19+
             visible: false,
         });
 
