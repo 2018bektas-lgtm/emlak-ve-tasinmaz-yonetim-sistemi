@@ -15,21 +15,26 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('tasinmaz_koordinatlar', function (Blueprint $table) {
-            $table->decimal('min_lat', 10, 7)->nullable()->after('lng');
-            $table->decimal('max_lat', 10, 7)->nullable()->after('min_lat');
-            $table->decimal('min_lng', 10, 7)->nullable()->after('max_lat');
-            $table->decimal('max_lng', 10, 7)->nullable()->after('min_lng');
-            $table->decimal('merkez_lat', 10, 7)->nullable()->after('max_lng');
-            $table->decimal('merkez_lng', 10, 7)->nullable()->after('merkez_lat');
-            $table->index(['min_lat', 'max_lat', 'min_lng', 'max_lng'], 'tasinmaz_koordinatlar_sinir_index');
-            $table->index(['merkez_lat', 'merkez_lng'], 'tasinmaz_koordinatlar_merkez_index');
-        });
+        // Tekrar çalıştırılabilir: sütun/index zaten varsa atlanır
+        if (! Schema::hasColumn('tasinmaz_koordinatlar', 'min_lat')) {
+            Schema::table('tasinmaz_koordinatlar', function (Blueprint $table) {
+                $table->decimal('min_lat', 10, 7)->nullable()->after('lng');
+                $table->decimal('max_lat', 10, 7)->nullable()->after('min_lat');
+                $table->decimal('min_lng', 10, 7)->nullable()->after('max_lat');
+                $table->decimal('max_lng', 10, 7)->nullable()->after('min_lng');
+                $table->decimal('merkez_lat', 10, 7)->nullable()->after('max_lng');
+                $table->decimal('merkez_lng', 10, 7)->nullable()->after('merkez_lat');
+                $table->index(['min_lat', 'max_lat', 'min_lng', 'max_lng'], 'tasinmaz_koordinatlar_sinir_index');
+                $table->index(['merkez_lat', 'merkez_lng'], 'tasinmaz_koordinatlar_merkez_index');
+            });
+        }
 
-        Schema::table('tasinmaz_hisseler', function (Blueprint $table) {
-            // Mülkiyet (tam/hisseli) süzgeci tablonun kendisine dokunmadan yalnızca index'ten okunur
-            $table->index(['tasinmaz_id', 'hisse_durum', 'hisse_pay', 'hisse_payda'], 'tasinmaz_hisseler_mulkiyet_index');
-        });
+        if (! Schema::hasIndex('tasinmaz_hisseler', 'tasinmaz_hisseler_mulkiyet_index')) {
+            Schema::table('tasinmaz_hisseler', function (Blueprint $table) {
+                // Mülkiyet (tam/hisseli) süzgeci tablonun kendisine dokunmadan yalnızca index'ten okunur
+                $table->index(['tasinmaz_id', 'hisse_durum', 'hisse_pay', 'hisse_payda'], 'tasinmaz_hisseler_mulkiyet_index');
+            });
+        }
 
         // Mevcut kayıtların sınır kutusunu doldur
         TasinmazKoordinat::query()->orderBy('id')->chunkById(1000, function ($kayitlar) {
