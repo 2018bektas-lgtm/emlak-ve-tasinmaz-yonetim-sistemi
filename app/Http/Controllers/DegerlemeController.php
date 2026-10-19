@@ -9,6 +9,8 @@ use App\Models\Kullanici;
 use App\Models\Mahalle;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazDegerleme;
+use App\Models\TasinmazKoordinat;
+use App\Support\HaritaGorunum;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -235,15 +237,44 @@ class DegerlemeController extends Controller
             ->when($yil, fn ($x) => $x->whereBetween('rapor_tarihi', [$yil.'-01-01', $yil.'-12-31']))
             ->when($q !== '', fn ($x) => $x->where(fn ($y) => $y->where('rapor_no', 'like', "%{$q}%")->orWhere('bb_no', $q)));
 
-        $tasinmazlar = Tasinmaz::query()
+        $tasinmazId = (int) $request->query('tasinmaz_id');
+        $ilId = $request->query('il_id');
+        $ilceId = $request->query('ilce_id');
+        $mahalleId = $request->query('mahalle_id');
+        $tasSuz = fn ($s) => $s->when($tasinmazId, fn ($x) => $x->where('id', $tasinmazId))
+            ->when($ilId, fn ($x) => $x->where('il_id', $ilId))
+            ->when($ilceId, fn ($x) => $x->where('ilce_id', $ilceId))
+            ->when($mahalleId, fn ($x) => $x->where('mahalle_id', $mahalleId))
+            ->when($ada !== '', fn ($x) => $x->where('ada', $ada))
+            ->when($parsel !== '', fn ($x) => $x->where('parsel', $parsel));
+        $tasSuzVar = $tasinmazId || $ilId || $ilceId || $mahalleId || $ada !== '' || $parsel !== '';
+
+        // Süzgeçten geçen değerlemeler; taşınmaz süzgeci yalnızca gerekiyorsa eklenir
+        // (100 bin taşınmazı tek tek "değerlemesi var mı" diye taramamak için)
+        $degerlemeler = TasinmazDegerleme::query()->tap($degSuz)
+            ->when($tasSuzVar, fn ($d) => $d->whereIn('tasinmaz_id', Tasinmaz::query()->tap($tasSuz)->select('id')));
+        $idler = (clone $degerlemeler)->select('tasinmaz_id');
+
+        // Görünen alan (?bbox=&zoom=): kalabalık alanda kümeler; ?kapsam=1: sınır + m² değer aralığı
+        $koordinatlar = TasinmazKoordinat::query()->whereIn('tasinmaz_id', $idler);
+        if ($request->boolean('kapsam')) {
+            $birim = (clone $degerlemeler)->where('tip', 'arsa')->where('birim_fiyat', '>', 0)
+                ->selectRaw('MIN(birim_fiyat) AS mn, MAX(birim_fiyat) AS mx')->toBase()->first();
+
+            return response()->json(HaritaGorunum::kapsam($koordinatlar) + [
+                'birim_aralik' => $birim && $birim->mn !== null ? [(float) $birim->mn, (float) $birim->mx] : null,
+            ]);
+        }
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
+        $tasinmazlar = Tasinmaz::query()->whereIn('id', $idler)->tap($tasSuz)
             ->with(['ilce:id,ad', 'mahalle:id,ad', 'koordinat', 'degerlemeler' => $degSuz])
-            ->whereHas('degerlemeler', $degSuz)
-            ->whereHas('koordinat')
-            ->when($request->query('il_id'), fn ($s, $v) => $s->where('il_id', $v))
-            ->when($request->query('ilce_id'), fn ($s, $v) => $s->where('ilce_id', $v))
-            ->when($request->query('mahalle_id'), fn ($s, $v) => $s->where('mahalle_id', $v))
-            ->when($ada !== '', fn ($s) => $s->where('ada', $ada))
-            ->when($parsel !== '', fn ($s) => $s->where('parsel', $parsel))
+            ->when($bbox,
+                fn ($s) => $s->whereIn('id', TasinmazKoordinat::query()->alanda($bbox)->select('tasinmaz_id')),
+                fn ($s) => $s->whereHas('koordinat'))
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik', 'kayit_tipi']);
 
         $features = [];
@@ -280,7 +311,7 @@ class DegerlemeController extends Controller
             ];
         }
 
-        return response()->json(['type' => 'FeatureCollection', 'features' => $features]);
+        return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
     }
 
     /** Harita yan paneli: taşınmaz özeti + tüm değerlemeleri. */

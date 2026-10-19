@@ -15,6 +15,8 @@ use App\Models\MevcutKullanimSekli;
 use App\Models\MuhasebeKayit;
 use App\Models\Resim;
 use App\Models\Tasinmaz;
+use App\Models\TasinmazKoordinat;
+use App\Support\HaritaGorunum;
 use App\Support\TasinmazKolonlari;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -117,26 +119,7 @@ class TasinmazController extends Controller
                     }
                 }
             })
-            // Mülkiyet: aktif hisse sayısı 1 & pay==payda → TAM, aksi HİSSELİ
-            ->when($mulkiyet === 'TAM', function ($s) {
-                $s->whereHas('hisseler', function ($h) {
-                    $h->where('hisse_durum', 'aktif')
-                        ->whereColumn('hisse_pay', 'hisse_payda');
-                }, '=', 1)->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1);
-            })
-            ->when($mulkiyet === 'HISSELI', function ($s) {
-                $s->where(function ($w) {
-                    // Birden fazla aktif hisse
-                    $w->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '>', 1)
-                      // Ya da tek aktif ama pay != payda
-                        ->orWhere(function ($ww) {
-                            $ww->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1)
-                                ->whereDoesntHave('hisseler', function ($h) {
-                                    $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
-                                });
-                        });
-                });
-            })
+            ->mulkiyet($mulkiyet)
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ada', 'like', "%{$q}%")
@@ -154,8 +137,19 @@ class TasinmazController extends Controller
             })
             ->orderByDesc('id');
 
+        // Kayıt tipi dağılımı (diğer filtrelerden bağımsız); toplamı aynı zamanda tüm kayıt sayısı.
+        // Süzgeç yoksa sayfalama da bu toplamı kullanır, tablo üçüncü kez sayılmaz.
+        $tipSayilari = Tasinmaz::query()
+            ->selectRaw('kayit_tipi, COUNT(*) as adet')
+            ->groupBy('kayit_tipi')
+            ->pluck('adet', 'kayit_tipi')
+            ->map(fn ($v) => (int) $v)
+            ->all();
+        $toplamKayit = array_sum($tipSayilari);
+        $suzgecsiz = $sorgu->getQuery()->wheres === [];
+
         return view('panel.tasinmazlar.index', [
-            'tasinmazlar' => $sorgu->paginate(20)->withQueryString(),
+            'tasinmazlar' => $sorgu->paginate(20, ['*'], 'page', null, $suzgecsiz ? $toplamKayit : null)->withQueryString(),
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             // Cascade için: seçili il varsa ilçeler, seçili ilçe varsa mahalleler
             'ilceler' => $ilId
@@ -175,14 +169,8 @@ class TasinmazController extends Controller
                 'bina' => $binaVarMi,
                 'kayit_tipi' => $kayitTipi,
             ], array_map(fn ($v) => (string) $v, $bayrakFiltreleri), $this->modulFiltreDegerleri($request)),
-            'toplamKayit' => Tasinmaz::query()->count(),
-            // Kayıt tipi dağılımı (diğer filtrelerden bağımsız)
-            'tipSayilari' => Tasinmaz::query()
-                ->selectRaw('kayit_tipi, COUNT(*) as adet')
-                ->groupBy('kayit_tipi')
-                ->pluck('adet', 'kayit_tipi')
-                ->map(fn ($v) => (int) $v)
-                ->all(),
+            'toplamKayit' => $toplamKayit,
+            'tipSayilari' => $tipSayilari,
             'tumKolonlar' => TasinmazKolonlari::katalog(),
             'kolonGruplari' => TasinmazKolonlari::gruplar(),
             'gorunurKolonlar' => TasinmazKolonlari::kullaniciIcin(auth()->user()),
@@ -302,22 +290,7 @@ class TasinmazController extends Controller
                     }
                 }
             })
-            ->when($mulkiyet === 'TAM', function ($s) {
-                $s->whereHas('hisseler', function ($h) {
-                    $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
-                }, '=', 1)->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1);
-            })
-            ->when($mulkiyet === 'HISSELI', function ($s) {
-                $s->where(function ($w) {
-                    $w->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '>', 1)
-                        ->orWhere(function ($ww) {
-                            $ww->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'), '=', 1)
-                                ->whereDoesntHave('hisseler', function ($h) {
-                                    $h->where('hisse_durum', 'aktif')->whereColumn('hisse_pay', 'hisse_payda');
-                                });
-                        });
-                });
-            })
+            ->mulkiyet($mulkiyet)
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
                     $w->where('ada', 'like', "%{$q}%")
@@ -1169,6 +1142,17 @@ class TasinmazController extends Controller
                 ->all();
         }
 
+        // Görünen alan (?bbox=&zoom=): kalabalık alanda kümeler, ?kapsam=1: tüm kayıtların sınırı
+        $koordinatlar = TasinmazKoordinat::query()
+            ->when(is_array($idler) && ! empty($idler), fn ($q) => $q->whereIn('tasinmaz_id', $idler));
+        if ($request->boolean('kapsam')) {
+            return response()->json(HaritaGorunum::kapsam($koordinatlar));
+        }
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
         $kayitlar = Tasinmaz::query()
             ->with([
                 'il:id,ad',
@@ -1178,7 +1162,9 @@ class TasinmazController extends Controller
                 'imar:id,tasinmaz_id,imar_durumu_id',
                 'imar.imarDurumu:id,ad',
             ])
-            ->whereHas('koordinat')
+            ->when($bbox,
+                fn ($q) => $q->whereIn('id', TasinmazKoordinat::query()->alanda($bbox)->select('tasinmaz_id')),
+                fn ($q) => $q->whereHas('koordinat'))
             ->when(is_array($idler) && ! empty($idler), fn ($q) => $q->whereIn('id', $idler))
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik']);
 
@@ -1214,6 +1200,8 @@ class TasinmazController extends Controller
 
         return response()->json([
             'type' => 'FeatureCollection',
+            'kumeli' => false,
+            'toplam' => count($features),
             'features' => $features,
         ]);
     }

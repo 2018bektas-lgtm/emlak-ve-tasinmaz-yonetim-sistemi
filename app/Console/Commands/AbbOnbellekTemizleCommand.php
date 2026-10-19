@@ -2,29 +2,31 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\AbbProxyController;
 use Illuminate\Console\Command;
 
 /**
- * Ankara BB CBS proxy görüntü önbelleğini budar.
+ * Ankara BB CBS kare önbelleğini budar.
  *
- * AbbProxyController her (servis, katman, bbox, boyut) birleşimi için ayrı bir
- * PNG yazar. bbox serbest gezinmede sürekli değiştiğinden dosya sayısı zamanla
- * sınırsız büyür. Bu komut iki ölçüte göre budar:
+ * AbbProxyController her kareyi public/abb-onbellek/{katman}/{z}/{y}/{x}.png
+ * olarak yazar; gezildikçe dosya sayısı büyür. Web sunucusu kareyi dosyadan
+ * doğrudan verdiği için yaş kontrolü burada yapılır: silinen kare bir sonraki
+ * istekte ABB'den tazesi alınır. Bu komut iki ölçüte göre budar:
  *   1) --gun  : bu yaştan eski dosyalar silinir (varsayılan: controller TTL'i)
  *   2) --mb   : kalan boyut hâlâ sınırın üstündeyse en eski dosyalar silinir
  */
 class AbbOnbellekTemizleCommand extends Command
 {
     protected $signature = 'abb:onbellek-temizle
-        {--gun=7 : Bu gün sayısından eski dosyaları sil}
-        {--mb=512 : Budama sonrası izin verilen azami toplam boyut (MB; 0 = sınırsız)}
+        {--gun=30 : Bu gün sayısından eski dosyaları sil (abb:onbellek-isit tazesini indirir)}
+        {--mb=0 : Budama sonrası izin verilen azami toplam boyut (MB; 0 = sınırsız)}
         {--kuru : Hiçbir şey silme, yalnızca ne silineceğini raporla}';
 
     protected $description = 'ABB CBS görüntü önbelleğini yaşa ve toplam boyuta göre budar';
 
     public function handle(): int
     {
-        $kok = storage_path('app/abb-onbellek');
+        $kok = public_path(AbbProxyController::ONBELLEK_KOK);
 
         if (! is_dir($kok)) {
             $this->info('Önbellek dizini yok, yapacak bir şey kalmadı.');
@@ -100,33 +102,36 @@ class AbbOnbellekTemizleCommand extends Command
     private function dosyalariTopla(string $kok): array
     {
         $sonuc = [];
+        $gezgin = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($kok, \FilesystemIterator::SKIP_DOTS));
 
-        foreach (glob($kok.'/*', GLOB_ONLYDIR) ?: [] as $altDizin) {
-            foreach (glob($altDizin.'/*.png') ?: [] as $yol) {
-                $boyut = @filesize($yol);
-                $zaman = @filemtime($yol);
-                if ($boyut === false || $zaman === false) {
-                    continue;
+        foreach ($gezgin as $dosya) {
+            $yol = $dosya->getPathname();
+            if (str_ends_with($yol, '.tmp')) {
+                // Yarım kalmış geçici yazımlar (1 saatten eski)
+                if ($dosya->getMTime() < time() - 3600) {
+                    @unlink($yol);
                 }
-                $sonuc[] = ['yol' => $yol, 'boyut' => $boyut, 'zaman' => $zaman];
+
+                continue;
             }
-
-            // Yarım kalmış geçici yazımlar (1 saatten eski)
-            foreach (glob($altDizin.'/*.tmp') ?: [] as $gecici) {
-                if (@filemtime($gecici) < time() - 3600) {
-                    @unlink($gecici);
-                }
+            if (str_ends_with($yol, '.png')) {
+                $sonuc[] = ['yol' => $yol, 'boyut' => $dosya->getSize(), 'zaman' => $dosya->getMTime()];
             }
         }
 
         return $sonuc;
     }
 
+    /** Boşalan alt dizinleri (en derinden başlayarak) siler; kök kalır. */
     private function bosDizinleriSil(string $kok): void
     {
-        foreach (glob($kok.'/*', GLOB_ONLYDIR) ?: [] as $altDizin) {
-            if ((glob($altDizin.'/*') ?: []) === []) {
-                @rmdir($altDizin);
+        $gezgin = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($kok, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($gezgin as $oge) {
+            if ($oge->isDir()) {
+                @rmdir($oge->getPathname()); // dolu dizinde sessizce başarısız olur
             }
         }
     }

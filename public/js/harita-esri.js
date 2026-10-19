@@ -10,15 +10,13 @@
     const API = window.ETYS_HARITA;
     if (!mapEl || !API || typeof require !== 'function') return;
 
-    const BASKENTCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
-
     require([
         'esri/Map',
         'esri/Basemap',
         'esri/views/MapView',
         'esri/layers/WebTileLayer',
-        'esri/layers/TileLayer',
-        'esri/layers/MapImageLayer',
+        'esri/layers/BaseTileLayer',
+        'esri/layers/support/TileInfo',
         'esri/layers/GraphicsLayer',
         'esri/Graphic',
         'esri/geometry/Polygon',
@@ -26,8 +24,9 @@
         'esri/geometry/Extent',
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
-    ], function (EsriMap, Basemap, MapView, WebTileLayer, TileLayer, MapImageLayer, GraphicsLayer,
-                 Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils) {
+        'esri/core/reactiveUtils',
+    ], function (EsriMap, Basemap, MapView, WebTileLayer, BaseTileLayer, TileInfo, GraphicsLayer,
+                 Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils, reactiveUtils) {
 
         /* =========================================================
          * 1) ALTLIKLAR — Google mt + OSM
@@ -71,81 +70,71 @@
         /* =========================================================
          * 2) VERİ KATMANLARI
          * ========================================================= */
-        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3)
-        // Önbellekli servis (singleFusedMapCache) — MapImageLayer değil TileLayer.
-        // 256x256 tile, EPSG:3857, 24 seviye; 1:2.311.162'den küçük ölçekte çizilmez.
-        const imarKatman = new TileLayer({
-            url: BASKENTCBS + '/plan/uip_esri3/MapServer',
+        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3) ve
+        // aktif kadastro parselleri (ortak/ParselAktifCached).
+        // Önbellekli servisler; kareler doğrudan baskentcbs'den değil sunucudaki
+        // önbellekli köprüden (AbbProxyController) istenir — baskentcbs tarayıcı
+        // başına istek sınırı uyguluyor (429). Kare şeması aynı: {z}/{y}/{x}, EPSG:3857.
+        // ABB'de kare 19. seviyeye kadar var (20+ → 404); 20–22 seviyelerini köprü
+        // 19'un karesinden keserek büyütür, böylece en yakın zoomda da katman görünür.
+        const ABB_KARE_SEVIYE = TileInfo.create({ size: 256, numLODs: 20, spatialReference: { wkid: 3857 } });
+        const imarKatman = new WebTileLayer({
+            urlTemplate: API.abbKare + '/imar/{level}/{row}/{col}.png',
+            tileInfo: ABB_KARE_SEVIYE,
+            minScale: 2311162,
             opacity: 0.75,
             visible: false,
         });
 
-        // Ankara BB · Aktif kadastro parselleri (baskentcbs · ParselAktifCached)
-        // Önbellekli servis — TileLayer. Önbellek tek parça sunulduğu için
-        // sublayers ayarı geçerli değil. 1:288.895'ten küçük ölçekte çizilmez.
-        const parselasyonKatman = new TileLayer({
-            url: BASKENTCBS + '/ortak/ParselAktifCached/MapServer',
+        const parselasyonKatman = new WebTileLayer({
+            urlTemplate: API.abbKare + '/parselasyon/{level}/{row}/{col}.png',
+            tileInfo: ABB_KARE_SEVIYE,
+            minScale: 288895,
             opacity: 0.80,
             visible: false,
         });
 
         /* ---------------------------------------------------------
-         * Ankara BB · baskentcbs (dışa açık sunucu)
-         * Bu beş katman önceden iç ağdaki abbcbs proxy'sinden geliyordu;
-         * o sunucu yalnızca belediye ağından erişilebildiği için uygulama
-         * ancak iç ağda çalışabiliyordu. baskentcbs dışarıdan da açık ve
-         * aynı verileri yayınlıyor — katman numaraları da birebir aynı.
-         * Artık Laravel köprüsü gerekmiyor, tarayıcı doğrudan çağırıyor.
-         *
-         * Ölçek pencereleri (servis tanımından):
+         * Ankara BB · dinamik servisler (tasinmazservice, ortak/adres)
+         * Bunlar da sunucudaki önbellekli köprüden (/abb-onbellek) gelir.
+         * Görünüm başına tek resim yerine 512 px kareler istenir: kareler
+         * kullanıcılar arasında önbellekten paylaşılır, ABB'ye az istek gider.
+         * Ölçek pencereleri servis tanımından alındı; dışında istek atılmaz:
          *   Numarataj  1:1.500'den yakın
          *   Yapı       1:5.000'den yakın
          *   Mahalle    1:10.000 – 1:150.000
          *   İlçe       1:50.000'den uzak
          * --------------------------------------------------------- */
-        const ADRES_SERVIS = BASKENTCBS + '/ortak/adres/MapServer';
+        // Kare adresi standart XYZ: Esri'nin kare sınırından z/y/x çıkarılır,
+        // böylece kütüphanenin seviye numaralandırmasına bağlı kalınmaz.
+        const ABB_KARE = 512, DUNYA = 40075016.685578488, YARI = DUNYA / 2;
+        const AbbExportKatmani = BaseTileLayer.createSubclass({
+            properties: { katmanAdi: null },
+            getTileUrl: function (level, row, col) {
+                const b = this.getTileBounds(level, row, col);
+                const w = b[2] - b[0];
+                const z = Math.round(Math.log2(DUNYA / w));
+                const x = Math.round((b[0] + YARI) / w);
+                const y = Math.round((YARI - b[3]) / w);
+                return API.abbKare + '/' + this.katmanAdi + '/' + z + '/' + y + '/' + x + '.png';
+            },
+        });
+        function abbExport(baslik, katmanAdi, ayar) {
+            return new AbbExportKatmani(Object.assign({
+                title: baslik,
+                katmanAdi: katmanAdi,
+                tileInfo: TileInfo.create({ size: ABB_KARE, numLODs: 22, spatialReference: { wkid: 3857 } }),
+                visible: false,
+            }, ayar));
+        }
 
         // Belediye Taşınmazları — hisse_duru (TAM / HİSSELİ / HATALI)
         // ayrımı sunucu sembolojisinde hazır geliyor.
-        const belediyeKatman = new MapImageLayer({
-            title: 'ABB · Belediye Taşınmazları',
-            url: BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer',
-            sublayers: [{ id: 0, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
-
-        const abbIlceKatman = new MapImageLayer({
-            title: 'ABB · İlçe Sınırı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 4, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
-
-        const abbMahalleKatman = new MapImageLayer({
-            title: 'ABB · Mahalle Sınırı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 3, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
-
-        const abbYapiKatman = new MapImageLayer({
-            title: 'ABB · Yapı',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 2, visible: true }],
-            opacity: 0.85,
-            visible: false,
-        });
-
-        const abbNumaratajKatman = new MapImageLayer({
-            title: 'ABB · Numarataj',
-            url: ADRES_SERVIS,
-            sublayers: [{ id: 0, visible: true }],
-            opacity: 0.90,
-            visible: false,
-        });
+        const belediyeKatman = abbExport('ABB · Belediye Taşınmazları', 'belediye', { opacity: 0.80 });
+        const abbIlceKatman = abbExport('ABB · İlçe Sınırı', 'ilce', { opacity: 0.80, maxScale: 50000 });
+        const abbMahalleKatman = abbExport('ABB · Mahalle Sınırı', 'mahalle', { opacity: 0.80, minScale: 150000, maxScale: 10000 });
+        const abbYapiKatman = abbExport('ABB · Yapı', 'yapi', { opacity: 0.85, minScale: 5000 });
+        const abbNumaratajKatman = abbExport('ABB · Numarataj', 'numarataj', { opacity: 0.90, minScale: 1500 });
 
         const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
@@ -165,11 +154,16 @@
             ],
         });
 
+        // Adres parametreleri: ?merkez=enlem,boylam&zoom=Z → harita doğrudan o görünümle açılır
+        const ADRES = new URLSearchParams(location.search);
+        const ADRES_MERKEZ = (ADRES.get('merkez') || '').split(',').map(Number);
+        const ADRES_KONUM = ADRES_MERKEZ.length === 2 && ADRES_MERKEZ.every(Number.isFinite);
+
         const view = new MapView({
             container: 'hrm-map',
             map: harita,
-            center: [32.85, 39.92],
-            zoom: 12,
+            center: ADRES_KONUM ? [ADRES_MERKEZ[1], ADRES_MERKEZ[0]] : [32.85, 39.92],
+            zoom: ADRES_KONUM ? (Number(ADRES.get('zoom')) || 17) : 12,
             constraints: { rotationEnabled: false },
             ui: { components: [] },
             popup: {
@@ -587,46 +581,137 @@
             return kap;
         }
 
+        // Seçili kayıt modunda (?ids=) hepsi bir kerede yüklenir; aksi halde
+        // yalnızca ekranda görünen alan istenir, kalabalık alanlar kümelenir.
+        const SECILI_MOD = API.secilenSayi !== null && API.secilenSayi !== undefined;
+        let yuklemeKontrol = null;
+        let yuklemeZamanlayici = null;
+
+        function kumeGrafikleri(f) {
+            const p = f.properties;
+            const konum = new Point({ longitude: f.geometry.coordinates[0], latitude: f.geometry.coordinates[1], spatialReference: WGS84 });
+            const boy = Math.min(54, 26 + Math.log10(p.adet) * 9);
+            const ozellik = { kume: true, adet: p.adet, bbox: p.bbox };
+            return [
+                new Graphic({
+                    geometry: konum,
+                    attributes: ozellik,
+                    symbol: { type: 'simple-marker', style: 'circle', size: boy, color: [245, 158, 11, 0.85], outline: { color: [255, 255, 255, 0.95], width: 2 } },
+                }),
+                new Graphic({
+                    geometry: konum,
+                    attributes: ozellik,
+                    symbol: {
+                        type: 'text', text: p.adet >= 1000 ? (p.adet / 1000).toFixed(p.adet >= 10000 ? 0 : 1) + 'B' : String(p.adet),
+                        color: [14, 23, 38, 1], yoffset: -4, font: { size: 11, weight: 'bold', family: 'sans-serif' },
+                    },
+                }),
+            ];
+        }
+
+        function parselGrafigi(f) {
+            const geom = geoJsonGeometri(f.geometry);
+            if (!geom) return null;
+            const p = f.properties || {};
+            return new Graphic({
+                geometry: geom,
+                symbol: geom.type === 'point' ? SEM_NOKTA : SEM_PARSEL,
+                attributes: p,
+                popupTemplate: {
+                    title: (p.ada || '—') + ' / ' + (p.parsel || '—'),
+                    content: function () { return tasinmazPopup(p); },
+                },
+            });
+        }
+
         async function parselleriYukle() {
-            let fc;
-            try {
-                fc = await jsonGetir(API.geojson);
-            } catch (e) {
-                sayiEl.textContent = '0';
-                return;
+            let url = API.geojson;
+            if (!SECILI_MOD) {
+                const g = webMercatorUtils.webMercatorToGeographic(view.extent);
+                // Kenardaki parseller kesilmesin diye alan biraz genişletilir
+                const px = (g.xmax - g.xmin) * 0.1, py = (g.ymax - g.ymin) * 0.1;
+                const bbox = [g.xmin - px, g.ymin - py, g.xmax + px, g.ymax + py].map(function (v) { return v.toFixed(6); });
+                url += (url.indexOf('?') === -1 ? '?' : '&') + 'bbox=' + bbox.join(',') + '&zoom=' + Math.round(view.zoom);
             }
 
-            parselKatman.removeAll();
-            tumExtent = null;
+            if (yuklemeKontrol) yuklemeKontrol.abort();
+            const kontrol = yuklemeKontrol = new AbortController();
+            let fc;
+            try {
+                const yanit = await fetch(url, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
+                if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                fc = await yanit.json();
+            } catch (e) {
+                if (e.name !== 'AbortError') sayiEl.textContent = '0';
+                return;
+            }
+            if (kontrol !== yuklemeKontrol) return;
 
+            const grafikler = [];
             (fc.features || []).forEach(function (f) {
-                const geom = geoJsonGeometri(f.geometry);
-                if (!geom) return;
-                const p = f.properties || {};
-
-                parselKatman.add(new Graphic({
-                    geometry: geom,
-                    symbol: geom.type === 'point' ? SEM_NOKTA : SEM_PARSEL,
-                    attributes: p,
-                    popupTemplate: {
-                        title: (p.ada || '—') + ' / ' + (p.parsel || '—'),
-                        content: function () { return tasinmazPopup(p); },
-                    },
-                }));
-
-                const e = geometriExtent(geom);
-                if (e) tumExtent = tumExtent ? tumExtent.union(e) : e;
+                if (f.properties && f.properties.kume) {
+                    kumeGrafikleri(f).forEach(function (g) { grafikler.push(g); });
+                    return;
+                }
+                const g = parselGrafigi(f);
+                if (!g) return;
+                grafikler.push(g);
+                if (SECILI_MOD) {
+                    const e = geometriExtent(g.geometry);
+                    if (e) tumExtent = tumExtent ? tumExtent.union(e) : e;
+                }
             });
+            parselKatman.removeAll();
+            parselKatman.addMany(grafikler);
 
-            sayiEl.textContent = String(parselKatman.graphics.length);
-            // Sadece katman AÇIK ise auto-zoom yap; kapalıyken kullanıcının
-            // ayarladığı görünümü bozma. Manuel "Sığdır" butonu her durumda çalışır.
-            if (tumExtent && parselKatman.graphics.length && parselKatman.visible) {
+            sayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
+            if (SECILI_MOD && tumExtent && grafikler.length && parselKatman.visible) {
                 view.goTo(tumExtent.expand(1.25)).catch(function () {});
             }
         }
 
-        view.when(function () { parselleriYukle(); });
+        function yuklemeyiZamanla() {
+            clearTimeout(yuklemeZamanlayici);
+            yuklemeZamanlayici = setTimeout(parselleriYukle, 250);
+        }
+
+        async function kapsamYukle() {
+            try {
+                const k = await jsonGetir(API.geojson + '?kapsam=1');
+                if (k && k.bbox) {
+                    const d = 0.0009; // tek nokta / küçük parsel: ~100 m pay
+                    tumExtent = new Extent({ xmin: k.bbox[0] - d, ymin: k.bbox[1] - d, xmax: k.bbox[2] + d, ymax: k.bbox[3] + d, spatialReference: WGS84 });
+                }
+            } catch (e) { /* kapsam alınamazsa varsayılan görünüm kalır */ }
+        }
+
+        // Adres parametresi ?katman=imar,parselasyon,yapi: o ABB katmanlarını aç
+        const ADRES_KATMAN = {
+            imar: 'hrm-ov-imar', parselasyon: 'hrm-ov-parselasyon', belediye: 'hrm-ov-belediye',
+            ilce: 'hrm-ov-abb-ilce', mahalle: 'hrm-ov-abb-mahalle', yapi: 'hrm-ov-abb-yapi', numarataj: 'hrm-ov-abb-numarataj',
+        };
+        (ADRES.get('katman') || '').split(',').forEach(function (k) {
+            const kutu = ADRES_KATMAN[k] && document.getElementById(ADRES_KATMAN[k]);
+            if (kutu && !kutu.checked) { kutu.checked = true; kutu.dispatchEvent(new Event('change')); }
+        });
+
+        view.when(async function () {
+            if (SECILI_MOD) { parselleriYukle(); return; }
+            await kapsamYukle();
+            if (!ADRES_KONUM && tumExtent && parselKatman.visible) {
+                await view.goTo(tumExtent.expand(1.25)).catch(function () {});
+            }
+            reactiveUtils.when(function () { return view.stationary; }, yuklemeyiZamanla, { initial: true });
+        });
+
+        // Kümeye tıklayınca o alana yakınlaş
+        view.on('click', async function (evt) {
+            const sonuc = await view.hitTest(evt, { include: [parselKatman] });
+            const isabet = sonuc.results.find(function (r) { return r.graphic && r.graphic.attributes && r.graphic.attributes.kume; });
+            if (!isabet) return;
+            const b = isabet.graphic.attributes.bbox;
+            view.goTo(new Extent({ xmin: b[0], ymin: b[1], xmax: b[2], ymax: b[3], spatialReference: WGS84 }).expand(1.2)).catch(function () {});
+        });
 
         document.getElementById('hrm-fit-btn').addEventListener('click', function () {
             if (!tumExtent) return;

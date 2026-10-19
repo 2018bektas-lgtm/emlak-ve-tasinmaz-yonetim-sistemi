@@ -133,13 +133,14 @@ class TasinmazDegerleme extends Model
             $w->where('rapor_no', 'like', "%{$q}%")
                 ->orWhere('bb_no', $q)
                 ->orWhere('bb_nitelik', 'like', "%{$q}%")
-                ->orWhereHas('tasinmaz', function ($t) use ($q, $adaParsel) {
+                // Değerleme başına EXISTS yerine taşınmazlar bir kez süzülür
+                ->orWhereIn('tasinmaz_id', Tasinmaz::query()->select('id')->where(function ($t) use ($q, $adaParsel) {
                     $t->where('ada', $q)
                         ->orWhere('parsel', $q)
                         ->when($adaParsel, fn ($x) => $x->orWhere(fn ($y) => $y->where('ada', $adaParsel[0])->where('parsel', $adaParsel[1])))
-                        ->orWhereHas('ilce', fn ($i) => $i->where('ad', 'like', "%{$q}%"))
-                        ->orWhereHas('mahalle', fn ($m) => $m->where('ad', 'like', "%{$q}%"));
-                });
+                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->where('ad', 'like', "%{$q}%"))
+                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->where('ad', 'like', "%{$q}%"));
+                }));
         });
     }
 }

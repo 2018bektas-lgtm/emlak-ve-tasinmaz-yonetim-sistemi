@@ -9,6 +9,7 @@ use App\Models\Lojman;
 use App\Models\LojmanBasvuru;
 use App\Models\LojmanTahsis;
 use App\Models\Tasinmaz;
+use App\Models\TasinmazHisse;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -27,7 +28,7 @@ class DashboardController extends Controller
         if ($k->izinVarMi('tasinmaz.goruntule')) {
             $ozet['tasinmaz'] = [
                 'toplam' => Tasinmaz::count(),
-                'hisseli' => Tasinmaz::whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'))->count(),
+                'hisseli' => TasinmazHisse::where('hisse_durum', 'aktif')->distinct()->count('tasinmaz_id'),
                 'bu_ay' => Tasinmaz::where('created_at', '>=', now()->startOfMonth())->count(),
             ];
             $sonKayitlar = $sonKayitlar->merge(

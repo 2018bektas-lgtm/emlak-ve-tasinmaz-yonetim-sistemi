@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\KayitTipi;
 use App\Enums\SatisDurumu;
 use App\Models\Concerns\PolimorfikSahipCascade;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -409,5 +410,27 @@ class Tasinmaz extends Model
     public function resimler(): MorphMany
     {
         return $this->morphMany(Resim::class, 'sahip');
+    }
+
+    /**
+     * Mülkiyet süzgeci (aktif hisseler üzerinden):
+     * TAM = tek aktif hisse ve pay == payda; HISSELI = birden fazla aktif hisse
+     * ya da tek aktif hisse ama pay != payda. Taşınmaz başına alt sorgu yerine
+     * hisse tablosunu bir kez gruplar.
+     */
+    public function scopeMulkiyet(Builder $q, ?string $tur): Builder
+    {
+        if (! in_array($tur, ['TAM', 'HISSELI'], true)) {
+            return $q;
+        }
+        $hisseler = TasinmazHisse::query()
+            ->where('hisse_durum', 'aktif')
+            ->groupBy('tasinmaz_id')
+            ->select('tasinmaz_id');
+        $tur === 'TAM'
+            ? $hisseler->havingRaw('COUNT(*) = 1 AND SUM(CASE WHEN hisse_pay = hisse_payda THEN 1 ELSE 0 END) = 1')
+            : $hisseler->havingRaw('COUNT(*) > 1 OR SUM(CASE WHEN hisse_pay = hisse_payda THEN 1 ELSE 0 END) = 0');
+
+        return $q->whereIn('id', $hisseler);
     }
 }

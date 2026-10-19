@@ -9,28 +9,21 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
 <link rel="stylesheet" href="{{ asset('css/ecrimisil-harita.css') }}?v=1">
-<link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=3">
+<link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=4">
 @endpush
 
 @php
-    // Ankara BB · baskentcbs (dışa açık sunucu)
-    // Önceden bu katmanlar iç ağdaki abbcbs proxy'si ve gisserver WMS'i
-    // üzerinden geliyordu; ikisi de yalnızca belediye ağından erişilebiliyor.
-    // baskentcbs dışarıdan da açık ve aynı verileri yayınlıyor.
-    //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x}
-    //   tip = export → dinamik servis, /export?bbox=...&layers=show:<katman>
-    $BCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
+    // Ankara BB · baskentcbs — kendi sunucumuzdaki önbellekli kare köprüsü üzerinden
+    // (AbbProxyController): {url}/{z}/{y}/{x}.png. Kare önbellekteyse web sunucusu
+    // dosyayı doğrudan verir. baskentcbs tarayıcı başına istek sınırı uyguluyor (429).
+    //   tip = tile   → önbellekli servis, 256 px
+    //   tip = export → dinamik servis, 512 px (bir kare bir alt seviyenin 2×2'si)
     $abbKatmanlar = [
-        'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
-            'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0],
-        'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
-            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0],
-        'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
-            'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0],
-        'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 0],
-        'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2],
+        'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6', 'tip' => 'tile'],
+        'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e', 'tip' => 'tile'],
+        'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444', 'tip' => 'export'],
+        'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316', 'tip' => 'export'],
+        'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4', 'tip' => 'export'],
     ];
 @endphp
 
@@ -120,7 +113,7 @@
             <div class="ech-katman-grup">
                 <div class="ech-katman-baslik">Ankara BB · İmar ve Kadastro</div>
                 @foreach ($abbKatmanlar as $kod => $k)
-                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ $k['url'] }}" data-katman="{{ $k['katman'] }}">
+                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ url(\App\Http\Controllers\AbbProxyController::ONBELLEK_KOK.'/'.$kod) }}">
                         <span class="ech-katman-ikon" style="background:{{ $k['renk'] }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></span>
                         <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $k['ad'] }}</span><span class="ech-katman-alt">{{ $k['alt'] }}</span>
                             <input type="range" min="10" max="100" value="70" class="dgh-opak" aria-label="{{ $k['ad'] }} saydamlığı" hidden></div>
@@ -233,37 +226,39 @@
         document.querySelectorAll('#dgh-altlik-grup .ech-radyo').forEach(x => x.classList.toggle('is-aktif', x === el));
     }));
 
-    // ---- ABB katmanları (baskentcbs — doğrudan, proxy yok) ----
+    // ---- ABB katmanları (sunucudaki önbellekli kare köprüsü üzerinden) ----
+    // İstek sayısını düşük tutmak için: kareler yalnızca harita durunca istenir,
+    // ekran dışı tampon küçük tutulur.
+    // Köprü ABB'den yanıt alamazsa 503 döner; kare bir kez daha denenir.
     const ovKatman = {};
+    let abbUyariZamani = 0;
+    // Başarısız kareyi artan aralıklarla (5 / 10 / 20 sn) en fazla 3 kez yeniden ister
+    function abbTekrarDene(katman) {
+        katman.on('tileerror', e => {
+            const img = e.tile;
+            img._deneme = (img._deneme || 0) + 1;
+            if (img._deneme > 3) {
+                if (Date.now() - abbUyariZamani > 15000) {
+                    abbUyariZamani = Date.now();
+                    bildir('ABB sunucusu şu an yoğun, bazı katman kareleri yüklenemedi. Biraz sonra tekrar deneyin.');
+                }
+                return;
+            }
+            setTimeout(() => {
+                if (img.isConnected) img.src = img.src.split('#')[0] + '#' + img._deneme;
+            }, 5000 * 2 ** (img._deneme - 1) + Math.random() * 1500);
+        });
+        return katman;
+    }
     function ovOlustur(kart) {
         const opak = kart.querySelector('.dgh-opak').value / 100;
-        const url = kart.dataset.url;
-        const ayar = { opacity: opak, maxZoom: 22, minZoom: 15, tileSize: 256 };
-
-        // Önbellekli servis: ArcGIS tile şeması /tile/{z}/{y}/{x}
-        if (kart.dataset.tip === 'tile') {
-            return L.tileLayer(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
-        }
-
-        // Dinamik servis: her kare için bbox hesaplanıp /export çağrılır
-        const katman = L.tileLayer('', ayar);
-        katman.getTileUrl = function (c) {
-            const nwP = c.multiplyBy(256), seP = nwP.add(L.point(256, 256));
-            const nw = L.CRS.EPSG3857.project(this._map.unproject(nwP, c.z));
-            const se = L.CRS.EPSG3857.project(this._map.unproject(seP, c.z));
-            return url + '/export?' + new URLSearchParams({
-                bbox: [nw.x, se.y, se.x, nw.y].join(','),
-                bboxSR: '3857',
-                imageSR: '3857',
-                size: '256,256',
-                dpi: '96',
-                format: 'png32',
-                transparent: 'true',
-                layers: 'show:' + kart.dataset.katman,
-                f: 'image',
-            });
-        };
-        return katman;
+        const ayar = { opacity: opak, maxZoom: 22, minZoom: 15, updateWhenIdle: true, updateWhenZooming: false, keepBuffer: 1 };
+        // Önbellekli servis: ABB'de kare 19'a kadar var, daha yakında 19 büyütülür.
+        // Dinamik servis: 512 px kare, {z} bir alt seviye (zoomOffset -1), her zoomda net.
+        const ozel = kart.dataset.tip === 'tile'
+            ? { tileSize: 256, maxNativeZoom: 19 }
+            : { tileSize: 512, zoomOffset: -1, maxNativeZoom: 22 };
+        return abbTekrarDene(L.tileLayer(kart.dataset.url + '/{z}/{y}/{x}.png', Object.assign(ozel, ayar)));
     }
     document.querySelectorAll('.dgh-ov').forEach(kart => {
         const kutu = kart.querySelector('input[type=checkbox]');
@@ -293,7 +288,11 @@
             return L.divIcon({ html: `<div class="ech-cluster dgh-cluster">${n}</div>`, className: 'ech-cluster-wrap', iconSize: [40, 40] });
         },
     });
+    const kumeKatman = L.featureGroup().addTo(map); // sunucu kümeleri (kalabalık alan)
     let ogeler = [];       // { p, layer, marker, etiket }
+    let kumeler = [];      // sunucudan gelen küme öğeleri
+    let yuklemeKontrol = null;
+    let yuklemeZamanlayici = null;
     let renkModu = 'tur';
     let birimAralik = [0, 0];
     let secili = null;
@@ -323,7 +322,22 @@
     }
 
     function ciz() {
-        parselKatman.clearLayers(); etiketKatman.clearLayers(); markerKatman.clearLayers(); clusterKatman.clearLayers();
+        parselKatman.clearLayers(); etiketKatman.clearLayers(); markerKatman.clearLayers(); clusterKatman.clearLayers(); kumeKatman.clearLayers();
+        kumeler.forEach(k => {
+            const n = k.properties.adet, b = k.properties.bbox;
+            const [lng, lat] = k.geometry.coordinates;
+            const boy = Math.round(Math.min(58, 34 + Math.log10(n) * 8));
+            L.marker([lat, lng], { icon: L.divIcon({ html: `<div class="ech-cluster dgh-cluster" style="width:${boy}px;height:${boy}px">${n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'B' : n}</div>`, className: 'ech-cluster-wrap', iconSize: [boy, boy] }) })
+                .on('click', () => map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30] }))
+                .addTo(kumeKatman);
+        });
+        if (kumeler.length) {
+            $('dgh-sayi').textContent = toplamGorunen.toLocaleString('tr-TR');
+            $('dgh-rapor').textContent = '—';
+            isaretciGuncelle();
+            etiketGuncelle();
+            return;
+        }
         let ts = 0, rs = 0;
         ogeler.forEach(o => {
             if (!turGorunur(o.p)) return;
@@ -351,31 +365,79 @@
     }
     map.on('zoomend', etiketGuncelle);
 
-    async function yukle(sigdir = true) {
-        const r = await fetch(API.geojson + (filtre.toString() ? '?' + filtre : ''), { headers: { Accept: 'application/json' } });
-        const fc = await r.json();
-        ogeler = (fc.features || []).map(f => {
-            const p = f.properties;
-            const layer = L.geoJSON(f, { pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 7 }) }).getLayers()[0];
-            const merkez = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
-            const o = { p, layer, merkez };
-            o.marker = L.marker(merkez);
-            o.marker.bindTooltip(`<strong>${esc(p.ada)}/${esc(p.parsel)}</strong> · ${esc(p.mahalle || '')}<br>${kisaPara(p.son_toplam)} TL · ${esc(TUR[p.tur].etiket)}`, { direction: 'top', offset: [0, -20] });
-            o.etiket = L.marker(merkez, { interactive: false, icon: L.divIcon({ className: '', html: `<div class="ech-etiket">${esc(p.ada)}/${esc(p.parsel)}</div>`, iconSize: null }) });
-            [layer, o.marker].forEach(x => x.on('click', () => sec(o)));
-            layer.on('mouseover', () => { if (secili !== o && layer.setStyle) layer.setStyle({ fillOpacity: 0.5, weight: 3 }); });
-            layer.on('mouseout', () => layer.setStyle && layer.setStyle(stil(o)));
-            return o;
-        });
-        const birimler = ogeler.map(o => o.p.birim).filter(b => b !== null && b !== undefined && b > 0);
-        birimAralik = birimler.length ? [Math.min(...birimler), Math.max(...birimler)] : [0, 0];
-        $('dgh-skala-min').textContent = birimler.length ? kisaPara(birimAralik[0]) : '—';
-        $('dgh-skala-max').textContent = birimler.length ? kisaPara(birimAralik[1]) : '—';
-        if (secili) secili = ogeler.find(o => o.p.id === secili.p.id) || null;
+    let toplamGorunen = 0;
+
+    function ogeOlustur(f) {
+        const p = f.properties;
+        const layer = L.geoJSON(f, { pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 7 }) }).getLayers()[0];
+        const merkez = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
+        const o = { p, layer, merkez };
+        o.marker = L.marker(merkez);
+        o.marker.bindTooltip(`<strong>${esc(p.ada)}/${esc(p.parsel)}</strong> · ${esc(p.mahalle || '')}<br>${kisaPara(p.son_toplam)} TL · ${esc(TUR[p.tur].etiket)}`, { direction: 'top', offset: [0, -20] });
+        o.etiket = L.marker(merkez, { interactive: false, icon: L.divIcon({ className: '', html: `<div class="ech-etiket">${esc(p.ada)}/${esc(p.parsel)}</div>`, iconSize: null }) });
+        [layer, o.marker].forEach(x => x.on('click', () => sec(o)));
+        layer.on('mouseover', () => { if (secili !== o && layer.setStyle) layer.setStyle({ fillOpacity: 0.5, weight: 3 }); });
+        layer.on('mouseout', () => layer.setStyle && layer.setStyle(stil(o)));
+        return o;
+    }
+    const sinirOf = o => o.layer.getBounds ? o.layer.getBounds() : L.latLngBounds([o.merkez, o.merkez]);
+
+    async function getir(ek) {
+        const q = new URLSearchParams(filtre);
+        Object.entries(ek).forEach(([k, v]) => q.set(k, v));
+        const r = await fetch(API.geojson + '?' + q, { headers: { Accept: 'application/json' } });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    }
+
+    // Yalnızca ekranda görünen alan istenir; kalabalık alanda sunucu kümeler döner
+    async function gorunumYukle() {
+        if (yuklemeKontrol) yuklemeKontrol.abort();
+        const kontrol = yuklemeKontrol = new AbortController();
+        const b = map.getBounds().pad(0.1);
+        const q = new URLSearchParams(filtre);
+        q.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(','));
+        q.set('zoom', map.getZoom());
+        let fc;
+        try {
+            const r = await fetch(API.geojson + '?' + q, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            fc = await r.json();
+        } catch (e) {
+            if (e.name !== 'AbortError') bildir('Harita verisi yüklenemedi.');
+            return;
+        }
+        if (kontrol !== yuklemeKontrol) return;
+        toplamGorunen = fc.toplam || 0;
+        kumeler = fc.kumeli ? fc.features : [];
+        ogeler = fc.kumeli ? [] : (fc.features || []).map(ogeOlustur);
+        if (secili) secili = ogeler.find(o => o.p.id === secili.p.id) || secili;
         ciz();
-        tumSinir = ogeler.length ? L.featureGroup(ogeler.map(o => o.layer)).getBounds() : null;
+    }
+    map.on('moveend', () => { clearTimeout(yuklemeZamanlayici); yuklemeZamanlayici = setTimeout(gorunumYukle, 250); });
+
+    // Süzgeç değişince: kapsam + m² değer aralığı alınır, sonra görünen alan yüklenir
+    async function yukle(sigdir = true) {
+        let k = null;
+        try { k = await getir({ kapsam: 1 }); } catch (e) { bildir('Harita verisi yüklenemedi.'); }
+        birimAralik = k && k.birim_aralik ? k.birim_aralik : [0, 0];
+        $('dgh-skala-min').textContent = k && k.birim_aralik ? kisaPara(birimAralik[0]) : '—';
+        $('dgh-skala-max').textContent = k && k.birim_aralik ? kisaPara(birimAralik[1]) : '—';
+        tumSinir = k && k.bbox ? L.latLngBounds([[k.bbox[1], k.bbox[0]], [k.bbox[3], k.bbox[2]]]) : null;
         if (sigdir && tumSinir && tumSinir.isValid()) map.fitBounds(tumSinir, { padding: [40, 40], maxZoom: 17 });
-        return ogeler;
+        await gorunumYukle();
+        return k ? k.toplam : 0;
+    }
+
+    // Tek taşınmazı (süzgeçten bağımsız) bulup ona git ve seç
+    async function odaklan(ek) {
+        const fc = await getir(ek);
+        const f = (fc.features || [])[0];
+        if (!f) return false;
+        const o = ogeOlustur(f);
+        map.fitBounds(sinirOf(o), { maxZoom: 18, padding: [60, 60] });
+        sec(o);
+        return true;
     }
 
     // ---- Seçim / yan panel ----
@@ -470,20 +532,14 @@
         });
     });
 
-    // Hızlı ada/parsel: önce haritadakiler arasında, yoksa sunucuda ara
+    // Hızlı ada/parsel: önce ekrandakiler arasında, yoksa sunucuda ara
     $('dgh-hizli').addEventListener('submit', async e => {
         e.preventDefault();
         const ada = e.target.ada.value.trim(), parsel = e.target.parsel.value.trim();
         if (!ada) return;
-        let o = ogeler.find(x => String(x.p.ada) === ada && (!parsel || String(x.p.parsel) === parsel));
-        if (!o) {
-            filtre = new URLSearchParams({ ada, ...(parsel ? { parsel } : {}) });
-            await yukle(true);
-            o = ogeler[0];
-        }
-        if (!o) { bildir('Bu ada/parselde değerlenmiş taşınmaz yok.'); return; }
-        map.fitBounds(o.layer.getBounds ? o.layer.getBounds() : L.latLngBounds([o.merkez, o.merkez]), { maxZoom: 18, padding: [60, 60] });
-        sec(o);
+        const o = ogeler.find(x => String(x.p.ada) === ada && (!parsel || String(x.p.parsel) === parsel));
+        if (o) { map.fitBounds(sinirOf(o), { maxZoom: 18, padding: [60, 60] }); sec(o); return; }
+        if (!await odaklan({ ada, ...(parsel ? { parsel } : {}) }).catch(() => false)) bildir('Bu ada/parselde değerlenmiş taşınmaz yok.');
     });
 
     function bildir(m) {
@@ -519,12 +575,18 @@
         yukle(true);
     });
 
-    // ?tasinmaz=ID ile açılırsa o taşınmazı seç
-    const acilis = new URLSearchParams(location.search).get('tasinmaz');
-    yukle(!acilis).then(() => {
-        const o = acilis && ogeler.find(x => String(x.p.id) === acilis);
-        if (o) { map.fitBounds(o.layer.getBounds ? o.layer.getBounds() : L.latLngBounds([o.merkez, o.merkez]), { maxZoom: 18 }); sec(o); }
+    // Adres parametreleri: ?tasinmaz=ID o taşınmazı seçer;
+    // ?merkez=enlem,boylam&zoom=Z&katman=imar,parselasyon görünümü ve ABB katmanlarını açar
+    const adres = new URLSearchParams(location.search);
+    const acilis = adres.get('tasinmaz');
+    const merkez = (adres.get('merkez') || '').split(',').map(Number);
+    const konumVar = merkez.length === 2 && merkez.every(Number.isFinite);
+    if (konumVar) map.setView(merkez, Number(adres.get('zoom')) || 17, { animate: false });
+    (adres.get('katman') || '').split(',').filter(Boolean).forEach(k => {
+        const kutu = document.querySelector(`.dgh-ov[data-ov="${CSS.escape(k)}"] input[type=checkbox]`);
+        if (kutu && !kutu.checked) kutu.click();
     });
+    yukle(!acilis && !konumVar).then(() => { if (acilis) odaklan({ tasinmaz_id: acilis }).catch(() => {}); });
 })();
 </script>
 @endpush
