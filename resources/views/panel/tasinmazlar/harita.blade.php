@@ -253,14 +253,14 @@
         </summary>
         <div class="hrm-details-icerik" data-grup-icerik="abb-imar">
 
-        <div class="hrm-katman-kart" data-katman-kart="imar" data-grup="abb-imar" data-ad="imar planı uip ankara bb uipsade">
+        <div class="hrm-katman-kart" data-katman-kart="imar" data-grup="abb-imar" data-ad="imar planı uip ankara bb baskentcbs uip_esri3">
             <div class="hrm-katman-ust">
                 <span class="hrm-katman-ikon" style="background:#ec4899;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 h4 v-4 h4 v4 h4 v-4 h4 v4 h2 M3 12 v6 h18 v-6"/></svg>
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">İmar Planı (UIP)</span>
-                    <span class="hrm-katman-alt">Ankara BB · uipSade MapServer</span>
+                    <span class="hrm-katman-alt">Ankara BB · baskentcbs uip_esri3</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-imar">
@@ -275,14 +275,14 @@
             </div>
         </div>
 
-        <div class="hrm-katman-kart" data-katman-kart="parselasyon" data-grup="abb-imar" data-ad="parselasyon kadastro parselaktif">
+        <div class="hrm-katman-kart" data-katman-kart="parselasyon" data-grup="abb-imar" data-ad="parselasyon kadastro parselaktif baskentcbs cached">
             <div class="hrm-katman-ust">
                 <span class="hrm-katman-ikon" style="background:#8b5cf6;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16 M4 12h16 M4 18h16 M9 3v18 M15 3v18"/></svg>
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Parselasyon</span>
-                    <span class="hrm-katman-alt">Ankara BB · parselAktif (aktif kadastro)</span>
+                    <span class="hrm-katman-alt">Ankara BB · ParselAktifCached</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-parselasyon">
@@ -304,7 +304,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Belediye Taşınmazları</span>
-                    <span class="hrm-katman-alt">Tam koyu · Hisseli açık</span>
+                    <span class="hrm-katman-alt">Ankara BB · tasinmazservice · Tam / Hisseli</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-belediye">
@@ -355,7 +355,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">İlçe Sınırı</span>
-                    <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 4)</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · İlçe</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-ilce">
@@ -377,7 +377,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Mahalle Sınırı</span>
-                    <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 3)</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Mahalle</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-mahalle">
@@ -399,7 +399,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Yapı</span>
-                    <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 2)</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Yapı</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-yapi">
@@ -421,7 +421,7 @@
                 </span>
                 <div class="hrm-katman-meta">
                     <span class="hrm-katman-ad">Numarataj</span>
-                    <span class="hrm-katman-alt">Ankara BB · abbcbs proxy (layer 0)</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Numarataj</span>
                 </div>
                 <label class="hrm-switch" title="Katmanı aç/kapat">
                     <input type="checkbox" id="hrm-ov-abb-numarataj">
@@ -579,7 +579,6 @@
         geojson:       @json($geojsonUrl),
         ara:           @json(route('panel.ajax.tasinmaz-ara')),
         eimar:         @json(route('panel.ajax.eimar-identify')),
-        abbProxy:      @json(route('panel.ajax.abb-proxy')),
         ilceler:       @json(url('/panel/ajax/ilceler')),
         mahalleler:    @json(url('/panel/ajax/mahalleler')),
         tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
@@ -587,5 +586,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=16"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=20"></script>
 @endpush

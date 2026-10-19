@@ -10,15 +10,15 @@
     const API = window.ETYS_HARITA;
     if (!mapEl || !API || typeof require !== 'function') return;
 
-    const ABB = 'https://planaski.ankara.bel.tr/webgis/rest/services/mobilServis';
+    const BASKENTCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
 
     require([
         'esri/Map',
         'esri/Basemap',
         'esri/views/MapView',
         'esri/layers/WebTileLayer',
+        'esri/layers/TileLayer',
         'esri/layers/MapImageLayer',
-        'esri/layers/BaseDynamicLayer',
         'esri/layers/GraphicsLayer',
         'esri/Graphic',
         'esri/geometry/Polygon',
@@ -26,7 +26,7 @@
         'esri/geometry/Extent',
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
-    ], function (EsriMap, Basemap, MapView, WebTileLayer, MapImageLayer, BaseDynamicLayer, GraphicsLayer,
+    ], function (EsriMap, Basemap, MapView, WebTileLayer, TileLayer, MapImageLayer, GraphicsLayer,
                  Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils) {
 
         /* =========================================================
@@ -71,123 +71,78 @@
         /* =========================================================
          * 2) VERİ KATMANLARI
          * ========================================================= */
-        // Ankara BB · Uygulama İmar Planı — e-İmar sorgusu ile aynı kaynak (uipSade)
-        const imarKatman = new MapImageLayer({
-            url: ABB + '/uipSade/MapServer',
+        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3)
+        // Önbellekli servis (singleFusedMapCache) — MapImageLayer değil TileLayer.
+        // 256x256 tile, EPSG:3857, 24 seviye; 1:2.311.162'den küçük ölçekte çizilmez.
+        const imarKatman = new TileLayer({
+            url: BASKENTCBS + '/plan/uip_esri3/MapServer',
             opacity: 0.75,
             visible: false,
         });
 
-        // Ankara BB · Aktif kadastro parselleri (parselAktif, alt katman 0)
-        const parselasyonKatman = new MapImageLayer({
-            url: ABB + '/parselAktif/MapServer',
-            sublayers: [{ id: 0, visible: true }],
-            opacity: 0.80,
-            visible: false,
-        });
-
-        // Ankara BB · Belediye Taşınmazları — hisse_duru: TAM koyu, HİSSELİ açık
-        const belediyeRenderer = {
-            type: 'unique-value',
-            field: 'hisse_duru',
-            defaultSymbol: {
-                type: 'simple-fill',
-                color: [255, 0, 197, 0.22],
-                outline: { color: [255, 0, 197, 0.85], width: 0.8 },
-            },
-            uniqueValueInfos: [
-                {
-                    value: 'TAM',
-                    label: 'Tam',
-                    symbol: {
-                        type: 'simple-fill',
-                        color: [140, 0, 98, 0.62],
-                        outline: { color: [92, 0, 64, 1], width: 1.1 },
-                    },
-                },
-                {
-                    value: 'HİSSELİ',
-                    label: 'Hisseli',
-                    symbol: {
-                        type: 'simple-fill',
-                        color: [255, 170, 224, 0.28],
-                        outline: { color: [232, 90, 186, 0.95], width: 1 },
-                    },
-                },
-                {
-                    value: 'HATALI',
-                    label: 'Hatalı',
-                    symbol: {
-                        type: 'simple-fill',
-                        color: [148, 163, 184, 0.22],
-                        outline: { color: [100, 116, 139, 0.90], width: 0.8 },
-                    },
-                },
-            ],
-        };
-        const belediyeKatman = new MapImageLayer({
-            url: ABB + '/tasinmaz/MapServer',
-            sublayers: [{ id: 0, visible: true, renderer: belediyeRenderer }],
+        // Ankara BB · Aktif kadastro parselleri (baskentcbs · ParselAktifCached)
+        // Önbellekli servis — TileLayer. Önbellek tek parça sunulduğu için
+        // sublayers ayarı geçerli değil. 1:288.895'ten küçük ölçekte çizilmez.
+        const parselasyonKatman = new TileLayer({
+            url: BASKENTCBS + '/ortak/ParselAktifCached/MapServer',
             opacity: 0.80,
             visible: false,
         });
 
         /* ---------------------------------------------------------
-         * Ankara BB · CBS Proxy (abbcbs) — /export?bbox=... görüntüsü
-         * Her katman ayrı gissrv.org servis GUID'si üzerinden gelir.
-         * abbcbs proxy'si `?<upstream-url>` biçimi bekliyor ama Esri
-         * getImageUrl dönüşünü yeniden encode ettiği için doğrudan
-         * çağrı bozuluyor. Bu nedenle Laravel tarafına köprü koyduk:
-         *   /panel/ajax/abb-proxy?service=<hash>&layer=<id>&bbox=...&size=...
+         * Ankara BB · baskentcbs (dışa açık sunucu)
+         * Bu beş katman önceden iç ağdaki abbcbs proxy'sinden geliyordu;
+         * o sunucu yalnızca belediye ağından erişilebildiği için uygulama
+         * ancak iç ağda çalışabiliyordu. baskentcbs dışarıdan da açık ve
+         * aynı verileri yayınlıyor — katman numaraları da birebir aynı.
+         * Artık Laravel köprüsü gerekmiyor, tarayıcı doğrudan çağırıyor.
+         *
+         * Ölçek pencereleri (servis tanımından):
+         *   Numarataj  1:1.500'den yakın
+         *   Yapı       1:5.000'den yakın
+         *   Mahalle    1:10.000 – 1:150.000
+         *   İlçe       1:50.000'den uzak
          * --------------------------------------------------------- */
-        const AbbProxyLayer = BaseDynamicLayer.createSubclass({
-            properties: {
-                serviceHash: null,   // gissrv.org alt alanı (GUID base64)
-                layerId: 0,          // layers=show:<id>
-            },
-            getImageUrl: function (extent, width, height) {
-                const bbox = [extent.xmin, extent.ymin, extent.xmax, extent.ymax]
-                    .map(function (v) { return Number(v).toFixed(6); }).join(',');
-                const w = Math.max(1, Math.round(width));
-                const h = Math.max(1, Math.round(height));
-                const qs = new URLSearchParams({
-                    service: this.serviceHash,
-                    layer: String(this.layerId),
-                    bbox: bbox,
-                    size: w + ',' + h,
-                });
-                return API.abbProxy + '?' + qs.toString();
-            },
+        const ADRES_SERVIS = BASKENTCBS + '/ortak/adres/MapServer';
+
+        // Belediye Taşınmazları — hisse_duru (TAM / HİSSELİ / HATALI)
+        // ayrımı sunucu sembolojisinde hazır geliyor.
+        const belediyeKatman = new MapImageLayer({
+            title: 'ABB · Belediye Taşınmazları',
+            url: BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer',
+            sublayers: [{ id: 0, visible: true }],
+            opacity: 0.80,
+            visible: false,
         });
 
-        const abbIlceKatman = new AbbProxyLayer({
+        const abbIlceKatman = new MapImageLayer({
             title: 'ABB · İlçe Sınırı',
-            serviceHash: 'NWQ2YzVhZjYtOTA3OC00ZGU1LWJkNjYtYTFkOTkwNzliN2Zi',
-            layerId: 4,
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 4, visible: true }],
             opacity: 0.80,
             visible: false,
         });
 
-        const abbMahalleKatman = new AbbProxyLayer({
+        const abbMahalleKatman = new MapImageLayer({
             title: 'ABB · Mahalle Sınırı',
-            serviceHash: 'ZDFmYzE1MmEtZGE3Ny00ZjAwLWI5NDEtNTg2NWMyYjFmMzU1',
-            layerId: 3,
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 3, visible: true }],
             opacity: 0.80,
             visible: false,
         });
 
-        const abbYapiKatman = new AbbProxyLayer({
+        const abbYapiKatman = new MapImageLayer({
             title: 'ABB · Yapı',
-            serviceHash: 'OGY0ZGE3M2ItNjFmYi00NDRlLWEyZWEtNmQ2ZmMwMDc3ODA5',
-            layerId: 2,
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 2, visible: true }],
             opacity: 0.85,
             visible: false,
         });
 
-        const abbNumaratajKatman = new AbbProxyLayer({
+        const abbNumaratajKatman = new MapImageLayer({
             title: 'ABB · Numarataj',
-            serviceHash: 'MzEzZjBjMWEtODA3Zi00NjllLTliYzctNjE2MzRlM2I0ZDZj',
-            layerId: 0,
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 0, visible: true }],
             opacity: 0.90,
             visible: false,
         });

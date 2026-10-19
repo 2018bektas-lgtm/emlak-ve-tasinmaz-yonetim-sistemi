@@ -21,6 +21,12 @@ class AbbProxyController extends Controller
     /** İzin verilen katman kimlikleri (blade/JS ile senkron). */
     private const IZIN_KATMAN = [0, 2, 3, 4];
 
+    /** Disk önbelleği ömrü — sınır/yapı/numarataj verisi nadiren değişir. */
+    private const ONBELLEK_GUN = 7;
+
+    /** Tarayıcı önbelleği ömrü (saniye). */
+    private const TARAYICI_SANIYE = 86400;
+
     public function katman(Request $request): Response
     {
         $service = (string) $request->query('service', '');
@@ -40,6 +46,17 @@ class AbbProxyController extends Controller
         }
         if (! preg_match('/^\d{1,5},\d{1,5}$/', $size)) {
             return response('Invalid size', 400);
+        }
+
+        // ---- Disk önbelleği: aynı görünüm tekrar istenirse upstream'e gitme ----
+        $anahtar = sha1($service.'|'.$layer.'|'.$bbox.'|'.$size);
+        $dosya = $this->onbellekYolu($anahtar);
+
+        if (is_file($dosya) && filemtime($dosya) > time() - self::ONBELLEK_GUN * 86400) {
+            $govde = file_get_contents($dosya);
+            if ($govde !== false && $govde !== '') {
+                return $this->gorselCevap($govde, $request, $anahtar, 'HIT');
+            }
         }
 
         // Upstream URL — proxy `?` sonrası **raw** string bekliyor,
@@ -86,11 +103,54 @@ class AbbProxyController extends Controller
             return $this->bosPng();
         }
 
+        // Başarılı görüntüyü diske yaz (hatalı/boş cevaplar önbelleğe girmez)
+        $this->onbellegeYaz($dosya, $govde);
+
+        return $this->gorselCevap($govde, $request, $anahtar, 'MISS');
+    }
+
+    /** Görüntü cevabı — ETag ile koşullu istek desteği. */
+    private function gorselCevap(string $govde, Request $request, string $anahtar, string $durum): Response
+    {
+        $etag = '"'.$anahtar.'"';
+
+        // Tarayıcı elindeki kopyayı soruyorsa gövdeyi tekrar göndermeyelim.
+        if (trim((string) $request->header('If-None-Match')) === $etag) {
+            return response('', 304, [
+                'ETag' => $etag,
+                'Cache-Control' => 'public, max-age='.self::TARAYICI_SANIYE,
+                'X-Abb-Cache' => $durum,
+            ]);
+        }
+
         return response($govde, 200, [
-            'Content-Type' => $tip ?: 'image/png',
-            'Cache-Control' => 'public, max-age=300',
+            'Content-Type' => 'image/png',
+            'Content-Length' => (string) strlen($govde),
+            'ETag' => $etag,
+            'Cache-Control' => 'public, max-age='.self::TARAYICI_SANIYE,
             'Access-Control-Allow-Origin' => '*',
+            'X-Abb-Cache' => $durum,
         ]);
+    }
+
+    /** storage/app/abb-onbellek/ab/cdef... — tek dizinde binlerce dosya olmasın. */
+    private function onbellekYolu(string $anahtar): string
+    {
+        return storage_path('app/abb-onbellek/'.substr($anahtar, 0, 2).'/'.$anahtar.'.png');
+    }
+
+    private function onbellegeYaz(string $dosya, string $govde): void
+    {
+        $dizin = dirname($dosya);
+        if (! is_dir($dizin) && ! @mkdir($dizin, 0775, true) && ! is_dir($dizin)) {
+            return; // önbellek yazılamazsa sessizce geç — istek yine de döner
+        }
+
+        // Aynı anahtarı iki istek birlikte yazarsa yarım dosya kalmasın.
+        $gecici = $dosya.'.'.getmypid().'.tmp';
+        if (@file_put_contents($gecici, $govde) !== false) {
+            @rename($gecici, $dosya);
+        }
     }
 
     private function bosPng(): Response
