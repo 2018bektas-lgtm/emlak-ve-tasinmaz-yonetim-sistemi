@@ -38,15 +38,6 @@ Route::post('/cikis', [LoginController::class, 'destroy'])
     ->middleware('auth')
     ->name('logout');
 
-// ABB CBS (baskentcbs) kare köprüsü. Adres, public/abb-onbellek altındaki dosyayla
-// birebir aynı: kare önbellekteyse web sunucusu dosyayı doğrudan verir, bu rota
-// yalnızca eksik kare için çalışır (bkz. AbbProxyController).
-Route::get(AbbProxyController::ONBELLEK_KOK.'/{katman}/{z}/{y}/{x}.png', [AbbProxyController::class, 'kare'])
-    ->middleware('auth')
-    ->whereIn('katman', array_keys(AbbProxyController::KATMANLAR))
-    ->whereNumber(['z', 'y', 'x'])
-    ->name('abb-kare');
-
 Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -427,5 +418,7 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->name('tasinmaz-ara');
         Route::get('eimar-identify', [EimarController::class, 'identify'])
             ->name('eimar-identify');
+        Route::get('abb-proxy', [AbbProxyController::class, 'katman'])
+            ->name('abb-proxy');
     });
 });

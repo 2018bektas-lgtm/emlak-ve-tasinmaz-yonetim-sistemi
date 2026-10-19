@@ -10,13 +10,15 @@
     const API = window.ETYS_HARITA;
     if (!mapEl || !API || typeof require !== 'function') return;
 
+    const BASKENTCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
+
     require([
         'esri/Map',
         'esri/Basemap',
         'esri/views/MapView',
         'esri/layers/WebTileLayer',
-        'esri/layers/BaseTileLayer',
         'esri/layers/support/TileInfo',
+        'esri/layers/MapImageLayer',
         'esri/layers/GraphicsLayer',
         'esri/Graphic',
         'esri/geometry/Polygon',
@@ -25,7 +27,7 @@
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
         'esri/core/reactiveUtils',
-    ], function (EsriMap, Basemap, MapView, WebTileLayer, BaseTileLayer, TileInfo, GraphicsLayer,
+    ], function (EsriMap, Basemap, MapView, WebTileLayer, TileInfo, MapImageLayer, GraphicsLayer,
                  Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils, reactiveUtils) {
 
         /* =========================================================
@@ -70,24 +72,25 @@
         /* =========================================================
          * 2) VERİ KATMANLARI
          * ========================================================= */
-        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3) ve
-        // aktif kadastro parselleri (ortak/ParselAktifCached).
-        // Önbellekli servisler; kareler doğrudan baskentcbs'den değil sunucudaki
-        // önbellekli köprüden (AbbProxyController) istenir — baskentcbs tarayıcı
-        // başına istek sınırı uyguluyor (429). Kare şeması aynı: {z}/{y}/{x}, EPSG:3857.
-        // ABB'de kare 19. seviyeye kadar var (20+ → 404); 20–22 seviyelerini köprü
-        // 19'un karesinden keserek büyütür, böylece en yakın zoomda da katman görünür.
+        // Ankara BB · Uygulama İmar Planı (baskentcbs · uip_esri3) ve aktif kadastro
+        // parselleri (ortak/ParselAktifCached). Önbellekli servisler, kareler doğrudan
+        // baskentcbs'den: /tile/{z}/{y}/{x}, 256 px, EPSG:3857.
+        // Servis 24 seviye tanımlıyor ama karesi yalnızca 19'a kadar var (20+ → 404);
+        // seviyeler 0–19 verilir, daha yakın zoomda harita 19'un karesini büyütür
+        // (yoksa katman 19'dan sonra kayboluyordu).
         const ABB_KARE_SEVIYE = TileInfo.create({ size: 256, numLODs: 20, spatialReference: { wkid: 3857 } });
+
         const imarKatman = new WebTileLayer({
-            urlTemplate: API.abbKare + '/imar/{level}/{row}/{col}.png',
+            urlTemplate: BASKENTCBS + '/plan/uip_esri3/MapServer/tile/{level}/{row}/{col}',
             tileInfo: ABB_KARE_SEVIYE,
             minScale: 2311162,
             opacity: 0.75,
             visible: false,
         });
 
+        // Parselasyon 1:288.895'ten küçük ölçekte çizilmez.
         const parselasyonKatman = new WebTileLayer({
-            urlTemplate: API.abbKare + '/parselasyon/{level}/{row}/{col}.png',
+            urlTemplate: BASKENTCBS + '/ortak/ParselAktifCached/MapServer/tile/{level}/{row}/{col}',
             tileInfo: ABB_KARE_SEVIYE,
             minScale: 288895,
             opacity: 0.80,
@@ -95,46 +98,62 @@
         });
 
         /* ---------------------------------------------------------
-         * Ankara BB · dinamik servisler (tasinmazservice, ortak/adres)
-         * Bunlar da sunucudaki önbellekli köprüden (/abb-onbellek) gelir.
-         * Görünüm başına tek resim yerine 512 px kareler istenir: kareler
-         * kullanıcılar arasında önbellekten paylaşılır, ABB'ye az istek gider.
-         * Ölçek pencereleri servis tanımından alındı; dışında istek atılmaz:
+         * Ankara BB · baskentcbs (dışa açık sunucu)
+         * Bu beş katman önceden iç ağdaki abbcbs proxy'sinden geliyordu;
+         * o sunucu yalnızca belediye ağından erişilebildiği için uygulama
+         * ancak iç ağda çalışabiliyordu. baskentcbs dışarıdan da açık ve
+         * aynı verileri yayınlıyor — katman numaraları da birebir aynı.
+         * Artık Laravel köprüsü gerekmiyor, tarayıcı doğrudan çağırıyor.
+         *
+         * Ölçek pencereleri (servis tanımından):
          *   Numarataj  1:1.500'den yakın
          *   Yapı       1:5.000'den yakın
          *   Mahalle    1:10.000 – 1:150.000
          *   İlçe       1:50.000'den uzak
          * --------------------------------------------------------- */
-        // Kare adresi standart XYZ: Esri'nin kare sınırından z/y/x çıkarılır,
-        // böylece kütüphanenin seviye numaralandırmasına bağlı kalınmaz.
-        const ABB_KARE = 512, DUNYA = 40075016.685578488, YARI = DUNYA / 2;
-        const AbbExportKatmani = BaseTileLayer.createSubclass({
-            properties: { katmanAdi: null },
-            getTileUrl: function (level, row, col) {
-                const b = this.getTileBounds(level, row, col);
-                const w = b[2] - b[0];
-                const z = Math.round(Math.log2(DUNYA / w));
-                const x = Math.round((b[0] + YARI) / w);
-                const y = Math.round((YARI - b[3]) / w);
-                return API.abbKare + '/' + this.katmanAdi + '/' + z + '/' + y + '/' + x + '.png';
-            },
-        });
-        function abbExport(baslik, katmanAdi, ayar) {
-            return new AbbExportKatmani(Object.assign({
-                title: baslik,
-                katmanAdi: katmanAdi,
-                tileInfo: TileInfo.create({ size: ABB_KARE, numLODs: 22, spatialReference: { wkid: 3857 } }),
-                visible: false,
-            }, ayar));
-        }
+        const ADRES_SERVIS = BASKENTCBS + '/ortak/adres/MapServer';
 
         // Belediye Taşınmazları — hisse_duru (TAM / HİSSELİ / HATALI)
         // ayrımı sunucu sembolojisinde hazır geliyor.
-        const belediyeKatman = abbExport('ABB · Belediye Taşınmazları', 'belediye', { opacity: 0.80 });
-        const abbIlceKatman = abbExport('ABB · İlçe Sınırı', 'ilce', { opacity: 0.80, maxScale: 50000 });
-        const abbMahalleKatman = abbExport('ABB · Mahalle Sınırı', 'mahalle', { opacity: 0.80, minScale: 150000, maxScale: 10000 });
-        const abbYapiKatman = abbExport('ABB · Yapı', 'yapi', { opacity: 0.85, minScale: 5000 });
-        const abbNumaratajKatman = abbExport('ABB · Numarataj', 'numarataj', { opacity: 0.90, minScale: 1500 });
+        const belediyeKatman = new MapImageLayer({
+            title: 'ABB · Belediye Taşınmazları',
+            url: BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer',
+            sublayers: [{ id: 0, visible: true }],
+            opacity: 0.80,
+            visible: false,
+        });
+
+        const abbIlceKatman = new MapImageLayer({
+            title: 'ABB · İlçe Sınırı',
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 4, visible: true }],
+            opacity: 0.80,
+            visible: false,
+        });
+
+        const abbMahalleKatman = new MapImageLayer({
+            title: 'ABB · Mahalle Sınırı',
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 3, visible: true }],
+            opacity: 0.80,
+            visible: false,
+        });
+
+        const abbYapiKatman = new MapImageLayer({
+            title: 'ABB · Yapı',
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 2, visible: true }],
+            opacity: 0.85,
+            visible: false,
+        });
+
+        const abbNumaratajKatman = new MapImageLayer({
+            title: 'ABB · Numarataj',
+            url: ADRES_SERVIS,
+            sublayers: [{ id: 0, visible: true }],
+            opacity: 0.90,
+            visible: false,
+        });
 
         const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });

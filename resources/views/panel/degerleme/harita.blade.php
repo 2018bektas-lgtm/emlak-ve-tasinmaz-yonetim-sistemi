@@ -13,17 +13,24 @@
 @endpush
 
 @php
-    // Ankara BB · baskentcbs — kendi sunucumuzdaki önbellekli kare köprüsü üzerinden
-    // (AbbProxyController): {url}/{z}/{y}/{x}.png. Kare önbellekteyse web sunucusu
-    // dosyayı doğrudan verir. baskentcbs tarayıcı başına istek sınırı uyguluyor (429).
-    //   tip = tile   → önbellekli servis, 256 px
-    //   tip = export → dinamik servis, 512 px (bir kare bir alt seviyenin 2×2'si)
+    // Ankara BB · baskentcbs (dışa açık sunucu)
+    // Önceden bu katmanlar iç ağdaki abbcbs proxy'si ve gisserver WMS'i
+    // üzerinden geliyordu; ikisi de yalnızca belediye ağından erişilebiliyor.
+    // baskentcbs dışarıdan da açık ve aynı verileri yayınlıyor.
+    //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x}
+    //   tip = export → dinamik servis, /export?bbox=...&layers=show:<katman>
+    $BCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
     $abbKatmanlar = [
-        'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6', 'tip' => 'tile'],
-        'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e', 'tip' => 'tile'],
-        'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444', 'tip' => 'export'],
-        'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316', 'tip' => 'export'],
-        'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4', 'tip' => 'export'],
+        'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
+            'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0],
+        'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
+            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0],
+        'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
+            'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0],
+        'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
+            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 0],
+        'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4',
+            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2],
     ];
 @endphp
 
@@ -113,7 +120,7 @@
             <div class="ech-katman-grup">
                 <div class="ech-katman-baslik">Ankara BB · İmar ve Kadastro</div>
                 @foreach ($abbKatmanlar as $kod => $k)
-                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ url(\App\Http\Controllers\AbbProxyController::ONBELLEK_KOK.'/'.$kod) }}">
+                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ $k['url'] }}" data-katman="{{ $k['katman'] }}">
                         <span class="ech-katman-ikon" style="background:{{ $k['renk'] }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></span>
                         <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $k['ad'] }}</span><span class="ech-katman-alt">{{ $k['alt'] }}</span>
                             <input type="range" min="10" max="100" value="70" class="dgh-opak" aria-label="{{ $k['ad'] }} saydamlığı" hidden></div>
@@ -226,39 +233,37 @@
         document.querySelectorAll('#dgh-altlik-grup .ech-radyo').forEach(x => x.classList.toggle('is-aktif', x === el));
     }));
 
-    // ---- ABB katmanları (sunucudaki önbellekli kare köprüsü üzerinden) ----
-    // İstek sayısını düşük tutmak için: kareler yalnızca harita durunca istenir,
-    // ekran dışı tampon küçük tutulur.
-    // Köprü ABB'den yanıt alamazsa 503 döner; kare bir kez daha denenir.
+    // ---- ABB katmanları (baskentcbs — doğrudan, proxy yok) ----
     const ovKatman = {};
-    let abbUyariZamani = 0;
-    // Başarısız kareyi artan aralıklarla (5 / 10 / 20 sn) en fazla 3 kez yeniden ister
-    function abbTekrarDene(katman) {
-        katman.on('tileerror', e => {
-            const img = e.tile;
-            img._deneme = (img._deneme || 0) + 1;
-            if (img._deneme > 3) {
-                if (Date.now() - abbUyariZamani > 15000) {
-                    abbUyariZamani = Date.now();
-                    bildir('ABB sunucusu şu an yoğun, bazı katman kareleri yüklenemedi. Biraz sonra tekrar deneyin.');
-                }
-                return;
-            }
-            setTimeout(() => {
-                if (img.isConnected) img.src = img.src.split('#')[0] + '#' + img._deneme;
-            }, 5000 * 2 ** (img._deneme - 1) + Math.random() * 1500);
-        });
-        return katman;
-    }
     function ovOlustur(kart) {
         const opak = kart.querySelector('.dgh-opak').value / 100;
-        const ayar = { opacity: opak, maxZoom: 22, minZoom: 15, updateWhenIdle: true, updateWhenZooming: false, keepBuffer: 1 };
-        // Önbellekli servis: ABB'de kare 19'a kadar var, daha yakında 19 büyütülür.
-        // Dinamik servis: 512 px kare, {z} bir alt seviye (zoomOffset -1), her zoomda net.
-        const ozel = kart.dataset.tip === 'tile'
-            ? { tileSize: 256, maxNativeZoom: 19 }
-            : { tileSize: 512, zoomOffset: -1, maxNativeZoom: 22 };
-        return abbTekrarDene(L.tileLayer(kart.dataset.url + '/{z}/{y}/{x}.png', Object.assign(ozel, ayar)));
+        const url = kart.dataset.url;
+        const ayar = { opacity: opak, maxZoom: 22, minZoom: 15, tileSize: 256 };
+
+        // Önbellekli servis: ArcGIS tile şeması /tile/{z}/{y}/{x}
+        if (kart.dataset.tip === 'tile') {
+            return L.tileLayer(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
+        }
+
+        // Dinamik servis: her kare için bbox hesaplanıp /export çağrılır
+        const katman = L.tileLayer('', ayar);
+        katman.getTileUrl = function (c) {
+            const nwP = c.multiplyBy(256), seP = nwP.add(L.point(256, 256));
+            const nw = L.CRS.EPSG3857.project(this._map.unproject(nwP, c.z));
+            const se = L.CRS.EPSG3857.project(this._map.unproject(seP, c.z));
+            return url + '/export?' + new URLSearchParams({
+                bbox: [nw.x, se.y, se.x, nw.y].join(','),
+                bboxSR: '3857',
+                imageSR: '3857',
+                size: '256,256',
+                dpi: '96',
+                format: 'png32',
+                transparent: 'true',
+                layers: 'show:' + kart.dataset.katman,
+                f: 'image',
+            });
+        };
+        return katman;
     }
     document.querySelectorAll('.dgh-ov').forEach(kart => {
         const kutu = kart.querySelector('input[type=checkbox]');

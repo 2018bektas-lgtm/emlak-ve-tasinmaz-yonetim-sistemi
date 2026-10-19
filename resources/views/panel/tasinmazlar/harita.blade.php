@@ -579,7 +579,6 @@
         geojson:       @json($geojsonUrl),
         ara:           @json(route('panel.ajax.tasinmaz-ara')),
         eimar:         @json(route('panel.ajax.eimar-identify')),
-        abbKare:       @json(url(\App\Http\Controllers\AbbProxyController::ONBELLEK_KOK)),
         ilceler:       @json(url('/panel/ajax/ilceler')),
         mahalleler:    @json(url('/panel/ajax/mahalleler')),
         tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
@@ -587,5 +586,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=30"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=32"></script>
 @endpush
