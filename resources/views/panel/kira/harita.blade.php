@@ -647,5 +647,5 @@
         },
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=45"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=46"></script>
 @endpush

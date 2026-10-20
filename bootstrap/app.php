@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\IzinKontrol;
 use App\Http\Middleware\KullaniciYetkiYukle;
+use App\Models\Kullanici;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -14,7 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->redirectGuestsTo('/');
-        $middleware->redirectUsersTo('/panel');
+        $middleware->redirectUsersTo(function () {
+            $kullanici = auth()->user();
+
+            return $kullanici instanceof Kullanici
+                ? $kullanici->acilisRotasi()
+                : route('panel.dashboard');
+        });
         $middleware->alias([
             'izin' => IzinKontrol::class,
             'yetki.yukle' => KullaniciYetkiYukle::class,

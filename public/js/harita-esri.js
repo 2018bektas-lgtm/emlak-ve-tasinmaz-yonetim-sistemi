@@ -831,7 +831,8 @@
                     ['Telefon', v.telefon],
                     ['Adres', v.adres],
                 ]) +
-                (v.liste ? '<a class="hrm-pop-eylem" href="' + kacis(v.liste) + '">Dosyayı Listede Aç</a>' : '') +
+                (v.detay ? '<a class="hrm-pop-eylem" href="' + kacis(v.detay) + '">Dosya Detayı</a>' : '') +
+                (v.liste ? '<a class="hrm-pop-eylem" href="' + kacis(v.liste) + '">Listede Göster</a>' : '') +
             '</div>';
         }
 

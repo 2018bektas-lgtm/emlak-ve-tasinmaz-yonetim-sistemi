@@ -16,6 +16,7 @@ use App\Models\KiraSozlesme;
 use App\Models\KiraTasinmaz;
 use App\Models\Mahalle;
 use App\Support\HaritaGorunum;
+use App\Support\KiraKolonlari;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -50,14 +51,21 @@ class KiraController extends Controller
 
         $sorgu = (clone $taban)
             ->with([
-                'anaKiraci:id,kira_dosya_id,ad_unvan',
+                'kiracilar:id,kira_dosya_id,tip,ad_unvan,tc_vergi_no,telefon',
                 'isKolu:id,ad',
-                'tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,adres,yuzolcum',
+                'anaDosya:id,dosya_no',
+                'hukukiDurum:id,ad',
+                'kiracilikDurum:id,ad',
+                'muhasebeNiteligi:id,ad',
+                'sorumluPersonel:id,ad,soyad',
+                'tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,adres,yuzolcum,imar_durumu_id',
                 'tasinmaz.ilce:id,ad',
                 'tasinmaz.mahalle:id,ad',
+                'tasinmaz.imarDurumu:id,ad',
                 // latestOfMany kendi alt sorgusunu kurduğu için kolon kısıtlaması
                 // yapılmaz; kısıtlanırsa kira_dosya_id belirsiz kalıyor.
                 'aktifSozlesme',
+                'aktifSozlesme.bedeller',
             ])
             ->orderByDesc('id');
 
@@ -65,8 +73,12 @@ class KiraController extends Controller
             return $this->excelYaz($sorgu->get());
         }
 
+        $gorunurKolonlar = KiraKolonlari::kullaniciIcin($request->user());
+        $sayfaBoyu = $this->sayfaBoyu($request);
+
         return view('panel.kira.index', [
-            'kayitlar' => $sorgu->paginate(50)->withQueryString(),
+            'kayitlar' => $sorgu->paginate($sayfaBoyu)->withQueryString()->appends(['per_page' => $sayfaBoyu]),
+            'sayfaBoyu' => $sayfaBoyu,
             'sayac' => $this->sayaclar($f),
             'ozet' => $this->ozet($taban),
             'filtre' => $f,
@@ -75,12 +87,47 @@ class KiraController extends Controller
             'kiracilikDurumlar' => KiraKiracilikDurum::aktif()->get(['id', 'ad']),
             'ilceler' => Ilce::orderBy('ad')->get(['id', 'ad']),
             'mahalleler' => $f['ilce_id'] ? Mahalle::where('ilce_id', $f['ilce_id'])->orderBy('ad')->get(['id', 'ad']) : collect(),
+            // Kolon seçimi
+            'kolonKatalog' => KiraKolonlari::katalog(),
+            'kolonGruplari' => KiraKolonlari::gruplar(),
+            'gorunurKolonlar' => $gorunurKolonlar,
+            'varsayilanKolonlar' => KiraKolonlari::varsayilan(),
+            'secilenSayi' => count($gorunurKolonlar),
+            'toplamKolon' => count(KiraKolonlari::katalog()),
         ]);
     }
 
     public function excelIndir(Request $request): StreamedResponse
     {
         return $this->index($request->merge(['excel' => 1]));
+    }
+
+    /**
+     * Dosya detayı. Referans sistemin "Bilgi Formu"nun karşılığı: sözleşmesel
+     * bilgiler, belgeler, hukuki bilgiler, adres/tapu ve harita — artı bizde
+     * ayrı tablolarda duran bedel geçmişi, ihale ve süreç olayları.
+     */
+    public function detay(int $id): View
+    {
+        $dosya = KiraDosyasi::with([
+            'kiracilar',
+            'isKolu', 'anaDosya', 'altDosyalar:id,dosya_no,isyeri_adi',
+            'hukukiDurum', 'kiracilikDurum', 'muhasebeNiteligi', 'sorumluPersonel',
+            'tasinmaz.il', 'tasinmaz.ilce', 'tasinmaz.mahalle', 'tasinmaz.imarDurumu', 'tasinmaz.tasinmaz',
+            'koordinat',
+            'sozlesmeler.bedeller',
+            'alanlar.isKolu',
+            'ihaleler.komisyon', 'ihaleler.katilimcilar',
+            'kararlar',
+            'surecOlaylari.olusturan',
+            'isletmeBilgisi',
+            'belgeler.yukleyen',
+        ])->findOrFail($id);
+
+        return view('panel.kira.detay', [
+            'dosya' => $dosya,
+            'aktifSozlesme' => $dosya->sozlesmeler->firstWhere('aktif_mi', true) ?? $dosya->sozlesmeler->last(),
+        ]);
     }
 
     public function harita(Request $request): View
@@ -205,6 +252,7 @@ class KiraController extends Controller
             'bitis' => $s?->bitis_tarihi?->toDateString(),
             'kalan_gun' => $s?->kalanGun(),
             'yillik_bedel' => $bedel?->yillik_bedel !== null ? (float) $bedel->yillik_bedel : null,
+            'detay' => route('panel.kira.detay', $d->id),
             'liste' => route('panel.kira.index', ['q' => $d->dosya_no]),
         ]);
     }
@@ -488,6 +536,15 @@ class KiraController extends Controller
             'yillik_bedel' => $s['yillik_bedel'],
             'tufe_orani' => $s['tufe_orani'] ?? null,
         ], $dolu, array_keys($dolu));
+    }
+
+    /** Tabloda görünen kayıt sayısı. 10–200 arası; boş veya geçersiz değer 50. */
+    private function sayfaBoyu(Request $request): int
+    {
+        $ham = $request->query('per_page', 50);
+        $n = is_numeric($ham) ? (int) $ham : 50;
+
+        return min(200, max(10, $n));
     }
 
     /**

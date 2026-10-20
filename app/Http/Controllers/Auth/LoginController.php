@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Kullanici;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -57,7 +58,11 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('panel.dashboard'));
+        $kullanici = Auth::user();
+
+        return redirect()->intended(
+            $kullanici instanceof Kullanici ? $kullanici->acilisRotasi() : route('panel.dashboard')
+        );
     }
 
     public function destroy(Request $request): RedirectResponse

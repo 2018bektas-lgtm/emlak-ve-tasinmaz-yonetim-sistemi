@@ -72,6 +72,25 @@ class TasinmazHisse extends Model
         return $this->belongsTo(Tasinmaz::class, 'tasinmaz_id');
     }
 
+    /**
+     * Kayıtlı yüzölçüm yoksa pay/payda × parsel alanından hesaplanır.
+     */
+    public function hesaplananYuzolcum(): ?float
+    {
+        if ($this->hisse_yuzolcum !== null) {
+            return round((float) $this->hisse_yuzolcum, 2);
+        }
+
+        $pay = $this->hisse_pay !== null ? (float) $this->hisse_pay : null;
+        $payda = $this->hisse_payda !== null ? (float) $this->hisse_payda : null;
+        $alan = $this->relationLoaded('tasinmaz') ? $this->tasinmaz?->alan : null;
+        if ($pay === null || ! $payda || $alan === null) {
+            return null;
+        }
+
+        return round(($pay / $payda) * (float) $alan, 2);
+    }
+
     /** Modal / tablo JS'inin beklediği düz dizi. */
     public function toFormArray(): array
     {

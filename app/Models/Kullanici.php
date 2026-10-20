@@ -97,6 +97,16 @@ class Kullanici extends Authenticatable
     }
 
     /**
+     * Girişten sonra açılacak sayfa. Harita yetkisi varsa taşınmaz haritası.
+     */
+    public function acilisRotasi(): string
+    {
+        return $this->izinVarMi('harita.goruntule')
+            ? route('panel.tasinmazlar.harita')
+            : route('panel.dashboard');
+    }
+
+    /**
      * @return Collection<int, string>
      */
     public function izinKodlari(): Collection

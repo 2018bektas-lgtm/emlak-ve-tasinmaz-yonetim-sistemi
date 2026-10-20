@@ -31,6 +31,7 @@
             Excel
         </a>
         @can('emsal.olustur')
+            <a href="{{ route('panel.emsal.ice-aktar') }}" class="btn-cancel">İçe Aktar</a>
             <a href="{{ route('panel.emsal.olustur') }}" class="btn-submit">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Yeni Emsal

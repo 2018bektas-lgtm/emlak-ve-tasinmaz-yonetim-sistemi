@@ -439,6 +439,8 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:kira.olustur')->name('olustur');
         Route::post('yeni', [KiraController::class, 'kaydet'])
             ->middleware('izin:kira.olustur')->name('kaydet');
+
+        Route::get('{id}', [KiraController::class, 'detay'])->whereNumber('id')->name('detay');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

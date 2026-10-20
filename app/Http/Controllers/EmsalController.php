@@ -14,13 +14,18 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use PhpOffice\PhpSpreadsheet\Cell\DataValidation;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -398,7 +403,7 @@ class EmsalController extends Controller
      *
      * @param  array<string, mixed>  $veri
      */
-    private function parseliBul(array $veri): EmsalParsel
+    private function parseliBul(array $veri, bool $geometri = true): EmsalParsel
     {
         $parsel = EmsalParsel::firstOrNew([
             'mahalle_id' => $veri['mahalle_id'],
@@ -415,7 +420,7 @@ class EmsalController extends Controller
             'yenaz_yencok' => $veri['yenaz_yencok'] ?? $parsel->yenaz_yencok,
         ]);
 
-        if (! $parsel->koordinat) {
+        if ($geometri && ! $parsel->koordinat) {
             $this->geometriyiGetir($parsel);
         }
 
@@ -527,6 +532,104 @@ class EmsalController extends Controller
         return is_numeric($sayi) ? (float) $sayi : null;
     }
 
+    private function emsalTipi(string $ham): EmsalTipi
+    {
+        $anahtar = $this->adAnahtari($ham);
+
+        return match ($anahtar) {
+            'encumen', 'encumenkarari' => EmsalTipi::Encumen,
+            'senet', 'resmisen', 'resmisenet' => EmsalTipi::Senet,
+            'mahkeme', 'mahkemekarari' => EmsalTipi::Mahkeme,
+            default => throw new \RuntimeException('Tür tanınmadı: '.$ham.'. Encümen Kararı, Resmî Senet veya Mahkeme Kararı yazın.'),
+        };
+    }
+
+    private function excelMetin(array $satir, string $harf, int $limit, string $ad, bool $zorunlu = false): ?string
+    {
+        $deger = trim((string) ($satir[$harf] ?? ''));
+        if ($deger === '') {
+            if ($zorunlu) {
+                throw new \RuntimeException("{$ad} zorunlu.");
+            }
+
+            return null;
+        }
+        if (mb_strlen($deger) > $limit) {
+            throw new \RuntimeException("{$ad} en fazla {$limit} karakter olabilir.");
+        }
+
+        return $deger;
+    }
+
+    private function excelSayi(mixed $deger, string $ad, bool $zorunlu = false, ?float $min = null, ?float $max = null): ?float
+    {
+        if ($deger === null || trim((string) $deger) === '') {
+            if ($zorunlu) {
+                throw new \RuntimeException("{$ad} zorunlu.");
+            }
+
+            return null;
+        }
+
+        if (is_int($deger) || is_float($deger)) {
+            $sayi = (float) $deger;
+        } else {
+            $metin = preg_replace('/[\s\x{00A0}₺]|TL/u', '', (string) $deger) ?? '';
+            if (preg_match('/^(.+)[.,](\d{1,2})$/', $metin, $eslesen)) {
+                $metin = str_replace(['.', ','], '', $eslesen[1]).'.'.$eslesen[2];
+            } else {
+                $metin = str_replace(['.', ','], '', $metin);
+            }
+            if (! is_numeric($metin)) {
+                throw new \RuntimeException("{$ad} okunamadı: {$deger}");
+            }
+            $sayi = (float) $metin;
+        }
+
+        if ($min !== null && $sayi < $min) {
+            throw new \RuntimeException("{$ad} {$min} değerinden küçük olamaz.");
+        }
+        if ($max !== null && $sayi > $max) {
+            throw new \RuntimeException("{$ad} {$max} değerinden büyük olamaz.");
+        }
+
+        return $sayi;
+    }
+
+    private function excelTarih(mixed $deger, string $ad, bool $zorunlu = false): ?string
+    {
+        if ($deger === null || trim((string) $deger) === '') {
+            if ($zorunlu) {
+                throw new \RuntimeException("{$ad} zorunlu.");
+            }
+
+            return null;
+        }
+        if (is_numeric($deger) && (float) $deger > 20000 && (float) $deger < 80000) {
+            return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $deger)->format('Y-m-d');
+        }
+        $ham = trim((string) $deger);
+        foreach (['d.m.Y', 'd/m/Y', 'Y-m-d', 'd.m.y'] as $bicim) {
+            $tarih = \DateTime::createFromFormat('!'.$bicim, $ham);
+            if ($tarih && $tarih->format($bicim) === $ham) {
+                return $tarih->format('Y-m-d');
+            }
+        }
+
+        throw new \RuntimeException("{$ad} okunamadı: {$deger}");
+    }
+
+    private function adAnahtari(?string $metin): string
+    {
+        $metin = mb_strtolower(trim((string) $metin), 'UTF-8');
+        $metin = strtr($metin, [
+            'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+            'â' => 'a', 'î' => 'i', 'û' => 'u',
+        ]);
+
+        return preg_replace('~[^a-z0-9]+~', '', $metin) ?? '';
+    }
+
     /**
      * Emsal satırının alanları. Seçilen türe ait olmayan alanlar null yazılır,
      * böylece tür değiştirildiğinde eski türün numaraları kayıtta kalmaz.
@@ -570,6 +673,316 @@ class EmsalController extends Controller
             'nitelik' => $b['nitelik'] ?? null,
             'bb_durumu' => $b['bb_durumu'] ?? null,
         ], array_values($dolu)));
+    }
+
+    /** Şablon ve okuma aynı kolon sırasını kullanır. * zorunlu. */
+    private const ICE_AKTAR_KOLONLAR = [
+        'A' => 'Tür *',
+        'B' => 'İl *',
+        'C' => 'İlçe *',
+        'D' => 'Mahalle *',
+        'E' => 'Ada *',
+        'F' => 'Parsel *',
+        'G' => 'Parsel Alanı (m²)',
+        'H' => 'İmar Durumu',
+        'I' => 'Yapı Emsali',
+        'J' => 'Yenaz / Yencok',
+        'K' => 'Tarih *',
+        'L' => 'Birim Fiyat (TL/m²) *',
+        'M' => 'Karar No',
+        'N' => 'Kayıt No',
+        'O' => 'Yevmiye No',
+        'P' => 'Satış Durumu',
+        'Q' => 'Satılan Hisse',
+        'R' => 'Esas No',
+        'S' => 'Dava Tarihi',
+        'T' => 'Açıklama',
+        'U' => 'BB No',
+        'V' => 'Kat',
+        'W' => 'Cephe',
+        'X' => 'Brüt Alan (m²)',
+        'Y' => 'BB Nitelik',
+        'Z' => 'BB Durumu',
+    ];
+
+    /** Şablonda liste doğrulamasının uygulandığı satır sayısı (başlık hariç). */
+    private const SABLON_SATIR = 300;
+
+    public function iceAktar(): View
+    {
+        return view('panel.emsal.ice-aktar', [
+            'kolonlar' => self::ICE_AKTAR_KOLONLAR,
+        ]);
+    }
+
+    public function sablonIndir(): StreamedResponse
+    {
+        $ss = new Spreadsheet;
+        $sh = $ss->getActiveSheet();
+        $sh->setTitle('Emsaller');
+        $son = array_key_last(self::ICE_AKTAR_KOLONLAR);
+        foreach (self::ICE_AKTAR_KOLONLAR as $harf => $ad) {
+            $sh->setCellValue($harf.'1', $ad);
+            $sh->getColumnDimension($harf)->setWidth(in_array($harf, ['A', 'B', 'C', 'D', 'H', 'T'], true) ? 22 : 16);
+        }
+        $sh->getStyle('A1:'.$son.'1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0D9488']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER, 'wrapText' => true],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+        ]);
+        $sh->getRowDimension(1)->setRowHeight(34);
+        $sh->freezePane('A2');
+
+        $not = $ss->createSheet();
+        $not->setTitle('Açıklama');
+        foreach ([
+            'İlk sayfadaki her satır bir emsaldir. Başlık satırı okunmaz.',
+            'Tür ve imar durumu hücredeki listeden seçilir. İl, ilçe ve mahalle ad olarak yazılır.',
+            'İl, ilçe ve mahalle sistemdeki adlarla eşleşir. Parsel envanterde olmak zorunda değildir; yoksa açılır.',
+            'Encümen: Karar No, Kayıt No, Satılan Hisse. Senet: Yevmiye No, Satış Durumu, Satılan Hisse. Mahkeme: Esas No, Karar No, Dava Tarihi.',
+            'Türe ait olmayan belge kolonları kayda yazılmaz.',
+            'Sayılar 1.250,50 ya da 1250.50 biçiminde; tarih 15.03.2024 biçiminde yazılabilir.',
+            'Aynı parsel + tür + tarih + birim fiyat + belge no zaten varsa satır atlanır.',
+            'BB kolonları doluysa o emsale tek bağımsız bölüm eklenir. Evrak PDF’si Excel ile gelmez; kayıttan yüklenir.',
+            'Toplu yüklemede parsel sınırı TKGM’den çekilmez. Sınır, haritadan ada/parsel sorgusuyla tamamlanır.',
+        ] as $i => $satir) {
+            $not->setCellValue('A'.($i + 1), $satir);
+        }
+        $not->getColumnDimension('A')->setWidth(130);
+        $this->sablonListeleri($ss, $sh);
+        $ss->setActiveSheetIndex(0);
+
+        return response()->streamDownload(fn () => (new Xlsx($ss))->save('php://output'), 'emsal-sablon.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /** Tür ve imar durumu için gizli sayfada liste tutar. İl, ilçe ve mahalle serbest yazılır. */
+    private function sablonListeleri(Spreadsheet $ss, Worksheet $sh): void
+    {
+        $liste = $ss->createSheet();
+        $liste->setTitle('Listeler');
+        $liste->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
+
+        $turler = array_map(fn (EmsalTipi $t) => $t->etiket(), EmsalTipi::cases());
+        foreach ($turler as $i => $ad) {
+            $liste->setCellValue('A'.($i + 1), $ad);
+        }
+        $this->listeDogrulamasiUygula($sh, 'A', 'Listeler!$A$1:$A$'.count($turler), 'Tür', 'Listeden seçin.');
+
+        $imarlar = ImarDurumu::query()->where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->pluck('ad');
+        foreach ($imarlar as $i => $ad) {
+            $liste->setCellValue('B'.($i + 1), $ad);
+        }
+        if ($imarlar->isNotEmpty()) {
+            $this->listeDogrulamasiUygula($sh, 'H', 'Listeler!$B$1:$B$'.$imarlar->count(), 'İmar durumu', 'Listeden seçin. Boş bırakılabilir.');
+        }
+    }
+
+    private function listeDogrulamasiUygula(Worksheet $sh, string $kolon, string $formul, string $baslik, string $mesaj): void
+    {
+        $dogrulama = new DataValidation;
+        $dogrulama->setType(DataValidation::TYPE_LIST);
+        $dogrulama->setErrorStyle(DataValidation::STYLE_STOP);
+        $dogrulama->setAllowBlank(true);
+        $dogrulama->setShowDropDown(true);
+        $dogrulama->setShowErrorMessage(true);
+        $dogrulama->setShowInputMessage(true);
+        $dogrulama->setErrorTitle('Listeden seçin');
+        $dogrulama->setError('Bu alan listedeki değerlerden biri olmalı.');
+        $dogrulama->setPromptTitle($baslik);
+        $dogrulama->setPrompt($mesaj);
+        $dogrulama->setFormula1($formul);
+        $son = self::SABLON_SATIR + 1;
+        $sh->setDataValidation($kolon.'2:'.$kolon.$son, $dogrulama);
+    }
+
+    public function iceAktarYukle(Request $request): RedirectResponse
+    {
+        $request->validate(
+            ['dosya' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:20480']],
+            [],
+            ['dosya' => 'Excel dosyası']
+        );
+
+        $satirlar = IOFactory::load($request->file('dosya')->getPathname())->getSheet(0)->toArray(null, true, false, true);
+        unset($satirlar[1]);
+
+        $iller = [];
+        foreach (Il::get(['id', 'ad']) as $il) {
+            $iller[$this->adAnahtari($il->ad)][] = $il;
+        }
+        $ilceler = [];
+        foreach (Ilce::get(['id', 'il_id', 'ad']) as $ilce) {
+            $ilceler[$ilce->il_id][$this->adAnahtari($ilce->ad)][] = $ilce;
+        }
+        $mahalleler = [];
+        foreach (Mahalle::get(['id', 'ilce_id', 'ad']) as $mahalle) {
+            $mahalleler[$mahalle->ilce_id][$this->adAnahtari($mahalle->ad)][] = $mahalle;
+        }
+        $imarlar = [];
+        foreach (ImarDurumu::where('aktif_mi', true)->get(['id', 'ad']) as $imar) {
+            $imarlar[$this->adAnahtari($imar->ad)] = $imar->id;
+        }
+
+        $eklenen = 0;
+        $atlanan = 0;
+        $hataSayisi = 0;
+        $hatalar = [];
+        foreach ($satirlar as $satirNo => $s) {
+            if (! is_array($s) || ! array_filter($s, fn ($v) => filled($v))) {
+                continue;
+            }
+            try {
+                $sonuc = DB::transaction(fn () => $this->excelSatiriniKaydet($s, $iller, $ilceler, $mahalleler, $imarlar, $request->user()->id));
+                $sonuc === 'atlandi' ? $atlanan++ : $eklenen++;
+            } catch (\RuntimeException $e) {
+                $hataSayisi++;
+                if (count($hatalar) < 40) {
+                    $hatalar[] = "Satır {$satirNo}: ".$e->getMessage();
+                }
+            }
+        }
+        if ($hataSayisi > count($hatalar)) {
+            $hatalar[] = 'Diğer '.($hataSayisi - count($hatalar)).' satır da işlenemedi.';
+        }
+
+        $mesaj = "{$eklenen} emsal eklendi"
+            .($atlanan ? ", {$atlanan} satır zaten kayıtlı olduğu için atlandı" : '')
+            .($hataSayisi ? ", {$hataSayisi} satır işlenemedi" : '')
+            .'.';
+
+        return redirect()->route('panel.emsal.ice-aktar')
+            ->with($eklenen || $atlanan ? 'basari' : 'hata', $mesaj)
+            ->with('import_hatalari', $hatalar);
+    }
+
+    /**
+     * @param  array<string, array<int, Il>>  $iller
+     * @param  array<int, array<string, array<int, Ilce>>>  $ilceler
+     * @param  array<int, array<string, array<int, Mahalle>>>  $mahalleler
+     * @param  array<string, int>  $imarlar
+     * @param  array<string, mixed>  $satir
+     */
+    private function excelSatiriniKaydet(array $satir, array $iller, array $ilceler, array $mahalleler, array $imarlar, ?int $kullaniciId): string
+    {
+        $metin = fn (string $harf, int $limit, string $ad, bool $zorunlu = false) => $this->excelMetin($satir, $harf, $limit, $ad, $zorunlu);
+        $tip = $this->emsalTipi((string) $metin('A', 40, 'Tür', true));
+        $ilAd = (string) $metin('B', 100, 'İl', true);
+        $ilceAd = (string) $metin('C', 100, 'İlçe', true);
+        $mahalleAd = (string) $metin('D', 150, 'Mahalle', true);
+        $ada = (string) $metin('E', 20, 'Ada', true);
+        $parselNo = (string) $metin('F', 20, 'Parsel', true);
+
+        $ilAday = $iller[$this->adAnahtari($ilAd)] ?? [];
+        if ($ilAday === []) {
+            throw new \RuntimeException("İl bulunamadı: {$ilAd}");
+        }
+        if (count($ilAday) > 1) {
+            throw new \RuntimeException("Birden çok il eşleşti: {$ilAd}");
+        }
+        $il = $ilAday[0];
+
+        $ilceAday = $ilceler[$il->id][$this->adAnahtari($ilceAd)] ?? [];
+        if ($ilceAday === []) {
+            throw new \RuntimeException("İlçe bulunamadı: {$il->ad} / {$ilceAd}");
+        }
+        if (count($ilceAday) > 1) {
+            throw new \RuntimeException("Birden çok ilçe eşleşti: {$il->ad} / {$ilceAd}");
+        }
+        $ilce = $ilceAday[0];
+
+        $mahalleAday = $mahalleler[$ilce->id][$this->adAnahtari($mahalleAd)] ?? [];
+        if ($mahalleAday === []) {
+            throw new \RuntimeException("Mahalle bulunamadı: {$ilce->ad} / {$mahalleAd}");
+        }
+        if (count($mahalleAday) > 1) {
+            throw new \RuntimeException("Birden çok mahalle eşleşti: {$ilce->ad} / {$mahalleAd}");
+        }
+        $mahalle = $mahalleAday[0];
+
+        $imarAd = $metin('H', 100, 'İmar durumu');
+        $imarId = null;
+        if ($imarAd !== null) {
+            $imarId = $imarlar[$this->adAnahtari($imarAd)] ?? null;
+            if ($imarId === null) {
+                throw new \RuntimeException("İmar durumu bulunamadı: {$imarAd}");
+            }
+        }
+
+        $tarih = $this->excelTarih($satir['K'] ?? null, 'Tarih', true);
+        if ($tarih > now()->toDateString()) {
+            throw new \RuntimeException('Tarih bugünden ileri olamaz.');
+        }
+        $davaTarihi = $this->excelTarih($satir['S'] ?? null, 'Dava tarihi');
+        if ($davaTarihi !== null && $davaTarihi > $tarih) {
+            throw new \RuntimeException('Dava tarihi, emsal tarihinden sonra olamaz.');
+        }
+
+        $veri = [
+            'tip' => $tip->value,
+            'il_id' => $ilce->il_id,
+            'ilce_id' => $ilce->id,
+            'mahalle_id' => $mahalle->id,
+            'ada' => $ada,
+            'parsel' => $parselNo,
+            'alan' => $this->excelSayi($satir['G'] ?? null, 'Parsel alanı', false, 0, 99999999999),
+            'imar_durumu_id' => $imarId,
+            'emsal' => $this->excelSayi($satir['I'] ?? null, 'Yapı emsali', false, 0, 999.99),
+            'yenaz_yencok' => $metin('J', 50, 'Yenaz / Yencok'),
+            'tarih' => $tarih,
+            'birim_fiyat' => $this->excelSayi($satir['L'] ?? null, 'Birim fiyat', true, 0, 9999999999999),
+            'aciklama' => $metin('T', 2000, 'Açıklama'),
+            'karar_no' => $metin('M', 100, 'Karar no'),
+            'kayit_no' => $metin('N', 100, 'Kayıt no'),
+            'yevmiye_no' => $metin('O', 100, 'Yevmiye no'),
+            'satis_durumu' => $metin('P', 50, 'Satış durumu'),
+            'satilan_hisse' => $metin('Q', 50, 'Satılan hisse'),
+            'esas_no' => $metin('R', 100, 'Esas no'),
+            'dava_tarihi' => $davaTarihi,
+        ];
+
+        $parsel = $this->parseliBul($veri, false);
+        $alanlar = $this->emsalAlanlari($veri);
+        $belgeAlani = match ($tip) {
+            EmsalTipi::Encumen => 'karar_no',
+            EmsalTipi::Senet => 'yevmiye_no',
+            EmsalTipi::Mahkeme => 'esas_no',
+        };
+        $tekrar = Emsal::query()
+            ->where('emsal_parsel_id', $parsel->id)
+            ->where('tip', $tip->value)
+            ->whereDate('tarih', $alanlar['tarih'])
+            ->where('birim_fiyat', number_format((float) $alanlar['birim_fiyat'], 2, '.', ''))
+            ->when(
+                $alanlar[$belgeAlani] === null,
+                fn ($q) => $q->whereNull($belgeAlani),
+                fn ($q) => $q->where($belgeAlani, $alanlar[$belgeAlani])
+            )
+            ->exists();
+        if ($tekrar) {
+            return 'atlandi';
+        }
+
+        $emsal = new Emsal($alanlar);
+        $emsal->emsal_parsel_id = $parsel->id;
+        $emsal->olusturan_id = $kullaniciId;
+        $emsal->save();
+
+        $bolum = array_filter([
+            'bb_no' => $metin('U', 30, 'BB no'),
+            'kat' => $metin('V', 30, 'Kat'),
+            'cephe' => $metin('W', 50, 'Cephe'),
+            'brut_alan' => $this->excelSayi($satir['X'] ?? null, 'Brüt alan', false, 0, 99999999),
+            'nitelik' => $metin('Y', 100, 'BB nitelik'),
+            'bb_durumu' => $metin('Z', 50, 'BB durumu'),
+        ], fn ($v) => filled($v));
+        if ($bolum !== []) {
+            $this->bagimsizBolumleriYaz($emsal, [$bolum]);
+        }
+
+        return 'eklendi';
     }
 
     /** @param  Collection<int, Emsal>  $kayitlar */
