@@ -26,6 +26,8 @@ class DatabaseSeeder extends Seeder
             ImarDurumuSeeder::class,
             MevcutKullanimSekliSeeder::class,
             YetkiSeeder::class,
+            // Ağa çıktığı ve uzun sürdüğü için en sonda
+            KonumSeeder::class,
         ]);
     }
 }
