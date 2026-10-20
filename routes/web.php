@@ -353,6 +353,8 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::get('harita/geojson', [DegerlemeController::class, 'haritaGeojson'])->name('harita.geojson');
         Route::get('harita/tasinmaz/{tasinmazId}', [DegerlemeController::class, 'haritaTasinmaz'])
             ->whereNumber('tasinmazId')->name('harita.tasinmaz');
+        // Haritadaki modal: sorgulanan parselin envanterdeki karşılığı
+        Route::get('harita/tasinmaz-bul', [DegerlemeController::class, 'haritaTasinmazBul'])->name('harita.tasinmaz-bul');
 
         // Yeni: önce taşınmaz bulunur, sonra o taşınmazdan değerleme açılır
         Route::get('yeni', [DegerlemeController::class, 'yeni'])
@@ -391,6 +393,8 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::get('harita/geojson', [EmsalController::class, 'haritaGeojson'])->name('harita.geojson');
         Route::get('harita/parsel/{parselId}', [EmsalController::class, 'haritaParsel'])
             ->whereNumber('parselId')->name('harita.parsel');
+        // Haritadaki modalin form ön dolgusu (TKGM parselinden)
+        Route::get('harita/on-dolgu', [EmsalController::class, 'haritaOnDolgu'])->name('harita.on-dolgu');
 
         Route::get('yeni', [EmsalController::class, 'olustur'])
             ->middleware('izin:emsal.olustur')->name('olustur');

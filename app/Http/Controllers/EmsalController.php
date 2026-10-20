@@ -175,6 +175,15 @@ class EmsalController extends Controller
         return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
     }
 
+    /**
+     * Haritadaki "Emsal Ekle" modali açılırken çağrılır: TKGM parselinden
+     * gelen bilgiyi form alanlarına çevirir (il/ilçe/mahalle çözülmüş olarak).
+     */
+    public function haritaOnDolgu(Request $request): JsonResponse
+    {
+        return response()->json($this->onDolgu($request));
+    }
+
     /** Harita yan paneli: parselin tüm emsalleri. */
     public function haritaParsel(int $parselId): JsonResponse
     {
@@ -211,7 +220,8 @@ class EmsalController extends Controller
         return view('panel.emsal.form', $this->formVerisi(null, $request));
     }
 
-    public function kaydet(Request $request): RedirectResponse
+    /** Haritadaki modalden de çağrılır; o durumda JSON döner, sayfa değişmez. */
+    public function kaydet(Request $request): RedirectResponse|JsonResponse
     {
         $veri = $this->dogrula($request);
         $parsel = $this->parseliBul($veri);
@@ -226,7 +236,18 @@ class EmsalController extends Controller
 
         $this->bagimsizBolumleriYaz($emsal, $veri['bolumler'] ?? []);
 
-        return redirect()->route('panel.emsal.index')->with('basari', $emsal->tip->etiket().' emsali kaydedildi.');
+        $mesaj = $emsal->tip->etiket().' emsali kaydedildi.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'tamam' => true,
+                'mesaj' => $mesaj,
+                'emsal_id' => $emsal->id,
+                'parsel_id' => $parsel->id,
+            ]);
+        }
+
+        return redirect()->route('panel.emsal.index')->with('basari', $mesaj);
     }
 
     public function duzenle(int $id): View
@@ -465,9 +486,15 @@ class EmsalController extends Controller
         // ada eşleşen varsa imar durumu da seçili gelir.
         $imarAd = trim((string) $request->query('imar_ad', ''));
         if ($imarAd !== '') {
-            $dolgu['imar_durumu_id'] = ImarDurumu::where('aktif_mi', true)
+            $eslesen = ImarDurumu::where('aktif_mi', true)
                 ->whereRaw('LOWER(ad) = LOWER(?)', [$imarAd])
                 ->value('id');
+
+            // e-İmar'ın kullanım sözlüğü bizimkiyle birebir örtüşmüyor
+            // ("YERLEŞİK KONUT ALANI" bizde yok). Tahmin yürütmek yerine ham
+            // metni ipucu olarak döneriz, seçimi kullanıcı yapar.
+            $dolgu['imar_durumu_id'] = $eslesen;
+            $dolgu['imar_ad_ham'] = $eslesen ? null : $imarAd;
         }
 
         return array_filter($dolgu, fn ($v) => $v !== null);
@@ -480,7 +507,22 @@ class EmsalController extends Controller
             return null;
         }
 
-        $sayi = str_replace(',', '.', str_replace('.', '', trim((string) $deger)));
+        $ham = trim((string) $deger);
+        $nokta = strrpos($ham, '.');
+        $virgul = strrpos($ham, ',');
+
+        if ($nokta !== false && $virgul !== false) {
+            // İki ayraç da varsa sondaki ondalıktır: "618.795,00" / "1,234.56"
+            $sayi = $virgul > $nokta
+                ? str_replace(',', '.', str_replace('.', '', $ham))
+                : str_replace(',', '', $ham);
+        } elseif ($virgul !== false) {
+            $sayi = str_replace(',', '.', $ham);
+        } else {
+            // Yalnızca nokta varsa ondalık ayracı sayılır; e-İmar'ın "1.4"
+            // gibi değerlerini 14'e çevirmemek için binlik varsayılmaz.
+            $sayi = $ham;
+        }
 
         return is_numeric($sayi) ? (float) $sayi : null;
     }

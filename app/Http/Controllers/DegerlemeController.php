@@ -137,7 +137,8 @@ class DegerlemeController extends Controller
         return $this->formGoster($kayit, $tasinmaz);
     }
 
-    public function kaydet(Request $request, int $tasinmazId): RedirectResponse
+    /** Haritadaki modalden de çağrılır; o durumda JSON döner, sayfa değişmez. */
+    public function kaydet(Request $request, int $tasinmazId): RedirectResponse|JsonResponse
     {
         $tasinmaz = $this->tasinmazYukle($tasinmazId);
         $veri = $this->dogrula($request, $tasinmaz);
@@ -149,7 +150,59 @@ class DegerlemeController extends Controller
 
         $kayit = TasinmazDegerleme::create($veri);
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'tamam' => true,
+                'mesaj' => 'Değerleme kaydedildi.',
+                'id' => $kayit->id,
+                'detay' => route('panel.degerleme.detay', $kayit->id),
+            ]);
+        }
+
         return redirect()->route('panel.degerleme.detay', $kayit->id)->with('basari', 'Değerleme kaydedildi.');
+    }
+
+    /**
+     * Haritada sorgulanan parselin envanterdeki karşılığını bulur. Değerleme
+     * yalnızca kayıtlı taşınmazdan açılabildiği için modal önce bunu sorar;
+     * karşılığı yoksa kullanıcıya taşınmazın envanterde olmadığı söylenir.
+     */
+    public function haritaTasinmazBul(Request $request): JsonResponse
+    {
+        $mahalle = $request->query('mahalle_tkgm')
+            ? Mahalle::where('tkgm_id', $request->query('mahalle_tkgm'))->first()
+            : null;
+        $ada = trim((string) $request->query('ada', ''));
+        $parsel = trim((string) $request->query('parsel', ''));
+
+        if (! $mahalle || $ada === '' || $parsel === '') {
+            return response()->json(['bulundu' => false, 'mesaj' => 'Parsel bilgisi eksik.']);
+        }
+
+        $tasinmaz = Tasinmaz::with(['ilce:id,ad', 'mahalle:id,ad', 'yapilar'])
+            ->where('mahalle_id', $mahalle->id)->where('ada', $ada)->where('parsel', $parsel)->first();
+
+        if (! $tasinmaz) {
+            return response()->json([
+                'bulundu' => false,
+                'mesaj' => 'Bu parsel envanterde kayıtlı değil. Değerleme yalnızca kayıtlı taşınmazdan açılabilir.',
+                'ekle' => route('panel.tasinmazlar.olustur'),
+            ]);
+        }
+
+        return response()->json([
+            'bulundu' => true,
+            'id' => $tasinmaz->id,
+            'ada' => $tasinmaz->ada,
+            'parsel' => $tasinmaz->parsel,
+            'ilce' => $tasinmaz->ilce?->ad,
+            'mahalle' => $tasinmaz->mahalle?->ad,
+            'alan' => $tasinmaz->alan !== null ? (float) $tasinmaz->alan : null,
+            'kayit_tipi' => $tasinmaz->kayit_tipi?->value,
+            'tipler' => TasinmazDegerleme::tipler($tasinmaz),
+            'hisse_alan' => TasinmazDegerleme::kurumHisseAlani($tasinmaz),
+            'kaydet' => route('panel.degerleme.kaydet', $tasinmaz->id),
+        ]);
     }
 
     public function detay(int $id): View

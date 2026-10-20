@@ -348,3 +348,111 @@
 .hrm-pop-emsal-eylem a { color: #7dd3fc; text-decoration: none; }
 .hrm-pop-emsal-eylem a:hover { text-decoration: underline; }
 .hrm-pop-evraksiz { color: #6b7483; font-weight: 600; }
+
+/* ========== Harita üstü kayıt modali ========== */
+.hrm-modal-katman {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(8, 13, 22, 0.55);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+}
+.hrm-modal-katman[hidden] { display: none; }
+
+.hrm-modal {
+    width: min(760px, 100%);
+    max-height: min(86vh, 760px);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    background: #141b26;
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+    color: #dfe3ea;
+    overflow: hidden;
+}
+.hrm-modal-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+}
+.hrm-modal-head strong { font-size: 0.95rem; }
+.hrm-modal-head small { color: #9aa3b2; font-size: 0.78rem; }
+.hrm-modal-head .hrm-panel-kapat { margin-left: auto; }
+
+.hrm-modal-govde { padding: 16px; overflow-y: auto; }
+
+.hrm-modal-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.hrm-modal-alan { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hrm-modal-alan.is-tam { grid-column: 1 / -1; }
+.hrm-modal-alan[hidden] { display: none; }
+.hrm-modal-alan label { font-size: 0.72rem; font-weight: 700; color: #9aa3b2; }
+.hrm-modal-alan small { font-size: 0.68rem; color: #6b7483; }
+.hrm-modal-alan input,
+.hrm-modal-alan select,
+.hrm-modal-alan textarea {
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e8ecf3;
+    font: inherit;
+    font-size: 0.82rem;
+}
+.hrm-modal-alan input:focus,
+.hrm-modal-alan select:focus,
+.hrm-modal-alan textarea:focus { outline: 2px solid rgba(56, 189, 248, 0.5); outline-offset: 1px; }
+.hrm-modal-alan select option { background: #141b26; }
+
+.hrm-modal-ozet {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+}
+.hrm-modal-ozet div { display: flex; flex-direction: column; gap: 2px; }
+.hrm-modal-ozet span { font-size: 0.68rem; color: #9aa3b2; }
+.hrm-modal-ozet strong { font-size: 0.85rem; }
+
+.hrm-modal-tur { display: flex; flex-wrap: wrap; gap: 8px; }
+.hrm-modal-tur-kart {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+.hrm-modal-tur-kart input { accent-color: var(--em-renk); }
+.hrm-modal-tur-kart.is-secili { border-color: var(--em-renk); background: color-mix(in srgb, var(--em-renk) 18%, transparent); }
+
+.hrm-modal-ayak { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.hrm-form-btn.is-ghost { background: rgba(255, 255, 255, 0.08); color: #dfe3ea; }
+
+.hrm-modal-durum {
+    grid-column: 1 / -1;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: rgba(56, 189, 248, 0.14);
+    color: #7dd3fc;
+    font-size: 0.78rem;
+}
+.hrm-modal-durum.is-hata { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+
+button.hrm-pop-eylem { border: 0; font: inherit; cursor: pointer; }
+
+@media (max-width: 760px) {
+    .hrm-modal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

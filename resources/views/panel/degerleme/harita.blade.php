@@ -110,7 +110,7 @@
             display: none !important;
         }
     </style>
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=3">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=4">
 @endpush
 
 @php
@@ -644,6 +644,97 @@
     </div>
 
     <div id="hrm-map" class="hrm-map"></div>
+
+    {{-- Kayıt modali: haritadan ayrılmadan emsal / değerleme eklenir --}}
+    <div class="hrm-modal-katman" id="hrm-modal" hidden>
+        <div class="hrm-modal" role="dialog" aria-modal="true" aria-labelledby="hrm-modal-baslik">
+            <div class="hrm-modal-head">
+                <strong id="hrm-modal-baslik">Kayıt Ekle</strong>
+                <small id="hrm-modal-alt"></small>
+                <button type="button" class="hrm-panel-kapat" id="hrm-modal-kapat" aria-label="Kapat">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="hrm-modal-govde" id="hrm-modal-govde"></div>
+        </div>
+    </div>
+
+    {{-- Modal formlarının şablonları: alan tanımları tek yerde dursun --}}
+    @if ($emsalGorebilir)
+    <template id="hrm-emsal-form">
+        <form class="hrm-modal-form" data-form="emsal" enctype="multipart/form-data">
+            <div class="hrm-modal-ozet" data-ozet></div>
+
+            <input type="hidden" name="il_id"><input type="hidden" name="ilce_id"><input type="hidden" name="mahalle_id">
+            <input type="hidden" name="ada"><input type="hidden" name="parsel">
+
+            <div class="hrm-modal-alan is-tam">
+                <label>Emsal Türü</label>
+                <div class="hrm-modal-tur">
+                    @foreach ($emsalTipleri as $i => $t)
+                        <label class="hrm-modal-tur-kart" style="--em-renk:{{ $t->renk() }}">
+                            <input type="radio" name="tip" value="{{ $t->value }}" @checked($i === 0)>
+                            <span>{{ $t->etiket() }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="hrm-modal-alan"><label>Tarih *</label><input type="date" name="tarih" max="{{ now()->format('Y-m-d') }}" required></div>
+            <div class="hrm-modal-alan"><label>Birim Fiyat (TL/m²) *</label><input type="number" name="birim_fiyat" step="0.01" min="0" required></div>
+
+            <div class="hrm-modal-alan" data-tur-alan="encumen senet"><label>Satılan Hisse</label><input type="text" name="satilan_hisse" maxlength="50" placeholder="Örn. 1/2"></div>
+            <div class="hrm-modal-alan" data-tur-alan="encumen mahkeme"><label>Karar No</label><input type="text" name="karar_no" maxlength="100"></div>
+            <div class="hrm-modal-alan" data-tur-alan="encumen"><label>Kayıt No</label><input type="text" name="kayit_no" maxlength="100"></div>
+            <div class="hrm-modal-alan" data-tur-alan="senet"><label>Yevmiye No</label><input type="text" name="yevmiye_no" maxlength="100"></div>
+            <div class="hrm-modal-alan" data-tur-alan="senet"><label>Satış Durumu</label><input type="text" name="satis_durumu" maxlength="50"></div>
+            <div class="hrm-modal-alan" data-tur-alan="mahkeme"><label>Esas No</label><input type="text" name="esas_no" maxlength="100"></div>
+            <div class="hrm-modal-alan" data-tur-alan="mahkeme"><label>Dava Tarihi</label><input type="date" name="dava_tarihi"></div>
+
+            <div class="hrm-modal-alan"><label>Parsel Alanı (m²)</label><input type="number" name="alan" step="0.01" min="0"></div>
+            <div class="hrm-modal-alan">
+                <label>İmar Durumu</label>
+                <select name="imar_durumu_id">
+                    <option value="">Seçin</option>
+                    @foreach (\App\Models\ImarDurumu::where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']) as $id)
+                        <option value="{{ $id->id }}">{{ $id->ad }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="hrm-modal-alan"><label>Emsal (KAKS)</label><input type="number" name="emsal" step="0.01" min="0" max="999.99"></div>
+            <div class="hrm-modal-alan"><label>Yençok / Yenaz</label><input type="text" name="yenaz_yencok" maxlength="50"></div>
+
+            <div class="hrm-modal-alan is-tam"><label>Evrak (PDF / görsel)</label><input type="file" name="evrak" accept=".pdf,.jpg,.jpeg,.png"></div>
+            <div class="hrm-modal-alan is-tam"><label>Açıklama</label><textarea name="aciklama" rows="2" maxlength="2000"></textarea></div>
+        </form>
+    </template>
+    @endif
+
+    <template id="hrm-degerleme-form">
+        <form class="hrm-modal-form" data-form="degerleme" enctype="multipart/form-data">
+            <div class="hrm-modal-ozet" data-ozet></div>
+
+            <div class="hrm-modal-alan is-tam">
+                <label>Değerleme Türü</label>
+                <div class="hrm-modal-tur" data-deg-tur></div>
+            </div>
+
+            <div class="hrm-modal-alan" data-deg-alan="bb"><label>BB No *</label><input type="text" name="bb_no" maxlength="30"></div>
+            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Kat</label><input type="text" name="kat" maxlength="30"></div>
+            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Nitelik</label><input type="text" name="bb_nitelik" maxlength="100"></div>
+            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Oda Sayısı</label><input type="text" name="oda_sayisi" maxlength="20" placeholder="Örn. 3+1"></div>
+            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Brüt Alan (m²)</label><input type="number" name="brut_alan" step="0.01" min="0"></div>
+            <div class="hrm-modal-alan" data-deg-alan="arsa"><label>Hisse Alanı (m²)</label><input type="number" name="hisse_alan" step="0.01" min="0"></div>
+
+            <div class="hrm-modal-alan"><label>Birim Fiyat (TL/m²)</label><input type="number" name="birim_fiyat" step="0.01" min="0"></div>
+            <div class="hrm-modal-alan"><label>Toplam Bedel (TL)</label><input type="number" name="toplam_bedel" step="0.01" min="0"><small>Boşsa birim fiyat × alan hesaplanır.</small></div>
+            <div class="hrm-modal-alan"><label>Rapor No</label><input type="text" name="rapor_no" maxlength="100"></div>
+            <div class="hrm-modal-alan"><label>Rapor Tarihi *</label><input type="date" name="rapor_tarihi" value="{{ now()->format('Y-m-d') }}" required></div>
+
+            <div class="hrm-modal-alan is-tam"><label>Rapor PDF</label><input type="file" name="evrak" accept=".pdf"></div>
+            <div class="hrm-modal-alan is-tam"><label>Açıklama</label><textarea name="aciklama" rows="2" maxlength="2000"></textarea></div>
+        </form>
+    </template>
 </div>
 @endsection
 
@@ -666,19 +757,25 @@
         tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
         secilenSayi:   null,
         degerleme: {
-            tasinmaz:  @json(url('/panel/degerleme/harita/tasinmaz')),
-            yeniRapor: @json(route('panel.degerleme.yeni')),
-            imarRenk:  @json($imarDurumlari->mapWithKeys(fn ($i) => [$i->id => $imarRenk($i->id)])->all()),
+            tasinmaz:    @json(url('/panel/degerleme/harita/tasinmaz')),
+            yeniRapor:   @json(route('panel.degerleme.yeni')),
+            tasinmazBul: @json(route('panel.degerleme.harita.tasinmaz-bul')),
+            ekleyebilir: @json(request()->user()->izinVarMi('degerleme.olustur')),
+            imarRenk:    @json($imarDurumlari->mapWithKeys(fn ($i) => [$i->id => $imarRenk($i->id)])->all()),
         },
+        csrf: @json(csrf_token()),
 @if ($emsalGorebilir)
         emsal: {
-            geojson:   @json(route('panel.emsal.harita.geojson')),
-            parsel:    @json(url('/panel/emsal/harita/parsel')),
-            yeni:      @json(route('panel.emsal.olustur')),
-            turler:    @json(collect($emsalTipleri)->map(fn ($t) => ['deger' => $t->value, 'etiket' => $t->etiket(), 'renk' => $t->renk()])->all()),
+            geojson:     @json(route('panel.emsal.harita.geojson')),
+            parsel:      @json(url('/panel/emsal/harita/parsel')),
+            yeni:        @json(route('panel.emsal.olustur')),
+            kaydet:      @json(route('panel.emsal.kaydet')),
+            onDolgu:     @json(route('panel.emsal.harita.on-dolgu')),
+            ekleyebilir: @json(request()->user()->izinVarMi('emsal.olustur')),
+            turler:      @json(collect($emsalTipleri)->map(fn ($t) => ['deger' => $t->value, 'etiket' => $t->etiket(), 'renk' => $t->renk()])->all()),
         },
 @endif
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=40"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=42"></script>
 @endpush

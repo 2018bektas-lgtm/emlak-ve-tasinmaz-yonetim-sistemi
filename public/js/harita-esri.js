@@ -1056,6 +1056,248 @@
             }
         }
 
+        /* =========================================================
+         * KAYIT MODALİ — emsal / değerleme haritadan ayrılmadan eklenir
+         * ========================================================= */
+        const modalKatman = document.getElementById('hrm-modal');
+        const modalGovde = document.getElementById('hrm-modal-govde');
+        const modalBaslik = document.getElementById('hrm-modal-baslik');
+        const modalAlt = document.getElementById('hrm-modal-alt');
+
+        function modalKapat() {
+            if (!modalKatman) return;
+            modalKatman.hidden = true;
+            modalGovde.innerHTML = '';
+        }
+
+        function modalAc(baslik, alt) {
+            modalBaslik.textContent = baslik;
+            modalAlt.textContent = alt || '';
+            modalKatman.hidden = false;
+        }
+
+        function modalDurum(metin, hataMi) {
+            let kutu = modalGovde.querySelector('.hrm-modal-durum');
+            if (!kutu) {
+                kutu = document.createElement('div');
+                kutu.className = 'hrm-modal-durum';
+                modalGovde.appendChild(kutu);
+            }
+            kutu.classList.toggle('is-hata', !!hataMi);
+            kutu.textContent = metin;
+            return kutu;
+        }
+
+        function ozetKutulari(ciftler) {
+            return doluCiftler(ciftler).map(function (c) {
+                return '<div><span>' + kacis(c[0]) + '</span><strong>' + kacis(c[1]) + '</strong></div>';
+            }).join('');
+        }
+
+        // Formu şablondan kurar, alt düğmeleri ekler ve gönderimi bağlar.
+        function modalFormKur(sablonId, gonder) {
+            const sablon = document.getElementById(sablonId);
+            if (!sablon) return null;
+            modalGovde.innerHTML = '';
+            modalGovde.appendChild(sablon.content.cloneNode(true));
+            const form = modalGovde.querySelector('form');
+
+            const ayak = document.createElement('div');
+            ayak.className = 'hrm-modal-ayak';
+            ayak.innerHTML = '<button type="button" class="hrm-form-btn is-ghost" data-vazgec>Vazgeç</button>' +
+                '<button type="submit" class="hrm-form-btn">Kaydet</button>';
+            form.appendChild(ayak);
+            ayak.querySelector('[data-vazgec]').addEventListener('click', modalKapat);
+
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const dugme = ayak.querySelector('[type="submit"]');
+                dugme.disabled = true;
+                dugme.textContent = 'Kaydediliyor…';
+                try {
+                    await gonder(form);
+                } finally {
+                    dugme.disabled = false;
+                    dugme.textContent = 'Kaydet';
+                }
+            });
+            return form;
+        }
+
+        async function formGonder(url, form) {
+            const veri = new FormData(form);
+            veri.append('_token', API.csrf);
+            const yanit = await fetch(url, {
+                method: 'POST',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: veri,
+            });
+            let govde = null;
+            try { govde = await yanit.json(); } catch (e) { govde = null; }
+            if (!yanit.ok) {
+                // 422: alan bazlı doğrulama hataları tek satırda toplanır
+                const hatalar = govde && govde.errors ? Object.values(govde.errors).flat().join(' · ') : null;
+                throw new Error(hatalar || (govde && govde.message) || ('HTTP ' + yanit.status));
+            }
+            return govde;
+        }
+
+        /* ---- Emsal modali ---- */
+        async function emsalModaliAc(sorgu) {
+            modalAc('Emsal Ekle', '');
+            modalGovde.innerHTML = '<div class="hrm-pop-yukleniyor"><span class="hrm-pop-spin"></span>Parsel bilgisi çözülüyor…</div>';
+
+            let dolgu;
+            try {
+                dolgu = await jsonGetir(EMSAL.onDolgu + '?' + sorgu);
+            } catch (e) {
+                modalGovde.innerHTML = popUyari('Parsel bilgisi alınamadı: ' + e.message);
+                return;
+            }
+            if (!dolgu || !dolgu.mahalle_id) {
+                modalGovde.innerHTML = popUyari('Bu parselin mahallesi sistemde bulunamadı; emsal ekranından elle girebilirsiniz.');
+                return;
+            }
+
+            const form = modalFormKur('hrm-emsal-form', async function (f) {
+                try {
+                    const s = await formGonder(EMSAL.kaydet, f);
+                    modalKapat();
+                    emsalleriYukle();
+                    popupAc(view.center, 'Kaydedildi', (function () {
+                        const d = document.createElement('div');
+                        d.className = 'hrm-pop';
+                        d.innerHTML = '<div class="hrm-pop-dipnot">' + kacis(s.mesaj) + '</div>';
+                        return d;
+                    })());
+                } catch (e) {
+                    modalDurum(e.message, true);
+                }
+            });
+            if (!form) return;
+
+            const p = new URLSearchParams(sorgu);
+            modalAlt.textContent = (dolgu.ada || p.get('ada') || '') + '/' + (dolgu.parsel || p.get('parsel') || '');
+
+            ['il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'emsal', 'yenaz_yencok', 'imar_durumu_id'].forEach(function (ad) {
+                const alan = form.elements[ad];
+                if (alan && dolgu[ad] !== undefined && dolgu[ad] !== null) alan.value = dolgu[ad];
+            });
+            const bugun = new Date().toISOString().slice(0, 10);
+            if (form.elements.tarih && !form.elements.tarih.value) form.elements.tarih.value = bugun;
+
+            form.querySelector('[data-ozet]').innerHTML = ozetKutulari([
+                ['Ada / Parsel', (dolgu.ada || '') + ' / ' + (dolgu.parsel || '')],
+                ['Alan', dolgu.alan ? sayiBicim(dolgu.alan, ' m²') : null],
+                ['Konum', p.get('mahalle_tkgm') ? 'TKGM ile eşleşti' : null],
+            ]);
+
+            // e-İmar kullanımı listemizle eşleşmediyse ham metni ipucu göster
+            if (dolgu.imar_ad_ham) {
+                const alan = form.elements.imar_durumu_id.closest('.hrm-modal-alan');
+                const ipucu = document.createElement('small');
+                ipucu.textContent = 'e-İmar: ' + dolgu.imar_ad_ham;
+                alan.appendChild(ipucu);
+            }
+
+            // Seçili türe ait olmayan alanlar gizlenir ve gönderilmez
+            function turUygula() {
+                const tur = form.querySelector('[name="tip"]:checked').value;
+                form.querySelectorAll('[data-tur-alan]').forEach(function (alan) {
+                    const gorunur = alan.dataset.turAlan.split(' ').indexOf(tur) !== -1;
+                    alan.hidden = !gorunur;
+                    alan.querySelectorAll('input, select, textarea').forEach(function (g) { g.disabled = !gorunur; });
+                });
+                form.querySelectorAll('.hrm-modal-tur-kart').forEach(function (k) {
+                    k.classList.toggle('is-secili', k.querySelector('input').checked);
+                });
+            }
+            form.querySelectorAll('[name="tip"]').forEach(function (r) { r.addEventListener('change', turUygula); });
+            turUygula();
+        }
+
+        /* ---- Değerleme modali ---- */
+        async function degerlemeModaliAc(sorgu) {
+            modalAc('Değerleme Raporu Ekle', '');
+            modalGovde.innerHTML = '<div class="hrm-pop-yukleniyor"><span class="hrm-pop-spin"></span>Taşınmaz envanterde aranıyor…</div>';
+
+            let t;
+            try {
+                t = await jsonGetir(DEG.tasinmazBul + '?' + sorgu);
+            } catch (e) {
+                modalGovde.innerHTML = popUyari('Taşınmaz sorgulanamadı: ' + e.message);
+                return;
+            }
+            if (!t.bulundu) {
+                modalGovde.innerHTML = popUyari(t.mesaj) +
+                    (t.ekle ? '<div class="hrm-modal-ayak"><a class="hrm-form-btn" href="' + kacis(t.ekle) + '">Taşınmaz Ekle</a></div>' : '');
+                return;
+            }
+
+            const form = modalFormKur('hrm-degerleme-form', async function (f) {
+                try {
+                    const s = await formGonder(t.kaydet, f);
+                    modalKapat();
+                    parselleriYukle();
+                    modalAc('Kaydedildi', '');
+                    modalGovde.innerHTML = '<div class="hrm-pop-dipnot">' + kacis(s.mesaj) + '</div>' +
+                        '<div class="hrm-modal-ayak"><button type="button" class="hrm-form-btn is-ghost" id="hrm-modal-tamam">Kapat</button>' +
+                        '<a class="hrm-form-btn" href="' + kacis(s.detay) + '">Raporu Aç</a></div>';
+                    document.getElementById('hrm-modal-tamam').addEventListener('click', modalKapat);
+                } catch (e) {
+                    modalDurum(e.message, true);
+                }
+            });
+            if (!form) return;
+
+            modalAlt.textContent = t.ada + '/' + t.parsel + ' · ' + [t.ilce, t.mahalle].filter(Boolean).join(' · ');
+            form.querySelector('[data-ozet]').innerHTML = ozetKutulari([
+                ['Ada / Parsel', t.ada + ' / ' + t.parsel],
+                ['Parsel Alanı', t.alan ? sayiBicim(t.alan, ' m²') : null],
+                ['Kurum Hissesi', t.hisse_alan ? sayiBicim(t.hisse_alan, ' m²') : null],
+            ]);
+            if (form.elements.hisse_alan && t.hisse_alan) form.elements.hisse_alan.value = t.hisse_alan;
+
+            // Tür seçenekleri taşınmazın kayıt tipine göre sunucudan gelir
+            const turKap = form.querySelector('[data-deg-tur]');
+            const turAd = { arsa: 'Arsa', bb: 'Bağımsız Bölüm' };
+            turKap.innerHTML = t.tipler.map(function (tip, i) {
+                return '<label class="hrm-modal-tur-kart" style="--em-renk:' + (tip === 'bb' ? '#7c3aed' : '#0d9488') + '">' +
+                    '<input type="radio" name="tip" value="' + kacis(tip) + '"' + (i === 0 ? ' checked' : '') + '>' +
+                    '<span>' + kacis(turAd[tip] || tip) + '</span></label>';
+            }).join('');
+
+            function degTurUygula() {
+                const tur = form.querySelector('[name="tip"]:checked').value;
+                form.querySelectorAll('[data-deg-alan]').forEach(function (alan) {
+                    const gorunur = alan.dataset.degAlan === tur;
+                    alan.hidden = !gorunur;
+                    alan.querySelectorAll('input, select, textarea').forEach(function (g) { g.disabled = !gorunur; });
+                });
+                form.querySelectorAll('.hrm-modal-tur-kart').forEach(function (k) {
+                    k.classList.toggle('is-secili', k.querySelector('input').checked);
+                });
+            }
+            form.querySelectorAll('[name="tip"]').forEach(function (r) { r.addEventListener('change', degTurUygula); });
+            degTurUygula();
+        }
+
+        // Popup içindeki düğmeler sonradan basıldığı için gövdeye tek dinleyici
+        document.addEventListener('click', function (e) {
+            const dugme = e.target.closest ? e.target.closest('[data-modal]') : null;
+            if (!dugme) return;
+            e.preventDefault();
+            const sorgu = dugme.dataset.sorgu || '';
+            if (dugme.dataset.modal === 'emsal') emsalModaliAc(sorgu);
+            else degerlemeModaliAc(sorgu);
+        });
+
+        if (modalKatman) {
+            document.getElementById('hrm-modal-kapat').addEventListener('click', modalKapat);
+            modalKatman.addEventListener('click', function (e) { if (e.target === modalKatman) modalKapat(); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modalKatman.hidden) modalKapat(); });
+        }
+
         /* ---- Değerleme kipi anahtarları ---- */
         if (MOD === 'degerleme') {
             let imarZamanlayici = null;
@@ -1232,17 +1474,14 @@
             if (eimar && eimar.hmax) q.set('yenaz_yencok', eimar.hmax);
             if (eimar && eimar.kullanim) q.set('imar_ad', eimar.kullanim);
 
+            // Kayıt modal içinde açılır; haritadan ayrılmamak için <a> değil
+            // <button> kullanılır, parametreler data-sorgu'da taşınır.
             const baglar = [];
-            if (EMSAL && EMSAL.yeni) {
-                baglar.push('<a class="hrm-pop-eylem is-emsal" href="' + kacis(EMSAL.yeni + '?' + q) + '">+ Emsal Ekle</a>');
+            if (EMSAL && EMSAL.ekleyebilir) {
+                baglar.push('<button type="button" class="hrm-pop-eylem is-emsal" data-modal="emsal" data-sorgu="' + kacis(q.toString()) + '">+ Emsal Ekle</button>');
             }
-            if (DEG.yeniRapor) {
-                // Değerleme envanterdeki taşınmazdan açılır: arama ekranı
-                // ada/parsel ile süzülmüş gelir.
-                const dq = new URLSearchParams();
-                if (o.adaNo) dq.set('ada', o.adaNo);
-                if (o.parselNo) dq.set('parsel', o.parselNo);
-                baglar.push('<a class="hrm-pop-eylem" href="' + kacis(DEG.yeniRapor + '?' + dq) + '">+ Değerleme Raporu</a>');
+            if (DEG.ekleyebilir) {
+                baglar.push('<button type="button" class="hrm-pop-eylem" data-modal="degerleme" data-sorgu="' + kacis(q.toString()) + '">+ Değerleme Raporu</button>');
             }
             return baglar.length ? '<div class="hrm-pop-eylemler">' + baglar.join('') + '</div>' : '';
         }
@@ -1384,8 +1623,11 @@
             }
 
             kutu.innerHTML = eimarGovde(sonuc.veri);
-            // e-İmar geldikten sonra KAKS/Hmax de form bağlantılarına eklenir
-            const eylem = document.querySelector('#hrm-kayit-eylem');
+            // e-İmar geldikten sonra KAKS/Hmax/kullanım da form bağlantılarına
+            // eklenir. Eski popup gövdeleri DOM'da kalabildiği için önce bu
+            // popup'ın kendi kabında aranır.
+            const eylem = (kap && kap.querySelector && kap.querySelector('#hrm-kayit-eylem'))
+                || document.querySelector('#hrm-kayit-eylem');
             if (eylem && tkgmOzellik) eylem.innerHTML = kayitEylemleri(tkgmOzellik, sonuc.veri);
             const eGeom = geoJsonGeometri(sonuc.veri.geometry);
             if (eGeom) sorguKatman.add(new Graphic({ geometry: eGeom, symbol: SEM_EIMAR }));

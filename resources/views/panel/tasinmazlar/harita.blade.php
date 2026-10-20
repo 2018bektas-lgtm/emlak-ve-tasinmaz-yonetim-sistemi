@@ -110,7 +110,7 @@
             display: none !important;
         }
     </style>
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=3">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=4">
 @endpush
 
 @section('content')
@@ -586,5 +586,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=40"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=42"></script>
 @endpush
