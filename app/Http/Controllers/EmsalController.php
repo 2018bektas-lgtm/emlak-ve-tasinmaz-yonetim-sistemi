@@ -103,6 +103,13 @@ class EmsalController extends Controller
             ->when($request->query('ilce_id'), fn ($s, $v) => $s->where('ilce_id', $v))
             ->when($request->query('mahalle_id'), fn ($s, $v) => $s->where('mahalle_id', $v))
             ->when($imar !== null, fn ($s) => $s->where(function ($w) use ($imar) {
+                // Tüm katmanlar kapalıysa hiçbir şey gösterilmez; boş koşul
+                // yazmak tersine her şeyi geçirirdi.
+                if ($imar['idler'] === [] && ! $imar['yok']) {
+                    $w->whereRaw('1 = 0');
+
+                    return;
+                }
                 if ($imar['idler'] !== []) {
                     $w->whereIn('imar_durumu_id', $imar['idler']);
                 }

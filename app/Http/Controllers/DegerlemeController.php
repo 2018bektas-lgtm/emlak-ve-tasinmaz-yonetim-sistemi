@@ -269,6 +269,13 @@ class DegerlemeController extends Controller
             ->when($ada !== '', fn ($x) => $x->where('ada', $ada))
             ->when($parsel !== '', fn ($x) => $x->where('parsel', $parsel))
             ->when($imar !== null, fn ($x) => $x->where(function ($w) use ($imar) {
+                // Tüm katmanlar kapalıysa hiçbir şey gösterilmez; boş koşul
+                // yazmak tersine her şeyi geçirirdi.
+                if ($imar['idler'] === [] && ! $imar['yok']) {
+                    $w->whereRaw('1 = 0');
+
+                    return;
+                }
                 if ($imar['idler'] !== []) {
                     $w->whereIn('id', TasinmazImar::query()->select('tasinmaz_id')->whereIn('imar_durumu_id', $imar['idler']));
                 }

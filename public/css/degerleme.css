@@ -293,3 +293,56 @@
     .dg-detay-izgara { grid-template-columns: 1fr; }
     .dg-bilgi.is-tek > div { grid-template-columns: 110px 1fr; }
 }
+
+/* ---------- Harita · Emsal katmanı ve imar durumu süzgeci ---------- */
+.dgh-emsal-alt { padding-left: 26px; }
+.dgh-emsal-alt.is-pasif { opacity: 0.45; pointer-events: none; }
+
+.dgh-emsal-marker {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 2px solid #fff;
+    border-radius: 50% 50% 50% 4px;
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.35);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    transform: rotate(-45deg);
+}
+.dgh-cluster.is-emsal { background: #0ea5e9; }
+
+.ech-chip.is-emsal strong { color: #0ea5e9; }
+
+.dgh-imar-kisa { display: inline-flex; gap: 4px; margin-left: auto; }
+.dgh-imar-kisa button {
+    padding: 2px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    color: inherit;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.dgh-imar-kisa button:hover { background: rgba(255, 255, 255, 0.24); }
+
+.dgh-imar-liste { display: flex; flex-direction: column; gap: 1px; max-height: 230px; overflow-y: auto; }
+.dgh-imar-oge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 9px;
+    cursor: pointer;
+}
+.dgh-imar-oge:hover { background: rgba(255, 255, 255, 0.08); }
+.dgh-imar-oge input { accent-color: #0ea5e9; flex: none; }
+.dgh-imar-nokta { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.dgh-imar-ad { font-size: 0.76rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; }
+
+/* Üç seçenek tek satıra sığmıyor; renk modu seçimi sarmalı */
+.dgh-renk-mod { flex-wrap: wrap; }
+.dgh-renk-mod .ech-radyo-grup { flex-wrap: wrap; }

@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
 <link rel="stylesheet" href="{{ asset('css/ecrimisil-harita.css') }}?v=1">
-<link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=4">
+<link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
 @endpush
 
 @php
@@ -33,6 +33,16 @@
         'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4',
             'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2, 'zoom' => 17],
     ];
+
+    $emsalTipleri = \App\Enums\EmsalTipi::cases();
+
+    // İmar durumu katman rengi: id'den türetilir, böylece tanım eklense de
+    // mevcut katmanların rengi değişmez ve altın oran adımı tonları ayırır.
+    $imarRenk = function (int $id): string {
+        $ton = (int) fmod($id * 137.508, 360);
+
+        return 'hsl('.$ton.', 65%, 52%)';
+    };
 @endphp
 
 @section('content')
@@ -65,6 +75,9 @@
         </form>
         <div class="ech-tool-divider"></div>
         <span class="ech-chip"><strong id="dgh-sayi">0</strong> taşınmaz · <strong id="dgh-rapor">0</strong> rapor</span>
+@if ($emsalGorebilir)
+        <span class="ech-chip is-emsal"><strong id="dgh-emsal-sayi">0</strong> emsal parseli</span>
+@endif
     </div>
 
     {{-- ==== KATMAN PANELİ ==== --}}
@@ -114,9 +127,54 @@
                     <div class="ech-radyo-grup" id="dgh-renk-grup">
                         <div class="ech-radyo is-aktif" data-renk="tur">Türe göre</div>
                         <div class="ech-radyo" data-renk="birim">Arsa m² değeri</div>
+                        @if ($imarDurumlari->isNotEmpty())<div class="ech-radyo" data-renk="imar">İmar durumuna göre</div>@endif
                     </div>
                 </div>
             </div>
+
+            @if ($emsalGorebilir)
+                <div class="ech-katman-grup">
+                    <div class="ech-katman-baslik">Emsaller</div>
+                    <div class="ech-katman-kart">
+                        <span class="ech-katman-ikon" style="background:#0ea5e9;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="12" r="2" fill="currentColor"/><circle cx="11" cy="18" r="2" fill="currentColor"/></svg></span>
+                        <div class="ech-katman-meta"><span class="ech-katman-ad">Emsal Parselleri</span><span class="ech-katman-alt">Karşılaştırılabilir satışlar</span></div>
+                        <label class="ech-switch"><input type="checkbox" id="dgh-lyr-emsal"><span class="ech-switch-slider"></span></label>
+                    </div>
+                    @foreach ($emsalTipleri as $t)
+                        <div class="ech-katman-kart dgh-emsal-alt">
+                            <span class="ech-katman-ikon" style="background:{{ $t->renk() }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8h14"/></svg></span>
+                            <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $t->etiket() }}</span></div>
+                            <label class="ech-switch"><input type="checkbox" data-emsal-tur="{{ $t->value }}" checked><span class="ech-switch-slider"></span></label>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
+            @if ($imarDurumlari->isNotEmpty())
+                <div class="ech-katman-grup">
+                    <div class="ech-katman-baslik">
+                        İmar Durumu
+                        <span class="dgh-imar-kisa">
+                            <button type="button" data-imar-hepsi="1">Tümü</button>
+                            <button type="button" data-imar-hepsi="0">Hiçbiri</button>
+                        </span>
+                    </div>
+                    <div class="dgh-imar-liste">
+                        @foreach ($imarDurumlari as $id)
+                            <label class="dgh-imar-oge">
+                                <input type="checkbox" data-imar="{{ $id->id }}" checked>
+                                <span class="dgh-imar-nokta" style="background:{{ $imarRenk($id->id) }}"></span>
+                                <span class="dgh-imar-ad">{{ $id->ad }}</span>
+                            </label>
+                        @endforeach
+                        <label class="dgh-imar-oge">
+                            <input type="checkbox" data-imar="yok" checked>
+                            <span class="dgh-imar-nokta" style="background:#94a3b8"></span>
+                            <span class="dgh-imar-ad">Belirtilmemiş</span>
+                        </label>
+                    </div>
+                </div>
+            @endif
 
             <div class="ech-katman-grup">
                 <div class="ech-katman-baslik">Ankara BB · İmar ve Kadastro</div>
@@ -203,6 +261,10 @@
     const API = {
         geojson: {{ \Illuminate\Support\Js::from(route('panel.degerleme.harita.geojson')) }},
         tasinmaz: {{ \Illuminate\Support\Js::from(url('/panel/degerleme/harita/tasinmaz')) }},
+@if ($emsalGorebilir)
+        emsalGeojson: {{ \Illuminate\Support\Js::from(route('panel.emsal.harita.geojson')) }},
+        emsalParsel: {{ \Illuminate\Support\Js::from(url('/panel/emsal/harita/parsel')) }},
+@endif
         ilceler: {{ \Illuminate\Support\Js::from(url('/panel/ajax/ilceler')) }},
         mahalleler: {{ \Illuminate\Support\Js::from(url('/panel/ajax/mahalleler')) }},
     };
@@ -211,6 +273,14 @@
         bb:    { renk: '#7c3aed', etiket: 'Bağımsız Bölüm' },
         ikisi: { renk: '#f59e0b', etiket: 'Arsa + BB' },
     };
+    const EMSAL_TUR = {
+@foreach ($emsalTipleri as $t)
+        {{ $t->value }}: { renk: {{ \Illuminate\Support\Js::from($t->renk()) }}, etiket: {{ \Illuminate\Support\Js::from($t->etiket()) }} },
+@endforeach
+    };
+    // İmar durumu renkleri sunucuda üretilir; lejant noktalarıyla birebir aynı
+    const IMAR_RENK = {{ \Illuminate\Support\Js::from($imarDurumlari->mapWithKeys(fn ($i) => [$i->id => $imarRenk($i->id)])->all()) }};
+    const IMAR_YOK_RENK = '#94a3b8';
     const ETIKET_ZOOM = 16;
     const $ = id => document.getElementById(id);
     const para = n => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -363,6 +433,22 @@
         },
     });
     const kumeKatman = L.featureGroup().addTo(map); // sunucu kümeleri (kalabalık alan)
+
+    // ---- Emsal katmanları ----
+    // Emsal parselleri değerlemelerden ayrı bir istekle, aynı görünen-alan +
+    // kümeleme mantığıyla gelir; ikisi aynı imar süzgecini paylaşır.
+    const emsalParselKatman = L.featureGroup();
+    const emsalMarkerKatman = L.featureGroup();
+    const emsalClusterKatman = L.markerClusterGroup({
+        showCoverageOnHover: false, maxClusterRadius: 50, disableClusteringAtZoom: 16,
+        iconCreateFunction: c => L.divIcon({ html: `<div class="ech-cluster dgh-cluster is-emsal">${c.getChildCount()}</div>`, className: 'ech-cluster-wrap', iconSize: [40, 40] }),
+    });
+    const emsalKumeKatman = L.featureGroup();
+    let emsalOgeler = [];
+    let emsalHam = [];    // ham GeoJSON öğeleri (renk modu değişince yeniden kurulur)
+    let emsalKumeler = [];
+    let emsalKontrol = null;
+
     let ogeler = [];       // { p, layer, marker, etiket }
     let kumeler = [];      // sunucudan gelen küme öğeleri
     let yuklemeKontrol = null;
@@ -375,6 +461,7 @@
 
     function renk(p) {
         if (renkModu === 'tur') return TUR[p.tur].renk;
+        if (renkModu === 'imar') return imarRengi(p.imar_id);
         if (p.birim === null || p.birim === undefined) return '#94a3b8';
         const [mn, mx] = birimAralik;
         const t = mx > mn ? (Math.log(p.birim + 1) - Math.log(mn + 1)) / (Math.log(mx + 1) - Math.log(mn + 1)) : 0.5;
@@ -457,7 +544,7 @@
     const sinirOf = o => o.layer.getBounds ? o.layer.getBounds() : L.latLngBounds([o.merkez, o.merkez]);
 
     async function getir(ek) {
-        const q = new URLSearchParams(filtre);
+        const q = imarUygula(new URLSearchParams(filtre));
         Object.entries(ek).forEach(([k, v]) => q.set(k, v));
         const r = await fetch(API.geojson + '?' + q, { headers: { Accept: 'application/json' } });
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -469,7 +556,7 @@
         if (yuklemeKontrol) yuklemeKontrol.abort();
         const kontrol = yuklemeKontrol = new AbortController();
         const b = map.getBounds().pad(0.1);
-        const q = new URLSearchParams(filtre);
+        const q = imarUygula(new URLSearchParams(filtre));
         q.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(','));
         q.set('zoom', map.getZoom());
         let fc;
@@ -488,7 +575,10 @@
         if (secili) secili = ogeler.find(o => o.p.id === secili.p.id) || secili;
         ciz();
     }
-    map.on('moveend', () => { clearTimeout(yuklemeZamanlayici); yuklemeZamanlayici = setTimeout(gorunumYukle, 250); });
+    map.on('moveend', () => {
+        clearTimeout(yuklemeZamanlayici);
+        yuklemeZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 250);
+    });
 
     // Süzgeç değişince: kapsam + m² değer aralığı alınır, sonra görünen alan yüklenir
     async function yukle(sigdir = true) {
@@ -500,6 +590,7 @@
         tumSinir = k && k.bbox ? L.latLngBounds([[k.bbox[1], k.bbox[0]], [k.bbox[3], k.bbox[2]]]) : null;
         if (sigdir && tumSinir && tumSinir.isValid()) map.fitBounds(tumSinir, { padding: [40, 40], maxZoom: 17 });
         await gorunumYukle();
+        emsalYukle();
         return k ? k.toplam : 0;
     }
 
@@ -571,6 +662,184 @@
             ${raporlar || '<div class="ech-bos">Rapor yok.</div>'}`;
     }
 
+    // ---- İmar durumu katmanları ----
+    // Süzgeç sunucuya gider: kümeler orada hesaplandığı için istemcide gizlemek
+    // yeterli olmaz, küme sayıları yanlış kalırdı.
+    function imarParam() {
+        const kutular = Array.from(document.querySelectorAll('[data-imar]'));
+        if (!kutular.length) return null;
+        const secili = kutular.filter(k => k.checked).map(k => k.dataset.imar);
+        if (secili.length === kutular.length) return null; // hepsi açık → süzgeç yok
+        return secili.join(',');
+    }
+    function imarUygula(q) {
+        const imar = imarParam();
+        if (imar !== null) q.set('imar', imar);
+        return q;
+    }
+    function imarRengi(id) {
+        return id === null || id === undefined ? IMAR_YOK_RENK : (IMAR_RENK[id] || IMAR_YOK_RENK);
+    }
+
+@if ($emsalGorebilir)
+    // ---- Emsal katmanı ----
+    function emsalAcik() {
+        return $('dgh-lyr-emsal').checked;
+    }
+    function emsalTurleri() {
+        return Array.from(document.querySelectorAll('[data-emsal-tur]')).filter(k => k.checked).map(k => k.dataset.emsalTur);
+    }
+    function emsalRengi(p) {
+        if (renkModu === 'imar') return imarRengi(p.imar_id);
+        const t = (p.tipler || [])[0];
+        return (EMSAL_TUR[t] && EMSAL_TUR[t].renk) || '#0ea5e9';
+    }
+    function emsalOgeOlustur(f) {
+        const p = f.properties;
+        const layer = L.geoJSON(f, { pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 7 }) }).getLayers()[0];
+        const merkez = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
+        const renk = emsalRengi(p);
+        if (layer.setStyle) layer.setStyle({ color: renk, fillColor: renk, weight: 2, fillOpacity: 0.3, dashArray: '5 4' });
+        const marker = L.marker(merkez, {
+            icon: L.divIcon({ className: 'ech-marker-wrap', html: `<div class="dgh-emsal-marker" style="background:${renk}">${p.adet}</div>`, iconSize: [26, 26], iconAnchor: [13, 24] }),
+        });
+        const turAdlari = (p.tipler || []).map(t => (EMSAL_TUR[t] || {}).etiket || t).join(', ');
+        marker.bindTooltip(`<strong>${esc(p.ada)}/${esc(p.parsel)}</strong> · ${esc(p.mahalle || '')}<br>${p.adet} emsal · ${p.ortalama ? para(p.ortalama) + ' TL/m²' : '—'}<br><small>${esc(turAdlari)}</small>`, { direction: 'top', offset: [0, -20] });
+        const o = { p, layer, marker, merkez };
+        [layer, marker].forEach(x => x.on('click', () => emsalSec(o)));
+        return o;
+    }
+    function emsalCiz() {
+        emsalParselKatman.clearLayers(); emsalMarkerKatman.clearLayers();
+        emsalClusterKatman.clearLayers(); emsalKumeKatman.clearLayers();
+
+        const acik = emsalAcik();
+        [emsalParselKatman, emsalKumeKatman, emsalMarkerKatman, emsalClusterKatman]
+            .forEach(k => map.hasLayer(k) && map.removeLayer(k));
+        if (!acik) return;
+
+        if (emsalKumeler.length) {
+            emsalKumeler.forEach(k => {
+                const n = k.properties.adet, b = k.properties.bbox;
+                const [lng, lat] = k.geometry.coordinates;
+                const boy = Math.round(Math.min(58, 34 + Math.log10(n) * 8));
+                L.marker([lat, lng], { icon: L.divIcon({ html: `<div class="ech-cluster dgh-cluster is-emsal" style="width:${boy}px;height:${boy}px">${n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'B' : n}</div>`, className: 'ech-cluster-wrap', iconSize: [boy, boy] }) })
+                    .on('click', () => map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30] }))
+                    .addTo(emsalKumeKatman);
+            });
+            map.addLayer(emsalKumeKatman);
+            return;
+        }
+
+        emsalOgeler.forEach(o => {
+            emsalParselKatman.addLayer(o.layer);
+            emsalMarkerKatman.addLayer(o.marker);
+        });
+        map.addLayer(emsalParselKatman);
+        if ($('dgh-lyr-cluster').checked) {
+            emsalMarkerKatman.eachLayer(m => emsalClusterKatman.addLayer(m));
+            map.addLayer(emsalClusterKatman);
+        } else {
+            map.addLayer(emsalMarkerKatman);
+        }
+    }
+    async function emsalYukle() {
+        if (!emsalAcik()) { emsalOgeler = []; emsalKumeler = []; emsalCiz(); return; }
+        if (emsalKontrol) emsalKontrol.abort();
+        const kontrol = emsalKontrol = new AbortController();
+
+        const b = map.getBounds().pad(0.1);
+        const q = imarUygula(new URLSearchParams());
+        q.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(','));
+        q.set('zoom', map.getZoom());
+        const turler = emsalTurleri();
+        if (turler.length) q.set('tip', turler.join(','));
+        ['ilce_id', 'mahalle_id'].forEach(k => filtre.get(k) && q.set(k, filtre.get(k)));
+
+        let fc;
+        try {
+            const r = await fetch(API.emsalGeojson + '?' + q, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            fc = await r.json();
+        } catch (e) {
+            if (e.name !== 'AbortError') bildir('Emsal katmanı yüklenemedi.');
+            return;
+        }
+        if (kontrol !== emsalKontrol) return;
+
+        // Hiçbir tür seçili değilse sunucuya sormaya gerek yok ama süzgeç de boş
+        // gitmemeli; burada gelen sonucu doğrudan kullanıyoruz.
+        emsalKumeler = fc.kumeli ? fc.features : [];
+        emsalHam = fc.kumeli ? [] : (fc.features || []);
+        emsalOgeler = emsalHam.map(emsalOgeOlustur);
+        emsalCiz();
+        $('dgh-emsal-sayi').textContent = (fc.toplam || 0).toLocaleString('tr-TR');
+    }
+    async function emsalSec(o) {
+        $('dgh-islem-panel').hidden = false;
+        $('dgh-islem-baslik').textContent = o.p.ada + '/' + o.p.parsel + ' · Emsaller';
+        $('dgh-islem-icerik').innerHTML = '<div class="ech-bos">Yükleniyor…</div>';
+        let v;
+        try {
+            const r = await fetch(API.emsalParsel + '/' + o.p.id, { headers: { Accept: 'application/json' } });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            v = await r.json();
+        } catch (e) {
+            $('dgh-islem-icerik').innerHTML = '<div class="ech-bos">Emsal bilgisi alınamadı.</div>';
+            return;
+        }
+        const alanlar = [
+            ['İlçe / Mahalle', [v.ilce, v.mahalle].filter(Boolean).join(' · ') || '—'],
+            ['Ada / Parsel', v.ada + '/' + v.parsel],
+            ['Alan', v.alan ? para(v.alan) + ' m²' : '—'],
+            ['İmar Durumu', v.imar || '—'],
+            ['Emsal (KAKS)', v.emsal ?? '—'],
+            ['Yençok / Yenaz', v.yenaz_yencok || '—'],
+        ];
+        const satirlar = v.emsaller.map(e => `
+            <div class="dgh-rapor">
+                <div><strong style="color:${esc(e.renk)}">${esc(e.tip_ad)}</strong>
+                    <span class="dgh-rapor-alt">${esc(e.belge_no || '—')} · ${tarih(e.tarih)}</span></div>
+                <div class="dgh-tutar">${e.birim_fiyat !== null ? para(e.birim_fiyat) + ' TL/m²' : '—'}</div>
+                <div class="ech-btn-row">
+                    ${e.evrak ? `<a class="ech-btn is-ghost is-mini" href="${esc(e.evrak)}" target="_blank" rel="noopener">Evrak</a>` : ''}
+                    <a class="ech-btn is-mini" href="${esc(e.duzenle)}">Düzenle</a>
+                </div>
+            </div>`).join('');
+        $('dgh-islem-icerik').innerHTML = `
+            <div class="ech-ozet-grid">${alanlar.map(a => `<div class="ech-alan"><div class="lbl">${a[0]}</div><div class="val">${esc(a[1])}</div></div>`).join('')}</div>
+            <div class="dgh-baslik">Emsaller (${v.emsaller.length})</div>
+            ${satirlar || '<div class="ech-bos">Emsal yok.</div>'}`;
+    }
+
+    // Renk modu değişince sunucuya tekrar gitmeden işaretçiler yeniden kurulur
+    function emsalYenidenCiz() {
+        emsalOgeler = emsalHam.map(emsalOgeOlustur);
+        emsalCiz();
+    }
+
+    $('dgh-lyr-emsal').addEventListener('change', () => {
+        document.querySelectorAll('.dgh-emsal-alt').forEach(el => el.classList.toggle('is-pasif', !emsalAcik()));
+        emsalYukle();
+    });
+    document.querySelectorAll('[data-emsal-tur]').forEach(k => k.addEventListener('change', emsalYukle));
+@else
+    const emsalYukle = () => {};
+    const emsalYenidenCiz = () => {};
+@endif
+
+    let imarZamanlayici = null;
+    document.querySelectorAll('[data-imar]').forEach(k => k.addEventListener('change', () => {
+        clearTimeout(imarZamanlayici);
+        imarZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 200);
+    }));
+    document.querySelectorAll('[data-imar-hepsi]').forEach(d => d.addEventListener('click', () => {
+        const ac = d.dataset.imarHepsi === '1';
+        document.querySelectorAll('[data-imar]').forEach(k => { k.checked = ac; });
+        clearTimeout(imarZamanlayici);
+        imarZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 200);
+    }));
+
     // ---- Katman anahtarları ----
     document.querySelectorAll('[data-tur-katman]').forEach(k => k.addEventListener('change', ciz));
     $('dgh-lyr-etiket').addEventListener('change', etiketGuncelle);
@@ -581,6 +850,7 @@
         $('dgh-lejant-tur').hidden = renkModu !== 'tur';
         $('dgh-lejant-birim').hidden = renkModu !== 'birim';
         ciz();
+        emsalYenidenCiz();
     }));
 
     // ---- Araç çubuğu / paneller ----
