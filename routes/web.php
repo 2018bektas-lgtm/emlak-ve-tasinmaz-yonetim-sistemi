@@ -387,6 +387,11 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::get('/', [EmsalController::class, 'index'])->name('index');
         Route::get('excel', [EmsalController::class, 'excelIndir'])->name('excel');
 
+        // Değerleme haritasının emsal katmanı
+        Route::get('harita/geojson', [EmsalController::class, 'haritaGeojson'])->name('harita.geojson');
+        Route::get('harita/parsel/{parselId}', [EmsalController::class, 'haritaParsel'])
+            ->whereNumber('parselId')->name('harita.parsel');
+
         Route::get('yeni', [EmsalController::class, 'olustur'])
             ->middleware('izin:emsal.olustur')->name('olustur');
         Route::post('yeni', [EmsalController::class, 'kaydet'])

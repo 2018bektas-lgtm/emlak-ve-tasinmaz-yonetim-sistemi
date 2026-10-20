@@ -47,7 +47,11 @@ final class HaritaGorunum
     /**
      * Alandaki kayıtlar fazlaysa kümeler; azsa null (çağıran tek tek gösterir).
      *
-     * @param  Builder<TasinmazKoordinat>  $koordinatlar  süzgeçleri uygulanmış koordinat sorgusu
+     * Sınır kutusu sütunlarını (min/max/merkez lat-lng) ve `alanda` kapsamını
+     * taşıyan her model işe yarar — tasinmaz_koordinatlar ve emsal_parselleri
+     * aynı düzende tutulur.
+     *
+     * @param  Builder<TasinmazKoordinat>  $koordinatlar  süzgeçleri uygulanmış sorgu
      * @return array{toplam: int, features: list<array<string, mixed>>}|null
      */
     public static function kumeler(Builder $koordinatlar, array $bbox, int $zoom): ?array

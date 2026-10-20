@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Enums\KayitTipi;
+use App\Models\EmsalParsel;
 use App\Models\Il;
 use App\Models\Ilce;
+use App\Models\ImarDurumu;
 use App\Models\Kullanici;
 use App\Models\Mahalle;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazDegerleme;
+use App\Models\TasinmazImar;
 use App\Models\TasinmazKoordinat;
 use App\Support\HaritaGorunum;
 use Illuminate\Http\JsonResponse;
@@ -211,14 +214,29 @@ class DegerlemeController extends Controller
     // Harita
     // ------------------------------------------------------------------
 
-    public function harita(): View
+    public function harita(Request $request): View
     {
         $yillar = TasinmazDegerleme::whereNotNull('rapor_tarihi')->pluck('rapor_tarihi')
             ->map(fn ($t) => (int) $t->format('Y'))->unique()->sortDesc()->values();
 
+        // Katman listesi yalnızca haritada karşılığı olan imar durumlarını gösterir;
+        // 97 tanımın tamamı panele sığmaz ve çoğu boş çıkar.
+        $emsalGorebilir = $request->user()->izinVarMi('emsal.goruntule');
+        $kullanilan = TasinmazImar::query()
+            ->whereNotNull('imar_durumu_id')
+            ->whereIn('tasinmaz_id', TasinmazDegerleme::query()->select('tasinmaz_id'))
+            ->distinct()->pluck('imar_durumu_id');
+        if ($emsalGorebilir) {
+            $kullanilan = $kullanilan->merge(
+                EmsalParsel::query()->whereNotNull('imar_durumu_id')->distinct()->pluck('imar_durumu_id')
+            )->unique();
+        }
+
         return view('panel.degerleme.harita', [
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             'yillar' => $yillar,
+            'emsalGorebilir' => $emsalGorebilir,
+            'imarDurumlari' => ImarDurumu::whereIn('id', $kullanilan)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']),
         ]);
     }
 
@@ -241,13 +259,24 @@ class DegerlemeController extends Controller
         $ilId = $request->query('il_id');
         $ilceId = $request->query('ilce_id');
         $mahalleId = $request->query('mahalle_id');
+        // ?imar=3,7,yok — haritadaki imar durumu katmanları. Kümeler sunucuda
+        // hesaplandığı için bu süzgeç istemcide değil burada uygulanmalı.
+        $imar = $this->imarSuzgeci($request);
         $tasSuz = fn ($s) => $s->when($tasinmazId, fn ($x) => $x->where('id', $tasinmazId))
             ->when($ilId, fn ($x) => $x->where('il_id', $ilId))
             ->when($ilceId, fn ($x) => $x->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($x) => $x->where('mahalle_id', $mahalleId))
             ->when($ada !== '', fn ($x) => $x->where('ada', $ada))
-            ->when($parsel !== '', fn ($x) => $x->where('parsel', $parsel));
-        $tasSuzVar = $tasinmazId || $ilId || $ilceId || $mahalleId || $ada !== '' || $parsel !== '';
+            ->when($parsel !== '', fn ($x) => $x->where('parsel', $parsel))
+            ->when($imar !== null, fn ($x) => $x->where(function ($w) use ($imar) {
+                if ($imar['idler'] !== []) {
+                    $w->whereIn('id', TasinmazImar::query()->select('tasinmaz_id')->whereIn('imar_durumu_id', $imar['idler']));
+                }
+                if ($imar['yok']) {
+                    $w->orWhereNotIn('id', TasinmazImar::query()->select('tasinmaz_id')->whereNotNull('imar_durumu_id'));
+                }
+            }));
+        $tasSuzVar = $tasinmazId || $ilId || $ilceId || $mahalleId || $ada !== '' || $parsel !== '' || $imar !== null;
 
         // Süzgeçten geçen değerlemeler; taşınmaz süzgeci yalnızca gerekiyorsa eklenir
         // (100 bin taşınmazı tek tek "değerlemesi var mı" diye taramamak için)
@@ -271,7 +300,7 @@ class DegerlemeController extends Controller
         }
 
         $tasinmazlar = Tasinmaz::query()->whereIn('id', $idler)->tap($tasSuz)
-            ->with(['ilce:id,ad', 'mahalle:id,ad', 'koordinat', 'degerlemeler' => $degSuz])
+            ->with(['ilce:id,ad', 'mahalle:id,ad', 'koordinat', 'imar.imarDurumu:id,ad', 'degerlemeler' => $degSuz])
             ->when($bbox,
                 fn ($s) => $s->whereIn('id', TasinmazKoordinat::query()->alanda($bbox)->select('tasinmaz_id')),
                 fn ($s) => $s->whereHas('koordinat'))
@@ -300,6 +329,8 @@ class DegerlemeController extends Controller
                     'ilce' => $t->ilce?->ad,
                     'mahalle' => $t->mahalle?->ad,
                     'alan' => $t->alan !== null ? (float) $t->alan : null,
+                    'imar_id' => $t->imar?->imar_durumu_id,
+                    'imar' => $t->imar?->imarDurumu?->ad,
                     'tur' => $arsa && $bb ? 'ikisi' : ($bb ? 'bb' : 'arsa'),
                     'arsa_sayisi' => $arsa,
                     'bb_sayisi' => $bb,
@@ -312,6 +343,28 @@ class DegerlemeController extends Controller
         }
 
         return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
+    }
+
+    /**
+     * ?imar=3,7,yok → ['idler' => [3, 7], 'yok' => true]. Parametre hiç
+     * gelmezse null döner (süzgeç uygulanmaz). Hepsi kapalıysa idler boş ve
+     * yok false olur; bu da "hiçbir şey gösterme" demektir.
+     *
+     * @return array{idler: array<int, int>, yok: bool}|null
+     */
+    public static function imarSuzgeci(Request $request): ?array
+    {
+        $ham = $request->query('imar');
+        if ($ham === null) {
+            return null;
+        }
+
+        $parcalar = array_filter(array_map('trim', explode(',', (string) $ham)), fn ($v) => $v !== '');
+
+        return [
+            'idler' => array_values(array_map('intval', array_filter($parcalar, 'is_numeric'))),
+            'yok' => in_array('yok', $parcalar, true),
+        ];
     }
 
     /** Harita yan paneli: taşınmaz özeti + tüm değerlemeleri. */

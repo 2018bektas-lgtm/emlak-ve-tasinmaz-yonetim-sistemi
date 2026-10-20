@@ -9,9 +9,12 @@ use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\ImarDurumu;
 use App\Models\Mahalle;
+use App\Support\HaritaGorunum;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -78,6 +81,124 @@ class EmsalController extends Controller
         return $this->index($request->merge(['excel' => 1]));
     }
 
+    /**
+     * Değerleme haritasının emsal katmanı. Emsaller değil parseller çizilir —
+     * bir parselde birden çok emsal olabilir, özet (adet, son tarih, ortalama
+     * fiyat) parsel satırında hazır durur. Kalabalık alanda değerleme katmanıyla
+     * aynı ızgara kümelemesi uygulanır.
+     */
+    public function haritaGeojson(Request $request): JsonResponse
+    {
+        $tipler = array_values(array_intersect(
+            array_filter(array_map('trim', explode(',', (string) $request->query('tip', '')))),
+            array_column(EmsalTipi::cases(), 'value')
+        ));
+        $imar = DegerlemeController::imarSuzgeci($request);
+        $baslangic = $request->date('baslangic')?->format('Y-m-d');
+        $bitis = $request->date('bitis')?->format('Y-m-d');
+        $emsalSuzVar = $tipler !== [] || $baslangic || $bitis;
+
+        $parseller = EmsalParsel::query()
+            ->where('emsal_sayisi', '>', 0)
+            ->when($request->query('ilce_id'), fn ($s, $v) => $s->where('ilce_id', $v))
+            ->when($request->query('mahalle_id'), fn ($s, $v) => $s->where('mahalle_id', $v))
+            ->when($imar !== null, fn ($s) => $s->where(function ($w) use ($imar) {
+                if ($imar['idler'] !== []) {
+                    $w->whereIn('imar_durumu_id', $imar['idler']);
+                }
+                if ($imar['yok']) {
+                    $w->orWhereNull('imar_durumu_id');
+                }
+            }))
+            // Tür/tarih süzgeci emsal satırlarında; parsel başına EXISTS yerine tek alt sorgu
+            ->when($emsalSuzVar, fn ($s) => $s->whereIn('id', Emsal::query()->select('emsal_parsel_id')
+                ->when($tipler !== [], fn ($e) => $e->whereIn('tip', $tipler))
+                ->tarihAraliginda([$baslangic, $bitis])));
+
+        if ($request->boolean('kapsam')) {
+            return response()->json(HaritaGorunum::kapsam($parseller));
+        }
+
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($parseller, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
+        $gorunen = (clone $parseller)
+            ->with(['ilce:id,ad', 'mahalle:id,ad', 'imarDurumu:id,ad'])
+            ->when($bbox, fn ($s) => $s->alanda($bbox))
+            ->get();
+
+        // Hangi parselde hangi türler var — satır başına sorgu yerine tek gruplama
+        $turler = Emsal::query()->whereIn('emsal_parsel_id', $gorunen->pluck('id'))
+            ->when($tipler !== [], fn ($e) => $e->whereIn('tip', $tipler))
+            ->tarihAraliginda([$baslangic, $bitis])
+            ->selectRaw('emsal_parsel_id, tip, COUNT(*) adet')
+            ->groupBy('emsal_parsel_id', 'tip')
+            ->toBase()->get()->groupBy('emsal_parsel_id');
+
+        $features = [];
+        foreach ($gorunen as $p) {
+            $geo = $p->geoJson();
+            if (! $geo) {
+                continue;
+            }
+            $kendi = $turler[$p->id] ?? collect();
+            $features[] = [
+                'type' => 'Feature',
+                'id' => $p->id,
+                'geometry' => $geo,
+                'properties' => [
+                    'id' => $p->id,
+                    'ada' => $p->ada,
+                    'parsel' => $p->parsel,
+                    'ilce' => $p->ilce?->ad,
+                    'mahalle' => $p->mahalle?->ad,
+                    'alan' => $p->alan !== null ? (float) $p->alan : null,
+                    'imar_id' => $p->imar_durumu_id,
+                    'imar' => $p->imarDurumu?->ad,
+                    'adet' => (int) $kendi->sum('adet') ?: $p->emsal_sayisi,
+                    'tipler' => $kendi->pluck('tip')->all(),
+                    'son_tarih' => $p->son_emsal_tarihi?->toDateString(),
+                    'ortalama' => $p->ortalama_birim_fiyat !== null ? (float) $p->ortalama_birim_fiyat : null,
+                ],
+            ];
+        }
+
+        return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
+    }
+
+    /** Harita yan paneli: parselin tüm emsalleri. */
+    public function haritaParsel(int $parselId): JsonResponse
+    {
+        $p = EmsalParsel::with(['ilce:id,ad', 'mahalle:id,ad', 'imarDurumu:id,ad'])->findOrFail($parselId);
+
+        return response()->json([
+            'id' => $p->id,
+            'ada' => $p->ada,
+            'parsel' => $p->parsel,
+            'ilce' => $p->ilce?->ad,
+            'mahalle' => $p->mahalle?->ad,
+            'alan' => $p->alan !== null ? (float) $p->alan : null,
+            'imar' => $p->imarDurumu?->ad,
+            'emsal' => $p->emsal !== null ? (float) $p->emsal : null,
+            'yenaz_yencok' => $p->yenaz_yencok,
+            'emsaller' => $p->emsaller()->with('olusturan:id,ad,soyad')->orderByDesc('tarih')->orderByDesc('id')->get()
+                ->map(fn (Emsal $e) => [
+                    'id' => $e->id,
+                    'tip' => $e->tip->value,
+                    'tip_ad' => $e->tip->etiket(),
+                    'renk' => $e->tip->renk(),
+                    'tarih' => $e->tarih?->toDateString(),
+                    'birim_fiyat' => $e->birim_fiyat !== null ? (float) $e->birim_fiyat : null,
+                    'belge_no' => $e->belgeNo(),
+                    'satilan_hisse' => $e->satilan_hisse,
+                    'evrak' => $e->evrak ? asset('storage/'.$e->evrak) : null,
+                    'duzenle' => route('panel.emsal.duzenle', $e->id),
+                ])->all(),
+        ]);
+    }
+
     public function olustur(Request $request): View
     {
         return view('panel.emsal.form', $this->formVerisi(null, $request));
@@ -129,9 +250,8 @@ class EmsalController extends Controller
         if ($eskiEvrak && $emsal->evrak !== $eskiEvrak) {
             Storage::disk('public')->delete($eskiEvrak);
         }
-        // Parsel değiştiyse eski parselin özeti de tazelenmeli
         if ($eskiParselId !== $parsel->id) {
-            EmsalParsel::find($eskiParselId)?->ozetiTazele();
+            $this->eskiParseliTemizle($eskiParselId);
         }
 
         $this->bagimsizBolumleriYaz($emsal, $veri['bolumler'] ?? []);
@@ -143,12 +263,32 @@ class EmsalController extends Controller
     {
         $emsal = Emsal::findOrFail($id);
         $evrak = $emsal->evrak;
+        $parselId = $emsal->emsal_parsel_id;
         $emsal->delete();
         if ($evrak) {
             Storage::disk('public')->delete($evrak);
         }
+        $this->eskiParseliTemizle($parselId);
 
         return redirect()->route('panel.emsal.index')->with('basari', 'Emsal silindi.');
+    }
+
+    /**
+     * Emsali kalmayan parsel kaydı silinir. Parsel yalnızca emsale dayanak
+     * olduğu için boş kalanı tutmanın anlamı yok; yüz binlerce kayıtta artık
+     * parseller haritanın okuduğu tabloyu şişirir.
+     */
+    private function eskiParseliTemizle(?int $parselId): void
+    {
+        $parsel = $parselId ? EmsalParsel::find($parselId) : null;
+        if (! $parsel) {
+            return;
+        }
+
+        $parsel->ozetiTazele();
+        if (! $parsel->emsaller()->exists()) {
+            $parsel->delete();
+        }
     }
 
     /** @return array<string, mixed> */
@@ -243,9 +383,58 @@ class EmsalController extends Controller
             'imar_durumu_id' => $veri['imar_durumu_id'] ?? $parsel->imar_durumu_id,
             'emsal' => $veri['emsal'] ?? $parsel->emsal,
             'yenaz_yencok' => $veri['yenaz_yencok'] ?? $parsel->yenaz_yencok,
-        ])->save();
+        ]);
+
+        if (! $parsel->koordinat) {
+            $this->geometriyiGetir($parsel);
+        }
+
+        $parsel->save();
 
         return $parsel;
+    }
+
+    /**
+     * Geometriyi TKGM MEGSIS'ten ada/parsel ile çeker; geometrisi olmayan
+     * parsel haritada çizilemez. Ağ hatası kaydı düşürmez — emsal yine
+     * kaydedilir, parsel sonradan haritadan güncellenebilir.
+     */
+    private function geometriyiGetir(EmsalParsel $parsel): void
+    {
+        $mahalleTkgmId = Mahalle::whereKey($parsel->mahalle_id)->value('tkgm_id');
+        if (! $mahalleTkgmId) {
+            return;
+        }
+
+        try {
+            $yanit = Http::timeout(10)
+                ->withHeaders(['Accept' => 'application/json', 'User-Agent' => 'EmlakYonetim/1.0'])
+                ->get("https://cbsapi.tkgm.gov.tr/megsiswebapi.v3.1/api/parsel/{$mahalleTkgmId}/{$parsel->ada}/{$parsel->parsel}");
+
+            $veri = $yanit->successful() ? $yanit->json() : null;
+            if (! is_array($veri) || empty($veri['geometry'])) {
+                return;
+            }
+
+            $parsel->koordinat = $veri['geometry'];
+            if ($parsel->alan === null) {
+                $parsel->alan = $this->tkgmSayisi($veri['properties']['alan'] ?? null);
+            }
+        } catch (\Throwable $e) {
+            // Geometri sonradan tamamlanabilir; emsal kaydı buna takılmamalı.
+        }
+    }
+
+    /** TKGM sayıları Türkçe biçimde gelir: "618.795,00" → 618795.0 */
+    private function tkgmSayisi(mixed $deger): ?float
+    {
+        if ($deger === null || $deger === '') {
+            return null;
+        }
+
+        $sayi = str_replace(',', '.', str_replace('.', '', trim((string) $deger)));
+
+        return is_numeric($sayi) ? (float) $sayi : null;
     }
 
     /**

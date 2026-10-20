@@ -34,11 +34,16 @@ class Emsal extends Model
         'olusturan_id',
     ];
 
-    /** Parsel özeti (harita/liste bundan okur) emsal değiştikçe tazelenir. */
+    /**
+     * Parsel özeti (harita/liste bundan okur) emsal değiştikçe tazelenir.
+     * İlişki önceden yüklenmişse bayat parseli gösterebileceği için parsel
+     * her seferinde güncel yabancı anahtardan okunur; emsal başka parsele
+     * taşındığında eskisini tazelemek çağıranın işidir.
+     */
     protected static function booted(): void
     {
         $tazele = function (self $e) {
-            $e->parsel?->ozetiTazele();
+            EmsalParsel::find($e->emsal_parsel_id)?->ozetiTazele();
         };
 
         static::saved($tazele);
