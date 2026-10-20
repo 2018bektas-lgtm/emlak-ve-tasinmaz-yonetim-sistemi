@@ -43,6 +43,10 @@
                     ['label' => 'Değerleme Haritası', 'route' => 'panel.degerleme.harita', 'izin' => 'degerleme.goruntule'],
                     ['label' => 'Excel İçe Aktar', 'route' => 'panel.degerleme.ice-aktar', 'izin' => 'degerleme.olustur'],
                 ]],
+                ['label' => 'Emsaller', 'icon' => 'scale', 'children' => [
+                    ['label' => 'Emsal Listesi', 'route' => 'panel.emsal.index', 'izin' => 'emsal.goruntule'],
+                    ['label' => 'Yeni Emsal', 'route' => 'panel.emsal.olustur', 'izin' => 'emsal.olustur'],
+                ]],
                 ['label' => 'Kira Değerleme', 'icon' => 'key', 'children' => [
                     ['label' => 'Kira Tespitleri'],
                     ['label' => 'Yeni Kira Tespiti'],

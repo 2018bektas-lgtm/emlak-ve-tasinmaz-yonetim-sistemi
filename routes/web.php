@@ -4,6 +4,7 @@ use App\Http\Controllers\AbbProxyController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DegerlemeController;
+use App\Http\Controllers\EmsalController;
 use App\Http\Controllers\EcrimisilController;
 use App\Http\Controllers\EimarController;
 use App\Http\Controllers\HisseSatisController;
@@ -379,6 +380,24 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:degerleme.duzenle')->whereNumber('id')->name('guncelle');
         Route::delete('{id}', [DegerlemeController::class, 'sil'])
             ->middleware('izin:degerleme.sil')->whereNumber('id')->name('sil');
+    });
+
+    // ============ EMSAL (KARŞILAŞTIRILABİLİR SATIŞ) ============
+    Route::prefix('emsal')->name('emsal.')->middleware('izin:emsal.goruntule')->group(function () {
+        Route::get('/', [EmsalController::class, 'index'])->name('index');
+        Route::get('excel', [EmsalController::class, 'excelIndir'])->name('excel');
+
+        Route::get('yeni', [EmsalController::class, 'olustur'])
+            ->middleware('izin:emsal.olustur')->name('olustur');
+        Route::post('yeni', [EmsalController::class, 'kaydet'])
+            ->middleware('izin:emsal.olustur')->name('kaydet');
+
+        Route::get('{id}/duzenle', [EmsalController::class, 'duzenle'])
+            ->middleware('izin:emsal.duzenle')->whereNumber('id')->name('duzenle');
+        Route::put('{id}', [EmsalController::class, 'guncelle'])
+            ->middleware('izin:emsal.duzenle')->whereNumber('id')->name('guncelle');
+        Route::delete('{id}', [EmsalController::class, 'sil'])
+            ->middleware('izin:emsal.sil')->whereNumber('id')->name('sil');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

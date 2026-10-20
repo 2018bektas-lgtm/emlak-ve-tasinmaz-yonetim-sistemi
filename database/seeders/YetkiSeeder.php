@@ -60,6 +60,11 @@ class YetkiSeeder extends Seeder
             ['kod' => 'degerleme.olustur', 'grup' => 'degerleme', 'ad' => 'Yeni değerleme oluştur', 'aciklama' => 'Tekil kayıt ve Excel ile toplu içe aktarım.'],
             ['kod' => 'degerleme.duzenle', 'grup' => 'degerleme', 'ad' => 'Değerleme/evrak düzenle', 'aciklama' => null],
             ['kod' => 'degerleme.sil', 'grup' => 'degerleme', 'ad' => 'Değerleme sil', 'aciklama' => null],
+
+            ['kod' => 'emsal.goruntule', 'grup' => 'degerleme', 'ad' => 'Emsalleri görüntüle', 'aciklama' => 'Encümen kararı, resmî senet ve mahkeme kararı emsalleri; liste ve harita.'],
+            ['kod' => 'emsal.olustur', 'grup' => 'degerleme', 'ad' => 'Yeni emsal ekle', 'aciklama' => null],
+            ['kod' => 'emsal.duzenle', 'grup' => 'degerleme', 'ad' => 'Emsal/evrak düzenle', 'aciklama' => null],
+            ['kod' => 'emsal.sil', 'grup' => 'degerleme', 'ad' => 'Emsal sil', 'aciklama' => null],
         ];
 
         $izinIdleri = [];
@@ -124,6 +129,9 @@ class YetkiSeeder extends Seeder
                     'degerleme.goruntule',
                     'degerleme.olustur',
                     'degerleme.duzenle',
+                    'emsal.goruntule',
+                    'emsal.olustur',
+                    'emsal.duzenle',
                 ],
             ],
             [
@@ -141,6 +149,7 @@ class YetkiSeeder extends Seeder
                     'ecrimisil.goruntule',
                     'lojman.goruntule',
                     'degerleme.goruntule',
+                    'emsal.goruntule',
                 ],
             ],
         ];

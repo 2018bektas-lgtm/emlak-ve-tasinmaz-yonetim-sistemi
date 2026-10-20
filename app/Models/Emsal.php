@@ -81,6 +81,35 @@ class Emsal extends Model
         };
     }
 
+    /**
+     * Belge numarası veya parsel bilgisiyle arama. Emsal başına EXISTS yerine
+     * parseller bir kez süzülür — yüz binlerce satırda fark büyük.
+     */
+    public function scopeAra(Builder $q, ?string $arama): Builder
+    {
+        $arama = trim((string) $arama);
+        if ($arama === '') {
+            return $q;
+        }
+
+        // "1234/5" → ada 1234 + parsel 5
+        $adaParsel = preg_match('~^\s*([\w-]+)\s*/\s*([\w-]+)\s*$~u', $arama, $m) ? [$m[1], $m[2]] : null;
+
+        return $q->where(function (Builder $w) use ($arama, $adaParsel) {
+            $w->where('karar_no', 'like', "%{$arama}%")
+                ->orWhere('yevmiye_no', 'like', "%{$arama}%")
+                ->orWhere('esas_no', 'like', "%{$arama}%")
+                ->orWhere('kayit_no', 'like', "%{$arama}%")
+                ->orWhereIn('emsal_parsel_id', EmsalParsel::query()->select('id')->where(function ($p) use ($arama, $adaParsel) {
+                    $p->where('ada', $arama)
+                        ->orWhere('parsel', $arama)
+                        ->when($adaParsel, fn ($x) => $x->orWhere(fn ($y) => $y->where('ada', $adaParsel[0])->where('parsel', $adaParsel[1])))
+                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->where('ad', 'like', "%{$arama}%"))
+                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->where('ad', 'like', "%{$arama}%"));
+                }));
+        });
+    }
+
     public function scopeTipi(Builder $q, ?string $tip): Builder
     {
         return $tip ? $q->where('tip', $tip) : $q;
