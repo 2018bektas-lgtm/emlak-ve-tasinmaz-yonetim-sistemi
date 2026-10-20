@@ -65,6 +65,11 @@ class YetkiSeeder extends Seeder
             ['kod' => 'emsal.olustur', 'grup' => 'degerleme', 'ad' => 'Yeni emsal ekle', 'aciklama' => null],
             ['kod' => 'emsal.duzenle', 'grup' => 'degerleme', 'ad' => 'Emsal/evrak düzenle', 'aciklama' => null],
             ['kod' => 'emsal.sil', 'grup' => 'degerleme', 'ad' => 'Emsal sil', 'aciklama' => null],
+
+            ['kod' => 'kira.goruntule', 'grup' => 'kira', 'ad' => 'Kira dosyalarını görüntüle', 'aciklama' => 'Kira işleri sorgulama, liste, detay ve harita.'],
+            ['kod' => 'kira.olustur', 'grup' => 'kira', 'ad' => 'Yeni kira dosyası aç', 'aciklama' => null],
+            ['kod' => 'kira.duzenle', 'grup' => 'kira', 'ad' => 'Kira dosyası/sözleşme düzenle', 'aciklama' => 'Kod tablolarını yönetmeyi de kapsar.'],
+            ['kod' => 'kira.sil', 'grup' => 'kira', 'ad' => 'Kira dosyası sil', 'aciklama' => null],
         ];
 
         $izinIdleri = [];
@@ -132,6 +137,9 @@ class YetkiSeeder extends Seeder
                     'emsal.goruntule',
                     'emsal.olustur',
                     'emsal.duzenle',
+                    'kira.goruntule',
+                    'kira.olustur',
+                    'kira.duzenle',
                 ],
             ],
             [
@@ -150,6 +158,7 @@ class YetkiSeeder extends Seeder
                     'lojman.goruntule',
                     'degerleme.goruntule',
                     'emsal.goruntule',
+                    'kira.goruntule',
                 ],
             ],
         ];

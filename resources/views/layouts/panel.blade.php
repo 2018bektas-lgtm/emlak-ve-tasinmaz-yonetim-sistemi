@@ -23,6 +23,7 @@
             'Taşınmaz İşlemleri' => [
                 ['label' => 'Taşınmazlar', 'icon' => 'map', 'children' => [
                     ['label' => 'Taşınmaz Listesi', 'route' => 'panel.tasinmazlar.index', 'izin' => 'tasinmaz.goruntule'],
+                    ['label' => 'Hisse Listesi', 'route' => 'panel.tasinmazlar.hisseler', 'izin' => 'hisse.goruntule'],
                     ['label' => 'Taşınmaz Ekle', 'route' => 'panel.tasinmazlar.olustur', 'izin' => 'tasinmaz.olustur'],
                     ['label' => 'Taşınmaz Haritası', 'route' => 'panel.tasinmazlar.harita', 'izin' => 'harita.goruntule'],
                     ['label' => 'Toplu İşlem (Excel)', 'route' => 'panel.tasinmazlar.toplu-islem', 'izin' => 'tasinmaz.toplu-islem'],
@@ -38,12 +39,17 @@
             // "Yakında" olarak pasif görünür.
             'Değerleme' => [
                 ['label' => 'Taşınmaz Değerleme', 'icon' => 'scale', 'children' => [
-                    ['label' => 'Değerlemeler', 'route' => 'panel.degerleme.index', 'izin' => 'degerleme.goruntule'],
-                    ['label' => 'Yeni Değerleme', 'route' => 'panel.degerleme.yeni', 'izin' => 'degerleme.olustur'],
-                    ['label' => 'Değerleme Haritası', 'route' => 'panel.degerleme.harita', 'izin' => 'degerleme.goruntule'],
-                    ['label' => 'Excel İçe Aktar', 'route' => 'panel.degerleme.ice-aktar', 'izin' => 'degerleme.olustur'],
-                    ['label' => 'Emsaller', 'route' => 'panel.emsal.index', 'izin' => 'emsal.goruntule'],
-                    ['label' => 'Yeni Emsal', 'route' => 'panel.emsal.olustur', 'izin' => 'emsal.olustur'],
+                    ['label' => 'Değerleme', 'children' => [
+                        ['label' => 'Değerlemeler', 'route' => 'panel.degerleme.index', 'izin' => 'degerleme.goruntule'],
+                        ['label' => 'Yeni Değerleme', 'route' => 'panel.degerleme.yeni', 'izin' => 'degerleme.olustur'],
+                        ['label' => 'Değerleme Haritası', 'route' => 'panel.degerleme.harita', 'izin' => 'degerleme.goruntule'],
+                        ['label' => 'Excel İçe Aktar', 'route' => 'panel.degerleme.ice-aktar', 'izin' => 'degerleme.olustur'],
+                    ]],
+                    ['label' => 'Emsal', 'children' => [
+                        ['label' => 'Emsaller', 'route' => 'panel.emsal.index', 'izin' => 'emsal.goruntule'],
+                        ['label' => 'Yeni Emsal', 'route' => 'panel.emsal.olustur', 'izin' => 'emsal.olustur'],
+                        ['label' => 'Emsal Excel', 'route' => 'panel.emsal.ice-aktar', 'izin' => 'emsal.olustur'],
+                    ]],
                 ]],
                 ['label' => 'Kira Değerleme', 'icon' => 'key', 'children' => [
                     ['label' => 'Kira Tespitleri'],
@@ -54,6 +60,21 @@
                     ['label' => 'İşgal Kayıtları', 'route' => 'panel.ecrimisil.index', 'izin' => 'ecrimisil.goruntule'],
                     ['label' => 'Yeni Kayıt', 'route' => 'panel.ecrimisil.olustur', 'izin' => 'ecrimisil.olustur'],
                     ['label' => 'Harita', 'route' => 'panel.ecrimisil.harita', 'izin' => 'ecrimisil.goruntule'],
+                ]],
+            ],
+            'Kira İşlemleri' => [
+                ['label' => 'Kira', 'icon' => 'key', 'children' => [
+                    ['label' => 'Kira İşleri Sorgulama', 'route' => 'panel.kira.index', 'izin' => 'kira.goruntule'],
+                    ['label' => 'Standart Sorgular', 'children' => [
+                        ['label' => 'Son Bir Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 30], 'izin' => 'kira.goruntule'],
+                        ['label' => 'Son Üç Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 90], 'izin' => 'kira.goruntule'],
+                        ['label' => 'Süresi Dolmuş Sözleşmeler', 'route' => 'panel.kira.index', 'params' => ['durum' => 'dolmus'], 'izin' => 'kira.goruntule'],
+                    ]],
+                    // Aşağıdakiler henüz yapılmadı; rotası olmadığı için "Yakında" görünür
+                    ['label' => 'Yeni Kira Dosyası'],
+                    ['label' => 'Kira Haritası'],
+                    ['label' => 'Kira Alanları'],
+                    ['label' => 'Kod Tabloları'],
                 ]],
             ],
             'Satış İşlemleri' => [
@@ -142,9 +163,22 @@
                             }
                             $children = [];
                             foreach ($item['children'] ?? [] as $child) {
-                                if (! isset($child['izin']) || $izinVar($child['izin'])) {
-                                    $children[] = $child;
+                                if (isset($child['izin']) && ! $izinVar($child['izin'])) {
+                                    continue;
                                 }
+                                if (isset($child['children'])) {
+                                    $gorunenAlt = false;
+                                    foreach ($child['children'] as $alt) {
+                                        if (! isset($alt['izin']) || $izinVar($alt['izin'])) {
+                                            $gorunenAlt = true;
+                                            break;
+                                        }
+                                    }
+                                    if (! $gorunenAlt) {
+                                        continue;
+                                    }
+                                }
+                                $children[] = $child;
                             }
                             $hasChildren = $children !== [];
                             $hasRoute = isset($item['route']);
@@ -158,6 +192,12 @@
                                     if (isset($child['route']) && $currentRoute === $child['route']) {
                                         $activeChild = true;
                                         break;
+                                    }
+                                    foreach ($child['children'] ?? [] as $alt) {
+                                        if (isset($alt['route']) && $currentRoute === $alt['route']) {
+                                            $activeChild = true;
+                                            break 2;
+                                        }
                                     }
                                 }
                             }
@@ -186,7 +226,7 @@
                                                     }
                                                 }
                                                 $childHasChildren = $childGrandchildren !== [];
-                                                $childHref = isset($child['route']) ? route($child['route']) : '#';
+                                                $childHref = isset($child['route']) ? route($child['route'], $child['params'] ?? []) : '#';
                                                 $childActive = isset($child['route']) && $currentRoute === $child['route'];
                                                 $childActiveGrandchild = false;
                                                 if ($childHasChildren) {
@@ -211,7 +251,7 @@
                                                     <div class="app-nav-subgroup-icerik">
                                                         @foreach ($childGrandchildren as $gc)
                                                             @php
-                                                                $gcHref = isset($gc['route']) ? route($gc['route']) : '#';
+                                                                $gcHref = isset($gc['route']) ? route($gc['route'], $gc['params'] ?? []) : '#';
                                                                 $gcActive = isset($gc['route']) && $currentRoute === $gc['route'];
                                                                 $gcDisabled = ! isset($gc['route']);
                                                             @endphp

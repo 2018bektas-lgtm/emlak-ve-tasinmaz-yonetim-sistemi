@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DegerlemeController;
 use App\Http\Controllers\EmsalController;
+use App\Http\Controllers\KiraController;
 use App\Http\Controllers\EcrimisilController;
 use App\Http\Controllers\EimarController;
 use App\Http\Controllers\HisseSatisController;
@@ -21,13 +22,18 @@ use App\Http\Controllers\TopluIslemController;
 use App\Http\Controllers\TasinmazHisseController;
 use App\Http\Controllers\YapiController;
 use App\Http\Middleware\TasinmazBolumParametresi;
+use App\Models\Kullanici;
 use App\Models\Tasinmaz;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return auth()->check()
-        ? redirect()->route('panel.dashboard')
-        : redirect()->route('login');
+    $kullanici = auth()->user();
+
+    if (! $kullanici instanceof Kullanici) {
+        return redirect()->route('login');
+    }
+
+    return redirect()->to($kullanici->acilisRotasi());
 });
 
 Route::middleware('guest')->group(function () {
@@ -69,6 +75,10 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::get('excel', [TasinmazController::class, 'excelIndir'])->middleware('izin:tasinmaz.goruntule')->name('excel');
         Route::get('kml', [TasinmazController::class, 'kmlIndir'])->middleware('izin:tasinmaz.goruntule')->name('kml');
         Route::get('pdf', [TasinmazController::class, 'pdfIndir'])->middleware('izin:tasinmaz.goruntule')->name('pdf');
+        Route::get('hisseler/excel', [TasinmazHisseController::class, 'excelIndir'])->middleware('izin:hisse.goruntule')->name('hisseler.excel');
+        Route::get('hisseler/kml', [TasinmazHisseController::class, 'kmlIndir'])->middleware('izin:hisse.goruntule')->name('hisseler.kml');
+        Route::get('hisseler/pdf', [TasinmazHisseController::class, 'pdfIndir'])->middleware('izin:hisse.goruntule')->name('hisseler.pdf');
+        Route::get('hisseler', [TasinmazHisseController::class, 'index'])->middleware('izin:hisse.goruntule')->name('hisseler');
         Route::get('olustur', [TasinmazController::class, 'create'])->middleware('izin:tasinmaz.olustur')->name('olustur');
         Route::post('olustur', [TasinmazController::class, 'store'])->middleware('izin:tasinmaz.olustur')->name('store');
 
@@ -388,6 +398,12 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
     Route::prefix('emsal')->name('emsal.')->middleware('izin:emsal.goruntule')->group(function () {
         Route::get('/', [EmsalController::class, 'index'])->name('index');
         Route::get('excel', [EmsalController::class, 'excelIndir'])->name('excel');
+        Route::get('ice-aktar', [EmsalController::class, 'iceAktar'])
+            ->middleware('izin:emsal.olustur')->name('ice-aktar');
+        Route::get('ice-aktar/sablon', [EmsalController::class, 'sablonIndir'])
+            ->middleware('izin:emsal.olustur')->name('sablon');
+        Route::post('ice-aktar', [EmsalController::class, 'iceAktarYukle'])
+            ->middleware('izin:emsal.olustur')->name('ice-aktar.yukle');
 
         // Değerleme haritasının emsal katmanı
         Route::get('harita/geojson', [EmsalController::class, 'haritaGeojson'])->name('harita.geojson');
@@ -407,6 +423,12 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:emsal.duzenle')->whereNumber('id')->name('guncelle');
         Route::delete('{id}', [EmsalController::class, 'sil'])
             ->middleware('izin:emsal.sil')->whereNumber('id')->name('sil');
+    });
+
+    // ============ KİRA İŞLEMLERİ ============
+    Route::prefix('kira')->name('kira.')->middleware('izin:kira.goruntule')->group(function () {
+        Route::get('/', [KiraController::class, 'index'])->name('index');
+        Route::get('excel', [KiraController::class, 'excelIndir'])->name('excel');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

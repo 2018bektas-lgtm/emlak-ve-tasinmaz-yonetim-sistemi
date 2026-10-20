@@ -1,0 +1,116 @@
+/* ==========================================================================
+   ETYS · Kira İşlemleri — hisse-satis.css'in cam değişkenlerini ve
+   degerleme.css'in özet/tablo kalıplarını kullanır.
+   ========================================================================== */
+
+.kr-ozet { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.kr-nokta { width: 8px; height: 8px; border-radius: 50%; }
+
+.kr-kisayol-rozet {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.14);
+    color: #0369a1;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* ---------- Sorgu formu ---------- */
+.kr-sorgu { display: flex; flex-direction: column; gap: 12px; }
+
+.kr-ara { display: flex; align-items: center; gap: 8px; }
+.kr-ara input[type="search"] { flex: 1; }
+.hsl-btn.is-ghost { background: rgba(15, 23, 42, 0.06); color: var(--hs-ink); }
+.hsl-btn.is-ghost:hover { background: rgba(15, 23, 42, 0.12); }
+
+.kr-detay {
+    padding: 18px 20px;
+    border-radius: 18px;
+    background: var(--hs-cam);
+    -webkit-backdrop-filter: var(--hs-blur);
+    backdrop-filter: var(--hs-blur);
+    box-shadow: var(--hs-golge);
+}
+.kr-detay[hidden] { display: none; }
+
+.kr-detay-izgara {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 18px;
+}
+
+.kr-alan { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.kr-alan > span { font-size: 0.72rem; font-weight: 700; color: var(--hs-muted); }
+.kr-alan input[type="text"],
+.kr-alan input[type="date"],
+.kr-alan select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--hs-ink);
+    font: inherit;
+    font-size: 0.84rem;
+}
+.kr-alan select:disabled { color: var(--hs-muted); cursor: not-allowed; }
+
+.kr-ikili > div { display: flex; gap: 8px; }
+.kr-ikili input { flex: 1; min-width: 0; }
+
+.kr-onay { flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 9px; }
+.kr-onay input { accent-color: #0ea5e9; flex: none; }
+.kr-onay > span { font-size: 0.82rem; font-weight: 600; color: var(--hs-ink); }
+
+.kr-detay-ayak {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+.kr-detay-ayak .hint { font-size: 0.76rem; color: var(--hs-muted); }
+
+/* ---------- Tablo ---------- */
+.kr-tablo td { vertical-align: top; }
+
+.kr-durum {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 11px;
+    border: 1px solid color-mix(in srgb, var(--kr-renk) 35%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--kr-renk) 12%, transparent);
+    color: color-mix(in srgb, var(--kr-renk) 72%, #111827);
+    font-size: 0.74rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.kr-etiket {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+.kr-etiket.is-tehlike { background: rgba(190, 18, 60, 0.12); color: #be123c; }
+
+.kr-kalan { display: block; margin-top: 3px; font-size: 0.72rem; font-weight: 600; color: var(--hs-muted); }
+.kr-kalan.is-yakin { color: #b45309; }
+.kr-kalan.is-gecmis { color: #be123c; }
+
+@media (max-width: 1100px) {
+    .kr-detay-izgara { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kr-ozet { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+    .kr-detay-izgara { grid-template-columns: 1fr; }
+    .kr-ara { flex-wrap: wrap; }
+}
