@@ -317,11 +317,13 @@ class EmsalController extends Controller
     private function formVerisi(?Emsal $emsal, Request $request): array
     {
         $parsel = $emsal?->parsel;
-        $ilId = old('il_id', $parsel?->il_id ?? $request->query('il_id'));
-        $ilceId = old('ilce_id', $parsel?->ilce_id ?? $request->query('ilce_id'));
+        $onDolgu = $emsal ? [] : $this->onDolgu($request);
+        $ilId = old('il_id', $parsel?->il_id ?? ($onDolgu['il_id'] ?? null));
+        $ilceId = old('ilce_id', $parsel?->ilce_id ?? ($onDolgu['ilce_id'] ?? null));
 
         return [
             'emsal' => $emsal,
+            'onDolgu' => $onDolgu,
             'tipler' => EmsalTipi::cases(),
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             'ilceler' => $ilId ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad']) : collect(),
@@ -430,6 +432,45 @@ class EmsalController extends Controller
         } catch (\Throwable $e) {
             // Geometri sonradan tamamlanabilir; emsal kaydı buna takılmamalı.
         }
+    }
+
+    /**
+     * Haritadan "Emsal Ekle" ile gelindiğinde form alanlarını doldurur.
+     * Konum TKGM mahalle kimliğiyle gelir (haritanın elindeki tek kimlik);
+     * yerel il/ilçe/mahalle ondan çözülür.
+     *
+     * @return array<string, mixed>
+     */
+    private function onDolgu(Request $request): array
+    {
+        $dolgu = array_filter([
+            'ada' => trim((string) $request->query('ada', '')),
+            'parsel' => trim((string) $request->query('parsel', '')),
+            'alan' => $this->tkgmSayisi($request->query('alan')),
+            'emsal' => $this->tkgmSayisi($request->query('emsal')),
+            'yenaz_yencok' => trim((string) $request->query('yenaz_yencok', '')),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $mahalle = $request->query('mahalle_tkgm')
+            ? Mahalle::with('ilce')->where('tkgm_id', $request->query('mahalle_tkgm'))->first()
+            : null;
+
+        if ($mahalle) {
+            $dolgu['mahalle_id'] = $mahalle->id;
+            $dolgu['ilce_id'] = $mahalle->ilce_id;
+            $dolgu['il_id'] = $mahalle->ilce?->il_id;
+        }
+
+        // e-İmar kullanım adını döner (kod değil); kendi tanım listemizde
+        // ada eşleşen varsa imar durumu da seçili gelir.
+        $imarAd = trim((string) $request->query('imar_ad', ''));
+        if ($imarAd !== '') {
+            $dolgu['imar_durumu_id'] = ImarDurumu::where('aktif_mi', true)
+                ->whereRaw('LOWER(ad) = LOWER(?)', [$imarAd])
+                ->value('id');
+        }
+
+        return array_filter($dolgu, fn ($v) => $v !== null);
     }
 
     /** TKGM sayıları Türkçe biçimde gelir: "618.795,00" → 618795.0 */

@@ -295,3 +295,56 @@
     .hrm-float-panel { animation: none; }
     .hrm-shell .hrm-tool { transition: none; }
 }
+
+/* ========== Değerleme haritası ek katmanları ========== */
+.hrm-chip.is-emsal strong { color: #38bdf8; }
+
+.hrm-form-select.is-mini { padding: 4px 8px; font-size: 0.75rem; height: auto; }
+
+.hrm-emsal-turler { display: flex; flex-wrap: wrap; gap: 10px; }
+.hrm-mini-onay { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; cursor: pointer; }
+.hrm-mini-onay input { accent-color: var(--em-renk); }
+.hrm-mini-onay span::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    margin-right: 5px;
+    border-radius: 50%;
+    background: var(--em-renk);
+    vertical-align: middle;
+}
+
+.hrm-imar-kisa { display: inline-flex; gap: 4px; margin-left: auto; }
+.hrm-imar-kisa button {
+    padding: 2px 8px; border: 0; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12); color: inherit;
+    font: inherit; font-size: 0.68rem; font-weight: 700; cursor: pointer;
+}
+.hrm-imar-kisa button:hover { background: rgba(255, 255, 255, 0.24); }
+
+.hrm-imar-liste { display: flex; flex-direction: column; gap: 1px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
+.hrm-imar-oge { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.hrm-imar-oge:hover { background: rgba(255, 255, 255, 0.07); }
+.hrm-imar-oge input { accent-color: #38bdf8; flex: none; }
+.hrm-imar-nokta { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.hrm-imar-ad { font-size: 0.74rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Popup: kayıt açma bağlantıları ve emsal satırları */
+.hrm-pop-eylemler { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hrm-pop-eylem.is-emsal { background: rgba(14, 165, 233, 0.16); color: #7dd3fc; }
+
+.hrm-pop-emsal {
+    padding: 8px 10px;
+    margin-top: 6px;
+    border-left: 3px solid var(--em-renk);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+.hrm-pop-emsal-ust { display: flex; justify-content: space-between; gap: 10px; font-size: 0.76rem; }
+.hrm-pop-emsal-ust strong { color: var(--em-renk); }
+.hrm-pop-emsal-ust span { color: #9aa3b2; }
+.hrm-pop-emsal-fiyat { margin: 3px 0 6px; font-size: 0.92rem; font-weight: 700; color: #e8ecf3; }
+.hrm-pop-emsal-eylem { display: flex; gap: 12px; font-size: 0.72rem; font-weight: 700; }
+.hrm-pop-emsal-eylem a { color: #7dd3fc; text-decoration: none; }
+.hrm-pop-emsal-eylem a:hover { text-decoration: underline; }
+.hrm-pop-evraksiz { color: #6b7483; font-weight: 600; }

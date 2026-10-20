@@ -5,932 +5,680 @@
 @section('shellClass', 'is-map-full')
 
 @push('head')
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-<link rel="stylesheet" href="{{ asset('css/ecrimisil-harita.css') }}?v=1">
-<link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
+    <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
+    {{-- Esri temasından SONRA gelmeli: kurumsal koyu popup kabuğu --}}
+    <style>
+        /* Esri kabuğunu kurumsal koyu palete çevir */
+        .hrm-map .esri-view-surface { outline: none; }
+        .hrm-cursor-help .esri-view-surface { cursor: help !important; }
+
+        .hrm-shell .esri-popup__main-container {
+            background: #0e1726;
+            color: #dfe3ea;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            box-shadow: 0 12px 34px rgba(6, 11, 22, 0.45);
+            overflow: hidden;
+            min-width: 288px;
+            max-width: 340px;
+        }
+        .hrm-shell .esri-popup__header {
+            background: linear-gradient(180deg, #16223c 0%, #0e1726 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 2px 4px;
+        }
+        .hrm-shell .esri-popup__header-title {
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding: 10px 12px;
+        }
+        .hrm-shell .esri-popup__header-title:hover { background: rgba(255,255,255,0.05); }
+        .hrm-shell .esri-popup__content { margin: 0; padding: 0; color: #dfe3ea; }
+
+        /* 4.30 popup gövdesini Calcite'ın beyaz zeminlerinden arındır.
+           .esri-features ve .esri-features__content-feature koyu kabuğun üstünü boyuyor. */
+        .hrm-shell .esri-popup { color-scheme: dark; }
+        .hrm-shell .esri-features,
+        .hrm-shell .esri-features__container,
+        .hrm-shell .esri-features__content-feature,
+        .hrm-shell .esri-features__content-container,
+        .hrm-shell .esri-feature,
+        .hrm-shell .esri-feature__main-container,
+        .hrm-shell .esri-feature__size-container,
+        .hrm-shell .esri-feature-content {
+            background: transparent !important;
+            color: #dfe3ea !important;
+        }
+        /* 4.30'da başlık h2.esri-features__heading — varsayılanı koyu gri kalıyor */
+        .hrm-shell .esri-features__container-header,
+        .hrm-shell .esri-features__heading,
+        .hrm-shell .esri-widget__heading,
+        .hrm-shell .esri-popup__header-title {
+            color: #fff !important;
+            font-size: 0.82rem !important;
+            font-weight: 700;
+        }
+
+        /* Varsayılan 340px sınırı içeriği erken kırpıyor */
+        .hrm-shell .esri-popup__main-container { max-height: min(72vh, 560px) !important; }
+        .hrm-shell .esri-features__content-feature {
+            max-height: none !important;
+            overflow-y: auto !important;
+        }
+
+        /* Calcite değişkenleri — gelecekteki iç bileşenler de koyu kalsın */
+        .hrm-shell .esri-popup,
+        .hrm-shell .esri-popup__main-container {
+            --calcite-color-foreground-1: #0e1726;
+            --calcite-color-foreground-2: #16223c;
+            --calcite-color-foreground-3: #1e2c47;
+            --calcite-color-text-1: #ffffff;
+            --calcite-color-text-2: #dfe3ea;
+            --calcite-color-text-3: #8a91a1;
+            --calcite-color-border-1: rgba(255,255,255,0.10);
+            --calcite-color-border-2: rgba(255,255,255,0.08);
+            --calcite-color-border-3: rgba(255,255,255,0.06);
+        }
+
+        /* İçerik alanı kaydırma çubuğu */
+        .hrm-shell .esri-popup__content::-webkit-scrollbar,
+        .hrm-shell .esri-features__content-feature::-webkit-scrollbar { width: 8px; }
+        .hrm-shell .esri-popup__content::-webkit-scrollbar-thumb,
+        .hrm-shell .esri-features__content-feature::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.16);
+            border-radius: 4px;
+        }
+        .hrm-shell .esri-popup__pointer-direction {
+            background: #0e1726;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .hrm-shell .esri-popup__button,
+        .hrm-shell .esri-popup__icon { color: #9aa3b2; }
+        .hrm-shell .esri-popup__button:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .hrm-shell .esri-popup__footer,
+        .hrm-shell .esri-popup__navigation {
+            background: #0e1726;
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        /* Zoom (+/−) ve alttaki Google / Powered by Esri çubuğu gizlenir */
+        .hrm-shell .esri-ui-zoom,
+        .hrm-shell .esri-zoom,
+        .hrm-shell .esri-attribution {
+            display: none !important;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=3">
 @endpush
 
 @php
-    // Ankara BB · baskentcbs (dışa açık sunucu)
-    // Önceden bu katmanlar iç ağdaki abbcbs proxy'si ve gisserver WMS'i
-    // üzerinden geliyordu; ikisi de yalnızca belediye ağından erişilebiliyor.
-    // baskentcbs dışarıdan da açık ve aynı verileri yayınlıyor.
-    //   tip = tile → önbellekli servis, /tile/{z}/{y}/{x} (kareler 19. seviyeye kadar)
-    //   tip = export → önbelleği olmayan servis, /export?bbox=...&layers=show:<katman>
-    //   zoom = katmanın görünmeye başladığı yakınlaştırma (daha uzakta istek atılmaz)
-    $BCBS = 'https://baskentcbs.ankara.bel.tr/server/rest/services';
-    $abbKatmanlar = [
-        'imar' => ['ad' => 'İmar Planı', 'alt' => 'UİP · uip_esri3', 'renk' => '#8b5cf6',
-            'tip' => 'tile', 'url' => $BCBS.'/plan/uip_esri3/MapServer', 'katman' => 0, 'zoom' => 15],
-        'parselasyon' => ['ad' => 'Parselasyon', 'alt' => 'Kadastro · ParselAktifCached', 'renk' => '#22c55e',
-            'tip' => 'tile', 'url' => $BCBS.'/ortak/ParselAktifCached/MapServer', 'katman' => 0, 'zoom' => 16],
-        'belediye' => ['ad' => 'Belediye Taşınmazları', 'alt' => 'ABB · tasinmazservice', 'renk' => '#ef4444',
-            'tip' => 'export', 'url' => $BCBS.'/tasinmaz/tasinmazservice/MapServer', 'katman' => 0, 'zoom' => 15],
-        'numarataj' => ['ad' => 'Numarataj', 'alt' => 'Kapı numaraları · ortak/adres', 'renk' => '#f97316',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 0, 'zoom' => 19],
-        'yapi' => ['ad' => 'Yapılar', 'alt' => 'Bina izleri · ortak/adres', 'renk' => '#06b6d4',
-            'tip' => 'export', 'url' => $BCBS.'/ortak/adres/MapServer', 'katman' => 2, 'zoom' => 17],
-    ];
-
     $emsalTipleri = \App\Enums\EmsalTipi::cases();
 
-    // İmar durumu katman rengi: id'den türetilir, böylece tanım eklense de
-    // mevcut katmanların rengi değişmez ve altın oran adımı tonları ayırır.
+    // İmar durumu katman rengi id'den türetilir: tanım eklense de mevcut
+    // katmanların rengi kaymaz, altın oran adımı tonları birbirinden ayırır.
     $imarRenk = function (int $id): string {
-        $ton = (int) fmod($id * 137.508, 360);
-
-        return 'hsl('.$ton.', 65%, 52%)';
+        return 'hsl('.((int) fmod($id * 137.508, 360)).', 65%, 52%)';
     };
 @endphp
 
 @section('content')
-<div class="ech-shell dgh-shell" id="dgh-shell">
-    <div id="dgh-map" class="ech-map"></div>
 
-    {{-- ==== ARAÇ ÇUBUĞU ==== --}}
-    <div class="ech-toolbar">
-        <a class="ech-tool" href="{{ route('panel.degerleme.index') }}" title="Listeye dön">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 16l-4-4 4-4M14 12H6"/></svg>
-            Liste
+<div class="hrm-shell" id="hrm-shell">
+    <div class="hrm-toolbar" role="toolbar" aria-label="Harita araç çubuğu">
+        <a class="hrm-tool" href="{{ route('panel.degerleme.index') }}" title="Değerleme listesine dön">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4 h3 a2 2 0 0 1 2 2 v12 a2 2 0 0 1-2 2 h-3"/><path d="M10 16 l-4-4 4-4 M14 12 H6"/></svg>
+            <span>Liste</span>
         </a>
-        <div class="ech-tool-divider"></div>
-        <button type="button" class="ech-tool" id="dgh-katman-btn" aria-expanded="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 8l10 6 10-6z"/><path d="M2 16l10 6 10-6M2 12l10 6 10-6"/></svg>
-            Katmanlar
+
+        <button type="button" class="hrm-tool" id="hrm-katman-btn" aria-expanded="false" title="Katmanlar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L2 8 l10 6 l10-6z"/><path d="M2 16 l10 6 l10-6"/><path d="M2 12 l10 6 l10-6"/></svg>
+            <span>Katmanlar</span>
         </button>
-        <button type="button" class="ech-tool" id="dgh-arama-btn" aria-expanded="false">
+
+        <button type="button" class="hrm-tool" id="hrm-bilgi-btn" aria-pressed="false" title="Haritaya tıklayarak parsel bilgisi al">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>
+            <span>Bilgi Sorgu</span>
+        </button>
+
+        <button type="button" class="hrm-tool" id="hrm-adaparsel-btn" aria-expanded="false" title="Ada / Parsel ile TKGM'de sorgula">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            <span>Ada/Parsel</span>
+        </button>
+
+        <button type="button" class="hrm-tool" id="hrm-arama-btn" aria-expanded="false" title="Değerlenmiş taşınmazlar arasında ara">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-            Ara
+            <span>Arama</span>
         </button>
-        <button type="button" class="ech-tool" id="dgh-fit-btn">
+
+        <button type="button" class="hrm-tool" id="hrm-fit-btn" title="Tüm parsellere sığdır">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-            Sığdır
+            <span>Sığdır</span>
         </button>
-        <form class="dgh-hizli" id="dgh-hizli" autocomplete="off">
-            <input type="text" name="ada" placeholder="Ada" aria-label="Ada">
-            <input type="text" name="parsel" placeholder="Parsel" aria-label="Parsel">
-            <button type="submit" title="Ada/parsel bul">Bul</button>
-        </form>
-        <div class="ech-tool-divider"></div>
-        <span class="ech-chip"><strong id="dgh-sayi">0</strong> taşınmaz · <strong id="dgh-rapor">0</strong> rapor</span>
-@if ($emsalGorebilir)
-        <span class="ech-chip is-emsal"><strong id="dgh-emsal-sayi">0</strong> emsal parseli</span>
-@endif
-    </div>
 
-    {{-- ==== KATMAN PANELİ ==== --}}
-    <div class="ech-panel ech-katman" id="dgh-katman-panel">
-        <div class="ech-panel-head" data-drag>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 8l10 6 10-6z"/><path d="M2 12l10 6 10-6"/></svg>
-            <div style="flex:1;"><strong>Katmanlar</strong><small>Altlık, değerleme ve ABB katmanları</small></div>
-            <button type="button" class="ech-panel-kapat" data-panel-kapat="dgh-katman-panel" aria-label="Kapat">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-        </div>
-        <div class="ech-panel-scroll">
-            <div class="ech-katman-grup">
-                <div class="ech-katman-baslik">Altlık</div>
-                <div class="ech-radyo-grup" id="dgh-altlik-grup">
-                    <div class="ech-radyo is-aktif" data-altlik="uydu-etiket">Hibrit</div>
-                    <div class="ech-radyo" data-altlik="uydu">Uydu</div>
-                    <div class="ech-radyo" data-altlik="yol">Yol</div>
-                    <div class="ech-radyo" data-altlik="osm">OSM</div>
-                </div>
-            </div>
-
-            <div class="ech-katman-grup">
-                <div class="ech-katman-baslik">Değerleme Raporları</div>
-                <div class="ech-katman-kart">
-                    <span class="ech-katman-ikon" style="background:#0d9488;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8L12 3l8 5L18 20H6z"/></svg></span>
-                    <div class="ech-katman-meta"><span class="ech-katman-ad">Arsa Değerlemeleri</span><span class="ech-katman-alt">Parsel / kurum hissesi raporları</span></div>
-                    <label class="ech-switch"><input type="checkbox" data-tur-katman="arsa" checked><span class="ech-switch-slider"></span></label>
-                </div>
-                <div class="ech-katman-kart">
-                    <span class="ech-katman-ikon" style="background:#7c3aed;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1"/></svg></span>
-                    <div class="ech-katman-meta"><span class="ech-katman-ad">Bağımsız Bölüm Değerlemeleri</span><span class="ech-katman-alt">Daire, dükkan vb. raporları</span></div>
-                    <label class="ech-switch"><input type="checkbox" data-tur-katman="bb" checked><span class="ech-switch-slider"></span></label>
-                </div>
-                <div class="ech-katman-kart">
-                    <span class="ech-katman-ikon" style="background:#facc15;color:#0e1726;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg></span>
-                    <div class="ech-katman-meta"><span class="ech-katman-ad">Ada/Parsel Etiketi</span><span class="ech-katman-alt">Yakınlaşınca parsel merkezinde</span></div>
-                    <label class="ech-switch"><input type="checkbox" id="dgh-lyr-etiket" checked><span class="ech-switch-slider"></span></label>
-                </div>
-                <div class="ech-katman-kart">
-                    <span class="ech-katman-ikon" style="background:#8b5cf6;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4"/><circle cx="17" cy="7" r="4"/><circle cx="12" cy="17" r="4"/></svg></span>
-                    <div class="ech-katman-meta"><span class="ech-katman-ad">Kümeleme</span><span class="ech-katman-alt">Uzakta işaretçileri grupla</span></div>
-                    <label class="ech-switch"><input type="checkbox" id="dgh-lyr-cluster" checked><span class="ech-switch-slider"></span></label>
-                </div>
-                <div class="dgh-renk-mod">
-                    <span>Renk:</span>
-                    <div class="ech-radyo-grup" id="dgh-renk-grup">
-                        <div class="ech-radyo is-aktif" data-renk="tur">Türe göre</div>
-                        <div class="ech-radyo" data-renk="birim">Arsa m² değeri</div>
-                        @if ($imarDurumlari->isNotEmpty())<div class="ech-radyo" data-renk="imar">İmar durumuna göre</div>@endif
-                    </div>
-                </div>
-            </div>
-
+        <div class="hrm-toolbar-meta">
+            <span class="hrm-chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 L12 3 L20 8 L18 20 L6 20 z"/></svg>
+                <strong id="hrm-sayi">0</strong>
+                <span>değerleme</span>
+            </span>
             @if ($emsalGorebilir)
-                <div class="ech-katman-grup">
-                    <div class="ech-katman-baslik">Emsaller</div>
-                    <div class="ech-katman-kart">
-                        <span class="ech-katman-ikon" style="background:#0ea5e9;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="12" r="2" fill="currentColor"/><circle cx="11" cy="18" r="2" fill="currentColor"/></svg></span>
-                        <div class="ech-katman-meta"><span class="ech-katman-ad">Emsal Parselleri</span><span class="ech-katman-alt">Karşılaştırılabilir satışlar</span></div>
-                        <label class="ech-switch"><input type="checkbox" id="dgh-lyr-emsal"><span class="ech-switch-slider"></span></label>
-                    </div>
-                    @foreach ($emsalTipleri as $t)
-                        <div class="ech-katman-kart dgh-emsal-alt">
-                            <span class="ech-katman-ikon" style="background:{{ $t->renk() }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8h14"/></svg></span>
-                            <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $t->etiket() }}</span></div>
-                            <label class="ech-switch"><input type="checkbox" data-emsal-tur="{{ $t->value }}" checked><span class="ech-switch-slider"></span></label>
-                        </div>
-                    @endforeach
-                </div>
+                <span class="hrm-chip is-emsal">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+                    <strong id="hrm-emsal-sayi">0</strong>
+                    <span>emsal</span>
+                </span>
             @endif
+        </div>
+    </div>
 
-            @if ($imarDurumlari->isNotEmpty())
-                <div class="ech-katman-grup">
-                    <div class="ech-katman-baslik">
-                        İmar Durumu
-                        <span class="dgh-imar-kisa">
-                            <button type="button" data-imar-hepsi="1">Tümü</button>
-                            <button type="button" data-imar-hepsi="0">Hiçbiri</button>
-                        </span>
-                    </div>
-                    <div class="dgh-imar-liste">
-                        @foreach ($imarDurumlari as $id)
-                            <label class="dgh-imar-oge">
-                                <input type="checkbox" data-imar="{{ $id->id }}" checked>
-                                <span class="dgh-imar-nokta" style="background:{{ $imarRenk($id->id) }}"></span>
-                                <span class="dgh-imar-ad">{{ $id->ad }}</span>
-                            </label>
-                        @endforeach
-                        <label class="dgh-imar-oge">
-                            <input type="checkbox" data-imar="yok" checked>
-                            <span class="dgh-imar-nokta" style="background:#94a3b8"></span>
-                            <span class="dgh-imar-ad">Belirtilmemiş</span>
-                        </label>
-                    </div>
+    {{-- Katmanlar paneli — araç çubuğunun dışında (çubuk cam/backdrop-filter) --}}
+    <div class="hrm-float-panel" id="hrm-panel" aria-label="Katman paneli" hidden>
+    <div class="hrm-panel-head" data-drag-handle>
+        <span class="hrm-panel-tut" title="Taşımak için sürükleyin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="16" cy="6" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="16" cy="18" r="1"/></svg>
+        </span>
+        <div class="hrm-panel-head-baslik">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L2 8 l10 6 l10-6z"/><path d="M2 12 l10 6 l10-6"/></svg>
+            <strong>Katmanlar</strong>
+        </div>
+        <button type="button" class="hrm-panel-kapat" id="hrm-panel-kapat" aria-label="Paneli kapat">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+    </div>
+
+    <div class="hrm-katman-eylem-satir">
+        <div class="hrm-katman-ara-wrap">
+            <svg class="hrm-katman-ara-ikon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+            <input type="search" id="hrm-katman-ara" class="hrm-katman-ara" placeholder="Katman ara..." autocomplete="off">
+            <button type="button" class="hrm-katman-ara-temizle" id="hrm-katman-ara-temizle" aria-label="Aramayı temizle" hidden>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <button type="button" class="hrm-katman-hepsi-kapa" id="hrm-katman-hepsi-kapa" title="Tüm veri katmanlarını kapat">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/></svg>
+            <span>Hepsi</span>
+        </button>
+    </div>
+
+    <div class="hrm-panel-scroll">
+
+    <details class="hrm-details" open>
+        <summary class="hrm-summary">
+            <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            <span>Altlık</span>
+        </summary>
+        <div class="hrm-details-icerik">
+            <div class="hrt-layers-grid" id="hrm-altlik-grid"></div>
+        </div>
+    </details>
+
+    <details class="hrm-details hrm-grup" open data-grup="sistem">
+        <summary class="hrm-grup-summary">
+            <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            <span class="hrm-grup-ad">Sistem</span>
+            <span class="hrm-grup-sayac" data-grup-sayac="sistem" title="Aktif / Toplam">0/0</span>
+            <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                <input type="checkbox" class="hrm-grup-master" data-grup="sistem">
+                <span class="hrm-switch-slider"></span>
+            </label>
+        </summary>
+        <div class="hrm-details-icerik" data-grup-icerik="sistem">
+
+        <div class="hrm-katman-kart" data-katman-kart="parsel" data-grup="sistem" data-ad="taşınmaz parselleri sistem parsel">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#f59e0b;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 L12 3 L20 8 L18 20 L6 20 z"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Değerlemeler</span>
+                    <span class="hrm-katman-alt">Rapor çıkarılmış parseller</span>
                 </div>
-            @endif
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-parsel" checked>
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-parsel-op" min="10" max="100" value="70" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parsel-op">70%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-parsel-op" title="Varsayılana döndür">↺</button>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Renk</span>
+                <select id="hrm-deg-renk" class="hrm-form-select is-mini">
+                    <option value="tur">Değerleme türü</option>
+                    <option value="imar" selected>İmar durumu</option>
+                    <option value="birim">Arsa m² değeri</option>
+                </select>
+            </div>
+        </div>
 
-            <div class="ech-katman-grup">
-                <div class="ech-katman-baslik">Ankara BB · İmar ve Kadastro</div>
-                @foreach ($abbKatmanlar as $kod => $k)
-                    <div class="ech-katman-kart dgh-ov" data-ov="{{ $kod }}" data-tip="{{ $k['tip'] }}" data-url="{{ $k['url'] }}" data-katman="{{ $k['katman'] }}" data-zoom="{{ $k['zoom'] }}">
-                        <span class="ech-katman-ikon" style="background:{{ $k['renk'] }};"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></span>
-                        <div class="ech-katman-meta"><span class="ech-katman-ad">{{ $k['ad'] }}</span><span class="ech-katman-alt">{{ $k['alt'] }} · {{ $k['zoom'] }}+ zoom</span>
-                            <input type="range" min="10" max="100" value="70" class="dgh-opak" aria-label="{{ $k['ad'] }} saydamlığı" hidden></div>
-                        <label class="ech-switch"><input type="checkbox"><span class="ech-switch-slider"></span></label>
-                    </div>
+        @if ($emsalGorebilir)
+        <div class="hrm-katman-kart" data-katman-kart="emsal" data-grup="sistem" data-ad="emsal emsaller karşılaştırılabilir satış">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#0ea5e9;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Emsaller</span>
+                    <span class="hrm-katman-alt">Encümen · Senet · Mahkeme satışları</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-emsal">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir hrm-emsal-turler">
+                @foreach ($emsalTipleri as $t)
+                    <label class="hrm-mini-onay" style="--em-renk:{{ $t->renk() }}">
+                        <input type="checkbox" data-emsal-tur="{{ $t->value }}" checked>
+                        <span>{{ $t->etiket() }}</span>
+                    </label>
                 @endforeach
-                <p class="ech-not dgh-not">ABB katmanları yalnızca kartta yazan yakınlaştırma düzeyinden itibaren görünür; daha uzakta istek atılmaz.</p>
             </div>
-
-            <div class="ech-lejant" id="dgh-lejant-tur">
-                <div class="ech-lejant-baslik">Taşınmaz Rengi</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#0d9488;"></span> Arsa değerlemesi</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#7c3aed;"></span> Bağımsız bölüm değerlemesi</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#f59e0b;"></span> İkisi de var</div>
-            </div>
-            <div class="ech-lejant" id="dgh-lejant-birim" hidden>
-                <div class="ech-lejant-baslik">Arsa birim değeri (TL/m²)</div>
-                <div class="dgh-skala"><span></span></div>
-                <div class="dgh-skala-uclar"><small id="dgh-skala-min">—</small><small id="dgh-skala-max">—</small></div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#94a3b8;"></span> Arsa raporu yok</div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-emsal-op" min="10" max="100" value="70" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-emsal-op">70%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-emsal-op" title="Varsayılana döndür">↺</button>
             </div>
         </div>
+        @endif
+
+        @if ($imarDurumlari->isNotEmpty())
+        <div class="hrm-katman-kart" data-katman-kart="imar-durumu" data-grup="sistem" data-ad="imar durumu katman süzgeç">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#14b8a6;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 3v18"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">İmar Durumu</span>
+                    <span class="hrm-katman-alt">Değerleme ve emsalleri birlikte süzer</span>
+                </div>
+                <span class="hrm-imar-kisa">
+                    <button type="button" data-imar-hepsi="1">Tümü</button>
+                    <button type="button" data-imar-hepsi="0">Hiçbiri</button>
+                </span>
+            </div>
+            <div class="hrm-imar-liste">
+                @foreach ($imarDurumlari as $id)
+                    <label class="hrm-imar-oge">
+                        <input type="checkbox" data-imar="{{ $id->id }}" checked>
+                        <span class="hrm-imar-nokta" style="background:{{ $imarRenk($id->id) }}"></span>
+                        <span class="hrm-imar-ad">{{ $id->ad }}</span>
+                    </label>
+                @endforeach
+                <label class="hrm-imar-oge">
+                    <input type="checkbox" data-imar="yok" checked>
+                    <span class="hrm-imar-nokta" style="background:#94a3b8"></span>
+                    <span class="hrm-imar-ad">Belirtilmemiş</span>
+                </label>
+            </div>
+        </div>
+        @endif
+
+        </div>
+    </details>
+
+    <details class="hrm-details hrm-grup" open data-grup="abb-imar">
+        <summary class="hrm-grup-summary">
+            <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            <span class="hrm-grup-ad">Ankara BB · İmar & Kadastro</span>
+            <span class="hrm-grup-sayac" data-grup-sayac="abb-imar" title="Aktif / Toplam">0/0</span>
+            <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                <input type="checkbox" class="hrm-grup-master" data-grup="abb-imar">
+                <span class="hrm-switch-slider"></span>
+            </label>
+        </summary>
+        <div class="hrm-details-icerik" data-grup-icerik="abb-imar">
+
+        <div class="hrm-katman-kart" data-katman-kart="imar" data-grup="abb-imar" data-ad="imar planı uip ankara bb baskentcbs uip_esri3">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#ec4899;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 h4 v-4 h4 v4 h4 v-4 h4 v4 h2 M3 12 v6 h18 v-6"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">İmar Planı (UIP)</span>
+                    <span class="hrm-katman-alt">Ankara BB · baskentcbs uip_esri3 · 15+ zoom</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-imar">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-imar-op" min="10" max="100" value="75" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-imar-op">75%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="75" data-hedef="hrm-ov-imar-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        <div class="hrm-katman-kart" data-katman-kart="parselasyon" data-grup="abb-imar" data-ad="parselasyon kadastro parselaktif baskentcbs cached">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#8b5cf6;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16 M4 12h16 M4 18h16 M9 3v18 M15 3v18"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Parselasyon</span>
+                    <span class="hrm-katman-alt">Ankara BB · ParselAktifCached · 16+ zoom</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-parselasyon">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-parselasyon-op" min="10" max="100" value="80" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parselasyon-op">80%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-parselasyon-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        <div class="hrm-katman-kart" data-katman-kart="belediye" data-grup="abb-imar" data-ad="belediye taşınmazları hisseli tam">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#16a34a;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21 h18 M5 21 V9 l7-5 7 5 v12 M9 21 v-6 h6 v6"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Belediye Taşınmazları</span>
+                    <span class="hrm-katman-alt">Ankara BB · tasinmazservice · Tam / Hisseli</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-belediye">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-belediye-op" min="10" max="100" value="80" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-belediye-op">80%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-belediye-op" title="Varsayılana döndür">↺</button>
+            </div>
+            <div class="hrm-katman-lejant" aria-label="Hisse durumu lejantı">
+                <span class="hrm-lejant-oge">
+                    <span class="hrm-lejant-swatch" style="background:rgba(140,0,98,.72);border-color:#5c0040;"></span>
+                    Tam
+                </span>
+                <span class="hrm-lejant-oge">
+                    <span class="hrm-lejant-swatch" style="background:rgba(255,170,224,.45);border-color:#e85aba;"></span>
+                    Hisseli
+                </span>
+                <span class="hrm-lejant-oge">
+                    <span class="hrm-lejant-swatch" style="background:rgba(148,163,184,.40);border-color:#64748b;"></span>
+                    Hatalı
+                </span>
+            </div>
+        </div>
+
+        </div>
+    </details>
+
+    <details class="hrm-details hrm-grup" open data-grup="abb-detay">
+        <summary class="hrm-grup-summary">
+            <svg class="hrm-summary-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            <span class="hrm-grup-ad">Ankara BB · Sınır & Detay</span>
+            <span class="hrm-grup-sayac" data-grup-sayac="abb-detay" title="Aktif / Toplam">0/0</span>
+            <label class="hrm-switch hrm-switch-mini hrm-grup-master-wrap" title="Grubu aç/kapat">
+                <input type="checkbox" class="hrm-grup-master" data-grup="abb-detay">
+                <span class="hrm-switch-slider"></span>
+            </label>
+        </summary>
+        <div class="hrm-details-icerik" data-grup-icerik="abb-detay">
+
+        <div class="hrm-katman-kart" data-katman-kart="abb-ilce" data-grup="abb-detay" data-ad="ilçe sınırı ankara">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#0ea5e9;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">İlçe Sınırı</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · İlçe</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-abb-ilce">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-abb-ilce-op" min="10" max="100" value="80" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-ilce-op">80%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-abb-ilce-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        <div class="hrm-katman-kart" data-katman-kart="abb-mahalle" data-grup="abb-detay" data-ad="mahalle sınırı ankara">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#14b8a6;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L12 3 L21 12 M5 10 v10 h14 V10"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Mahalle Sınırı</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Mahalle</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-abb-mahalle">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-abb-mahalle-op" min="10" max="100" value="80" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-mahalle-op">80%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="80" data-hedef="hrm-ov-abb-mahalle-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        <div class="hrm-katman-kart" data-katman-kart="abb-yapi" data-grup="abb-detay" data-ad="yapı bina ankara">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#f97316;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21 V7 h6 V3 h10 v18 M9 11h2 M13 11h2 M9 15h2 M13 15h2 M9 19h2 M13 19h2"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Yapı</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Yapı · 17+ zoom</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-abb-yapi">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-abb-yapi-op" min="10" max="100" value="85" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-yapi-op">85%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="85" data-hedef="hrm-ov-abb-yapi-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        <div class="hrm-katman-kart" data-katman-kart="abb-numarataj" data-grup="abb-detay" data-ad="numarataj adres kapı ankara">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:#ef4444;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22 s-7-7-7-13 a7 7 0 0 1 14 0 c0 6-7 13-7 13z"/><circle cx="12" cy="9" r="2.6"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">Numarataj</span>
+                    <span class="hrm-katman-alt">Ankara BB · ortak/adres · Numarataj · 19+ zoom</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-abb-numarataj">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-abb-numarataj-op" min="10" max="100" value="90" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-abb-numarataj-op">90%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="90" data-hedef="hrm-ov-abb-numarataj-op" title="Varsayılana döndür">↺</button>
+            </div>
+        </div>
+
+        </div>
+    </details>
+
+    <div class="hrm-katman-bos" id="hrm-katman-bos" hidden>Aramanıza uyan katman bulunamadı.</div>
     </div>
 
-    {{-- ==== ARAMA PANELİ ==== --}}
-    <div class="ech-panel ech-arama" id="dgh-arama-panel" hidden>
-        <div class="ech-panel-head" data-drag>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-            <div style="flex:1;"><strong>Ara / Filtrele</strong><small>Konum, tür, yıl, rapor no</small></div>
-            <button type="button" class="ech-panel-kapat" data-panel-kapat="dgh-arama-panel" aria-label="Kapat">
+    <div class="hrm-panel-alt">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M11 12h1v4h1"/></svg>
+        Parsel tıklandığında e-imar bilgileri otomatik sorgulanır.
+    </div>
+    </div>
+
+    {{-- Ada / Parsel Sorgu paneli --}}
+    <div class="hrm-float-panel" id="hrm-adaparsel-panel" hidden>
+        <div class="hrm-panel-head" data-drag-handle>
+            <span class="hrm-panel-tut" title="Taşımak için sürükleyin">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="16" cy="6" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="16" cy="18" r="1"/></svg>
+            </span>
+            <div class="hrm-panel-head-baslik">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                <strong>Ada / Parsel Sorgu</strong>
+            </div>
+            <button type="button" class="hrm-panel-kapat" data-kapat="hrm-adaparsel-panel" aria-label="Kapat">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
         </div>
-        <div class="ech-panel-scroll" style="padding:14px;">
-            <form class="ech-form" id="dgh-arama-form">
-                <div class="ech-form-satir"><label>İl</label>
-                    <select name="il_id" id="dgh-f-il"><option value="">— Tümü —</option>@foreach ($iller as $il)<option value="{{ $il->id }}">{{ $il->ad }}</option>@endforeach</select>
+        <div class="hrm-panel-icerik">
+            <div class="hrm-form-satir">
+                <label>İl</label>
+                <select id="hrm-ap-il" class="hrm-form-select">
+                    <option value="">— İl seçin —</option>
+                    @foreach ($iller as $il)
+                        <option value="{{ $il->id }}">{{ $il->ad }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="hrm-form-satir">
+                <label>İlçe</label>
+                <select id="hrm-ap-ilce" class="hrm-form-select" disabled>
+                    <option value="">— Önce il —</option>
+                </select>
+            </div>
+            <div class="hrm-form-satir">
+                <label>Mahalle</label>
+                <select id="hrm-ap-mahalle" class="hrm-form-select" disabled>
+                    <option value="">— Önce ilçe —</option>
+                </select>
+            </div>
+            <div class="hrm-form-2li">
+                <div class="hrm-form-satir">
+                    <label>Ada</label>
+                    <input type="text" id="hrm-ap-ada" class="hrm-form-input" placeholder="123" autocomplete="off">
                 </div>
-                <div class="ech-form-satir"><label>İlçe</label><select name="ilce_id" id="dgh-f-ilce" disabled><option value="">— Önce il —</option></select></div>
-                <div class="ech-form-satir"><label>Mahalle</label><select name="mahalle_id" id="dgh-f-mahalle" disabled><option value="">— Önce ilçe —</option></select></div>
-                <div class="ech-form-row">
-                    <div class="ech-form-satir"><label>Ada</label><input type="text" name="ada"></div>
-                    <div class="ech-form-satir"><label>Parsel</label><input type="text" name="parsel"></div>
+                <div class="hrm-form-satir">
+                    <label>Parsel</label>
+                    <input type="text" id="hrm-ap-parsel" class="hrm-form-input" placeholder="45" autocomplete="off">
                 </div>
-                <div class="ech-form-row">
-                    <div class="ech-form-satir"><label>Rapor Yılı</label>
-                        <select name="yil"><option value="">— Tümü —</option>@foreach ($yillar as $y)<option value="{{ $y }}">{{ $y }}</option>@endforeach</select>
-                    </div>
-                    <div class="ech-form-satir"><label>Rapor / BB No</label><input type="text" name="q" placeholder="2026/15"></div>
-                </div>
-                <div class="ech-btn-row">
-                    <button type="submit" class="ech-btn">Uygula</button>
-                    <button type="button" class="ech-btn is-ghost" id="dgh-temizle">Temizle</button>
-                </div>
-            </form>
+            </div>
+            <button type="button" class="hrm-form-btn" id="hrm-ap-sorgula" disabled>Sorgula</button>
+            <div class="hrm-form-mesaj" id="hrm-ap-mesaj" hidden></div>
         </div>
     </div>
 
-    {{-- ==== TAŞINMAZ PANELİ ==== --}}
-    <div class="ech-panel ech-islem" id="dgh-islem-panel" hidden>
-        <div class="ech-panel-head" data-drag>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M7 21h10M4 7h16"/><path d="M6 7l-3 7a3 3 0 0 0 6 0zM18 7l-3 7a3 3 0 0 0 6 0z"/></svg>
-            <div style="flex:1;"><strong id="dgh-islem-baslik">Taşınmaz</strong><small id="dgh-islem-alt">Seçilmedi</small></div>
-            <button type="button" class="ech-panel-kapat" data-panel-kapat="dgh-islem-panel" aria-label="Kapat">
+    {{-- Arama paneli (sistemdeki tasinmazlarda) --}}
+    <div class="hrm-float-panel hrm-panel-wide" id="hrm-arama-panel" hidden>
+        <div class="hrm-panel-head" data-drag-handle>
+            <span class="hrm-panel-tut" title="Taşımak için sürükleyin">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="16" cy="6" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="16" cy="18" r="1"/></svg>
+            </span>
+            <div class="hrm-panel-head-baslik">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                <strong>Sistemde Arama</strong>
+            </div>
+            <button type="button" class="hrm-panel-kapat" data-kapat="hrm-arama-panel" aria-label="Kapat">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
         </div>
-        <div class="ech-panel-scroll" style="padding:14px;" id="dgh-islem-icerik"></div>
+        <div class="hrm-panel-icerik">
+            <div class="hrm-form-satir">
+                <label>Serbest arama</label>
+                <input type="text" id="hrm-arama-q" class="hrm-form-input" placeholder="Ada / parsel / nitelik / kullanım ara..." autocomplete="off">
+            </div>
+            <div class="hrm-form-satir">
+                <label>İl</label>
+                <select id="hrm-arama-il" class="hrm-form-select">
+                    <option value="">— Tümü —</option>
+                    @foreach ($iller as $il)
+                        <option value="{{ $il->id }}">{{ $il->ad }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="hrm-form-satir">
+                <label>İlçe</label>
+                <select id="hrm-arama-ilce" class="hrm-form-select" disabled>
+                    <option value="">— Tümü —</option>
+                </select>
+            </div>
+            <div class="hrm-form-satir">
+                <label>Mahalle</label>
+                <select id="hrm-arama-mahalle" class="hrm-form-select" disabled>
+                    <option value="">— Tümü —</option>
+                </select>
+            </div>
+            <div class="hrm-form-2li">
+                <div class="hrm-form-satir">
+                    <label>Ada</label>
+                    <input type="text" id="hrm-arama-ada" class="hrm-form-input" placeholder="123" autocomplete="off">
+                </div>
+                <div class="hrm-form-satir">
+                    <label>Parsel</label>
+                    <input type="text" id="hrm-arama-parsel" class="hrm-form-input" placeholder="45" autocomplete="off">
+                </div>
+            </div>
+            <button type="button" class="hrm-form-btn" id="hrm-arama-sorgula">Ara</button>
+            <div class="hrm-form-mesaj" id="hrm-arama-mesaj" hidden></div>
+
+            <div class="hrm-arama-liste" id="hrm-arama-liste" hidden>
+                <div class="hrm-arama-basli">
+                    <span>Sonuç: <strong id="hrm-arama-sayi">0</strong></span>
+                </div>
+                <div class="hrm-arama-satirlar" id="hrm-arama-satirlar"></div>
+            </div>
+        </div>
     </div>
+
+    <div id="hrm-map" class="hrm-map"></div>
 </div>
 @endsection
 
+
 @push('scripts')
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="https://js.arcgis.com/4.30/"></script>
 <script>
-(function () {
-    'use strict';
-    const API = {
-        geojson: {{ \Illuminate\Support\Js::from(route('panel.degerleme.harita.geojson')) }},
-        tasinmaz: {{ \Illuminate\Support\Js::from(url('/panel/degerleme/harita/tasinmaz')) }},
-@if ($emsalGorebilir)
-        emsalGeojson: {{ \Illuminate\Support\Js::from(route('panel.emsal.harita.geojson')) }},
-        emsalParsel: {{ \Illuminate\Support\Js::from(url('/panel/emsal/harita/parsel')) }},
-@endif
-        ilceler: {{ \Illuminate\Support\Js::from(url('/panel/ajax/ilceler')) }},
-        mahalleler: {{ \Illuminate\Support\Js::from(url('/panel/ajax/mahalleler')) }},
-    };
-    const TUR = {
-        arsa:  { renk: '#0d9488', etiket: 'Arsa' },
-        bb:    { renk: '#7c3aed', etiket: 'Bağımsız Bölüm' },
-        ikisi: { renk: '#f59e0b', etiket: 'Arsa + BB' },
-    };
-    const EMSAL_TUR = {
-@foreach ($emsalTipleri as $t)
-        {{ $t->value }}: { renk: {{ \Illuminate\Support\Js::from($t->renk()) }}, etiket: {{ \Illuminate\Support\Js::from($t->etiket()) }} },
-@endforeach
-    };
-    // İmar durumu renkleri sunucuda üretilir; lejant noktalarıyla birebir aynı
-    const IMAR_RENK = {{ \Illuminate\Support\Js::from($imarDurumlari->mapWithKeys(fn ($i) => [$i->id => $imarRenk($i->id)])->all()) }};
-    const IMAR_YOK_RENK = '#94a3b8';
-    const ETIKET_ZOOM = 16;
-    const $ = id => document.getElementById(id);
-    const para = n => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const kisaPara = n => { n = Number(n || 0); return n >= 1e9 ? (n / 1e9).toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + ' mr' : n >= 1e6 ? (n / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + ' mn' : n.toLocaleString('tr-TR', { maximumFractionDigits: 0 }); };
-    const tarih = iso => iso ? new Date(iso).toLocaleDateString('tr-TR') : '—';
-    const esc = s => s === null || s === undefined ? '' : String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
-
-    const map = L.map('dgh-map', { zoomSnap: 0.5, zoomDelta: 0.5, zoomControl: false, attributionControl: false }).setView([39.9334, 32.8597], 11);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    // ---- Altlık ----
-    const g = l => L.tileLayer('https://mt{s}.google.com/vt/lyrs=' + l + '&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 21 });
-    const altliklar = { 'uydu-etiket': g('y'), 'uydu': g('s'), 'yol': g('m'), 'osm': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }) };
-    let aktifAltlik = 'uydu-etiket';
-    altliklar[aktifAltlik].addTo(map);
-    document.querySelectorAll('#dgh-altlik-grup .ech-radyo').forEach(el => el.addEventListener('click', () => {
-        if (el.dataset.altlik === aktifAltlik) return;
-        map.removeLayer(altliklar[aktifAltlik]);
-        aktifAltlik = el.dataset.altlik;
-        altliklar[aktifAltlik].addTo(map).bringToBack();
-        document.querySelectorAll('#dgh-altlik-grup .ech-radyo').forEach(x => x.classList.toggle('is-aktif', x === el));
-    }));
-
-    // ---- ABB katmanları (baskentcbs — doğrudan, proxy yok) ----
-    // Sunucu aynı anda gelen isteği 429 ile kesiyor. Kareler üçer üçer gider.
-    const ovKatman = {};
-    const abbKuyruk = [];
-    let abbAktif = 0;
-    function abbSirayaAl(calistir) {
-        return new Promise(function (resolve, reject) {
-            abbKuyruk.push({ calistir: calistir, resolve: resolve, reject: reject });
-            abbBosalt();
-        });
-    }
-    function abbBosalt() {
-        while (abbAktif < 3 && abbKuyruk.length) {
-            const is = abbKuyruk.shift();
-            abbAktif++;
-            Promise.resolve().then(is.calistir).then(is.resolve, is.reject).then(function () {
-                abbAktif--;
-                setTimeout(abbBosalt, 80);
-            });
-        }
-    }
-    const AbbKare = L.TileLayer.extend({
-        createTile: function (coords, done) {
-            const img = document.createElement('img');
-            const adres = this.getTileUrl(coords);
-            abbSirayaAl(function () {
-                return new Promise(function (resolve) {
-                    img.onload = img.onerror = function () { resolve(); };
-                    img.src = adres;
-                });
-            }).then(function () { done(null, img); });
-            return img;
+    window.ETYS_HARITA = {
+        // Değerleme kipi: parsel katmanı envanter yerine değerlemelerden gelir,
+        // emsal katmanı eklenir ve parsel popup'ına kayıt ekleme bağlantıları
+        // konur. Geri kalan her şey (altlıklar, ABB katmanları, TKGM/e-İmar
+        // sorguları) taşınmaz haritasıyla ortaktır.
+        mod:           'degerleme',
+        geojson:       @json(route('panel.degerleme.harita.geojson')),
+        ara:           @json(route('panel.ajax.tasinmaz-ara')),
+        eimar:         @json(route('panel.ajax.eimar-identify')),
+        ilceler:       @json(url('/panel/ajax/ilceler')),
+        mahalleler:    @json(url('/panel/ajax/mahalleler')),
+        tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
+        tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
+        secilenSayi:   null,
+        degerleme: {
+            tasinmaz:  @json(url('/panel/degerleme/harita/tasinmaz')),
+            yeniRapor: @json(route('panel.degerleme.yeni')),
+            imarRenk:  @json($imarDurumlari->mapWithKeys(fn ($i) => [$i->id => $imarRenk($i->id)])->all()),
         },
-    });
-    function ovOlustur(kart) {
-        const opak = kart.querySelector('.dgh-opak').value / 100;
-        const url = kart.dataset.url;
-        const ayar = { opacity: opak, maxZoom: 22, minZoom: Number(kart.dataset.zoom) || 15, tileSize: 256 };
-
-        // Önbellekli servis. Hazır kare /tile/{z}/{y}/{x}; 19'dan yakında son kare büyür.
-        // İstekler sıraya girer, aksi halde baskentcbs 429 döner.
-        if (kart.dataset.tip === 'tile') {
-            return new AbbKare(url + '/tile/{z}/{y}/{x}', Object.assign({ maxNativeZoom: 19 }, ayar));
-        }
-
-        return abbDinamik(url, kart.dataset.katman, opak, ayar.minZoom);
-    }
-
-    // Önbelleği olmayan servis. Görünüm başına tek resim; piksel sayısı ekran
-    // yoğunluğu kadar, servis sınırı 4096. Sınırı aşan istek orantılı küçülür,
-    // yoksa sunucu keser ve resim ekrana gerilip bulanıklaşır.
-    function abbDinamik(url, katmanNo, opak, minZoom) {
-        const grup = L.layerGroup();
-        let harita = null, resim = null, istekNo = 0, zamanlayici = null;
-        function guncelle() {
-            if (!harita) return;
-            if (harita.getZoom() < minZoom) {
-                if (resim) { grup.removeLayer(resim); resim = null; }
-                return;
-            }
-            const sinir = harita.getBounds(), boyut = harita.getSize();
-            const oran = Math.min(window.devicePixelRatio || 1, 2);
-            let w = Math.round(boyut.x * oran), h = Math.round(boyut.y * oran);
-            const sigdir = Math.min(1, 4096 / Math.max(w, h));
-            w = Math.max(1, Math.round(w * sigdir));
-            h = Math.max(1, Math.round(h * sigdir));
-            const gb = L.CRS.EPSG3857.project(sinir.getSouthWest()), kd = L.CRS.EPSG3857.project(sinir.getNorthEast());
-            const no = ++istekNo;
-            const img = new Image();
-            const adres = url + '/export?' + new URLSearchParams({
-                bbox: [gb.x, gb.y, kd.x, kd.y].map(v => v.toFixed(2)).join(','),
-                bboxSR: '3857',
-                imageSR: '3857',
-                size: w + ',' + h,
-                dpi: String(Math.max(96, Math.round(96 * oran * sigdir))),
-                format: 'png32',
-                transparent: 'true',
-                layers: 'show:' + katmanNo,
-                f: 'image',
-            });
-            abbSirayaAl(function () {
-                return new Promise(function (resolve) {
-                    img.onload = img.onerror = function () { resolve(); };
-                    img.src = adres;
-                });
-            }).then(function () {
-                if (no !== istekNo || !harita || !img.naturalWidth) return;
-                const yeni = L.imageOverlay(img, sinir, { opacity: grup.opak, interactive: false }).addTo(grup);
-                if (resim) grup.removeLayer(resim);
-                resim = yeni;
-            });
-        }
-        const zamanla = () => { clearTimeout(zamanlayici); zamanlayici = setTimeout(guncelle, 150); };
-        grup.opak = opak;
-        grup.setOpacity = o => { grup.opak = o; if (resim) resim.setOpacity(o); return grup; };
-        grup.on('add', e => { harita = e.target._map; harita.on('moveend', zamanla); guncelle(); });
-        grup.on('remove', () => { if (harita) harita.off('moveend', zamanla); harita = null; istekNo++; resim = null; });
-        return grup;
-    }
-    document.querySelectorAll('.dgh-ov').forEach(kart => {
-        const kutu = kart.querySelector('input[type=checkbox]');
-        const aralik = kart.querySelector('.dgh-opak');
-        kutu.addEventListener('change', () => {
-            const kod = kart.dataset.ov;
-            aralik.hidden = !kutu.checked;
-            if (kutu.checked) {
-                ovKatman[kod] = ovOlustur(kart).addTo(map);
-                const enAz = Number(kart.dataset.zoom) || 15;
-                if (map.getZoom() < enAz) bildir(`${kart.querySelector('.ech-katman-ad').textContent} ${enAz}+ zoomda görünür, yakınlaştırın.`);
-            } else if (ovKatman[kod]) {
-                map.removeLayer(ovKatman[kod]);
-                delete ovKatman[kod];
-            }
-        });
-        aralik.addEventListener('input', () => ovKatman[kart.dataset.ov]?.setOpacity(aralik.value / 100));
-    });
-
-    // ---- Değerleme katmanları ----
-    const parselKatman = L.featureGroup().addTo(map);
-    const etiketKatman = L.featureGroup();
-    const markerKatman = L.featureGroup();
-    const clusterKatman = L.markerClusterGroup({
-        showCoverageOnHover: false, maxClusterRadius: 50, disableClusteringAtZoom: 16,
-        iconCreateFunction: c => {
-            const n = c.getChildCount();
-            return L.divIcon({ html: `<div class="ech-cluster dgh-cluster">${n}</div>`, className: 'ech-cluster-wrap', iconSize: [40, 40] });
-        },
-    });
-    const kumeKatman = L.featureGroup().addTo(map); // sunucu kümeleri (kalabalık alan)
-
-    // ---- Emsal katmanları ----
-    // Emsal parselleri değerlemelerden ayrı bir istekle, aynı görünen-alan +
-    // kümeleme mantığıyla gelir; ikisi aynı imar süzgecini paylaşır.
-    const emsalParselKatman = L.featureGroup();
-    const emsalMarkerKatman = L.featureGroup();
-    const emsalClusterKatman = L.markerClusterGroup({
-        showCoverageOnHover: false, maxClusterRadius: 50, disableClusteringAtZoom: 16,
-        iconCreateFunction: c => L.divIcon({ html: `<div class="ech-cluster dgh-cluster is-emsal">${c.getChildCount()}</div>`, className: 'ech-cluster-wrap', iconSize: [40, 40] }),
-    });
-    const emsalKumeKatman = L.featureGroup();
-    let emsalOgeler = [];
-    let emsalHam = [];    // ham GeoJSON öğeleri (renk modu değişince yeniden kurulur)
-    let emsalKumeler = [];
-    let emsalKontrol = null;
-
-    let ogeler = [];       // { p, layer, marker, etiket }
-    let kumeler = [];      // sunucudan gelen küme öğeleri
-    let yuklemeKontrol = null;
-    let yuklemeZamanlayici = null;
-    let renkModu = 'tur';
-    let birimAralik = [0, 0];
-    let secili = null;
-    let filtre = new URLSearchParams();
-    let tumSinir = null;
-
-    function renk(p) {
-        if (renkModu === 'tur') return TUR[p.tur].renk;
-        if (renkModu === 'imar') return imarRengi(p.imar_id);
-        if (p.birim === null || p.birim === undefined) return '#94a3b8';
-        const [mn, mx] = birimAralik;
-        const t = mx > mn ? (Math.log(p.birim + 1) - Math.log(mn + 1)) / (Math.log(mx + 1) - Math.log(mn + 1)) : 0.5;
-        // yeşil → sarı → kırmızı
-        const h = Math.round(140 - Math.max(0, Math.min(1, t)) * 140);
-        return `hsl(${h}, 78%, 45%)`;
-    }
-    function turGorunur(p) {
-        const arsa = document.querySelector('[data-tur-katman="arsa"]').checked;
-        const bb = document.querySelector('[data-tur-katman="bb"]').checked;
-        return (p.arsa_sayisi > 0 && arsa) || (p.bb_sayisi > 0 && bb);
-    }
-    function stil(o) {
-        const r = renk(o.p), aktif = secili === o;
-        return { color: aktif ? '#0f172a' : r, fillColor: r, weight: aktif ? 3.5 : 2, fillOpacity: aktif ? 0.55 : 0.32 };
-    }
-    function markerIkon(o) {
-        return L.divIcon({ className: 'ech-marker-wrap', html: `<div class="ech-marker dgh-marker" style="background:${renk(o.p)}"></div>`, iconSize: [26, 26], iconAnchor: [13, 24] });
-    }
-
-    function ciz() {
-        parselKatman.clearLayers(); etiketKatman.clearLayers(); markerKatman.clearLayers(); clusterKatman.clearLayers(); kumeKatman.clearLayers();
-        kumeler.forEach(k => {
-            const n = k.properties.adet, b = k.properties.bbox;
-            const [lng, lat] = k.geometry.coordinates;
-            const boy = Math.round(Math.min(58, 34 + Math.log10(n) * 8));
-            L.marker([lat, lng], { icon: L.divIcon({ html: `<div class="ech-cluster dgh-cluster" style="width:${boy}px;height:${boy}px">${n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'B' : n}</div>`, className: 'ech-cluster-wrap', iconSize: [boy, boy] }) })
-                .on('click', () => map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30] }))
-                .addTo(kumeKatman);
-        });
-        if (kumeler.length) {
-            $('dgh-sayi').textContent = toplamGorunen.toLocaleString('tr-TR');
-            $('dgh-rapor').textContent = '—';
-            isaretciGuncelle();
-            etiketGuncelle();
-            return;
-        }
-        let ts = 0, rs = 0;
-        ogeler.forEach(o => {
-            if (!turGorunur(o.p)) return;
-            ts++; rs += o.p.arsa_sayisi + o.p.bb_sayisi;
-            if (o.layer.setStyle) o.layer.setStyle(stil(o));
-            parselKatman.addLayer(o.layer);
-            o.marker.setIcon(markerIkon(o));
-            markerKatman.addLayer(o.marker);
-            etiketKatman.addLayer(o.etiket);
-        });
-        $('dgh-sayi').textContent = ts.toLocaleString('tr-TR');
-        $('dgh-rapor').textContent = rs.toLocaleString('tr-TR');
-        isaretciGuncelle();
-        etiketGuncelle();
-    }
-    function isaretciGuncelle() {
-        [markerKatman, clusterKatman].forEach(k => map.hasLayer(k) && map.removeLayer(k));
-        if ($('dgh-lyr-cluster').checked) { clusterKatman.clearLayers(); markerKatman.eachLayer(m => clusterKatman.addLayer(m)); map.addLayer(clusterKatman); }
-        else map.addLayer(markerKatman);
-    }
-    function etiketGuncelle() {
-        const goster = $('dgh-lyr-etiket').checked && map.getZoom() >= ETIKET_ZOOM;
-        if (goster && !map.hasLayer(etiketKatman)) map.addLayer(etiketKatman);
-        if (!goster && map.hasLayer(etiketKatman)) map.removeLayer(etiketKatman);
-    }
-    map.on('zoomend', etiketGuncelle);
-
-    let toplamGorunen = 0;
-
-    function ogeOlustur(f) {
-        const p = f.properties;
-        const layer = L.geoJSON(f, { pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 7 }) }).getLayers()[0];
-        const merkez = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
-        const o = { p, layer, merkez };
-        o.marker = L.marker(merkez);
-        o.marker.bindTooltip(`<strong>${esc(p.ada)}/${esc(p.parsel)}</strong> · ${esc(p.mahalle || '')}<br>${kisaPara(p.son_toplam)} TL · ${esc(TUR[p.tur].etiket)}`, { direction: 'top', offset: [0, -20] });
-        o.etiket = L.marker(merkez, { interactive: false, icon: L.divIcon({ className: '', html: `<div class="ech-etiket">${esc(p.ada)}/${esc(p.parsel)}</div>`, iconSize: null }) });
-        [layer, o.marker].forEach(x => x.on('click', () => sec(o)));
-        layer.on('mouseover', () => { if (secili !== o && layer.setStyle) layer.setStyle({ fillOpacity: 0.5, weight: 3 }); });
-        layer.on('mouseout', () => layer.setStyle && layer.setStyle(stil(o)));
-        return o;
-    }
-    const sinirOf = o => o.layer.getBounds ? o.layer.getBounds() : L.latLngBounds([o.merkez, o.merkez]);
-
-    async function getir(ek) {
-        const q = imarUygula(new URLSearchParams(filtre));
-        Object.entries(ek).forEach(([k, v]) => q.set(k, v));
-        const r = await fetch(API.geojson + '?' + q, { headers: { Accept: 'application/json' } });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-    }
-
-    // Yalnızca ekranda görünen alan istenir; kalabalık alanda sunucu kümeler döner
-    async function gorunumYukle() {
-        if (yuklemeKontrol) yuklemeKontrol.abort();
-        const kontrol = yuklemeKontrol = new AbortController();
-        const b = map.getBounds().pad(0.1);
-        const q = imarUygula(new URLSearchParams(filtre));
-        q.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(','));
-        q.set('zoom', map.getZoom());
-        let fc;
-        try {
-            const r = await fetch(API.geojson + '?' + q, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            fc = await r.json();
-        } catch (e) {
-            if (e.name !== 'AbortError') bildir('Harita verisi yüklenemedi.');
-            return;
-        }
-        if (kontrol !== yuklemeKontrol) return;
-        toplamGorunen = fc.toplam || 0;
-        kumeler = fc.kumeli ? fc.features : [];
-        ogeler = fc.kumeli ? [] : (fc.features || []).map(ogeOlustur);
-        if (secili) secili = ogeler.find(o => o.p.id === secili.p.id) || secili;
-        ciz();
-    }
-    map.on('moveend', () => {
-        clearTimeout(yuklemeZamanlayici);
-        yuklemeZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 250);
-    });
-
-    // Süzgeç değişince: kapsam + m² değer aralığı alınır, sonra görünen alan yüklenir
-    async function yukle(sigdir = true) {
-        let k = null;
-        try { k = await getir({ kapsam: 1 }); } catch (e) { bildir('Harita verisi yüklenemedi.'); }
-        birimAralik = k && k.birim_aralik ? k.birim_aralik : [0, 0];
-        $('dgh-skala-min').textContent = k && k.birim_aralik ? kisaPara(birimAralik[0]) : '—';
-        $('dgh-skala-max').textContent = k && k.birim_aralik ? kisaPara(birimAralik[1]) : '—';
-        tumSinir = k && k.bbox ? L.latLngBounds([[k.bbox[1], k.bbox[0]], [k.bbox[3], k.bbox[2]]]) : null;
-        if (sigdir && tumSinir && tumSinir.isValid()) map.fitBounds(tumSinir, { padding: [40, 40], maxZoom: 17 });
-        await gorunumYukle();
-        emsalYukle();
-        return k ? k.toplam : 0;
-    }
-
-    // Tek taşınmazı (süzgeçten bağımsız) bulup ona git ve seç
-    async function odaklan(ek) {
-        const fc = await getir(ek);
-        const f = (fc.features || [])[0];
-        if (!f) return false;
-        const o = ogeOlustur(f);
-        map.fitBounds(sinirOf(o), { maxZoom: 18, padding: [60, 60] });
-        sec(o);
-        return true;
-    }
-
-    // ---- Seçim / yan panel ----
-    async function sec(o) {
-        const eski = secili;
-        secili = o;
-        if (eski && eski.layer.setStyle) eski.layer.setStyle(stil(eski));
-        if (o.layer.setStyle) o.layer.setStyle(stil(o));
-        const panel = $('dgh-islem-panel');
-        panel.hidden = false;
-        $('dgh-islem-baslik').textContent = `${o.p.ada}/${o.p.parsel}`;
-        $('dgh-islem-alt').textContent = [o.p.ilce, o.p.mahalle].filter(Boolean).join(' · ');
-        $('dgh-islem-icerik').innerHTML = '<div class="ech-yukleniyor">Yükleniyor</div>';
-        try {
-            const r = await fetch(API.tasinmaz + '/' + o.p.id, { headers: { Accept: 'application/json' } });
-            if (!r.ok) throw new Error('Yüklenemedi (' + r.status + ')');
-            const v = await r.json();
-            if (secili !== o) return;
-            panelCiz(v);
-        } catch (e) {
-            $('dgh-islem-icerik').innerHTML = `<div class="ech-flash is-hata">${esc(e.message)}</div>`;
-        }
-    }
-
-    function panelCiz(v) {
-        const t = v.tasinmaz;
-        const alanlar = [
-            ['Kayıt Tipi', t.kayit_tipi], ['Parsel Alanı', t.alan !== null ? para(t.alan) + ' m²' : null],
-            ['Kurum Hissesi', t.kurum_hisse !== null ? para(t.kurum_hisse) + ' m²' : null], ['Nitelik', t.nitelik],
-            ['İmar', t.imar], ['Emsal', t.emsal !== null ? para(t.emsal) : null], ['Yençok', t.yencok],
-        ].filter(a => a[1]);
-        const raporlar = v.degerlemeler.map(d => `
-            <div class="ech-tut-item dgh-rapor is-${d.tip}">
-                <div class="ech-tut-ust">
-                    <span class="num">${d.rapor_no ? 'Rapor ' + esc(d.rapor_no) : 'Değerleme #' + d.id}</span>
-                    <span class="dg-tur is-${d.tip}">${d.tip === 'bb' ? 'BB' : 'Arsa'}</span>
-                </div>
-                <div class="dgh-tutar">${para(d.toplam)} <small>TL</small></div>
-                <div class="dgh-rapor-alt">
-                    ${d.bolum ? `<span>${esc(d.bolum)}</span>` : ''}
-                    ${d.alan ? `<span>${para(d.alan)} m²</span>` : ''}
-                    ${d.birim_fiyat !== null ? `<span>${para(d.birim_fiyat)} TL/m²</span>` : ''}
-                    <span>${tarih(d.rapor_tarihi)}</span>
-                    ${d.hazirlayan ? `<span>${esc(d.hazirlayan)}</span>` : ''}
-                </div>
-                <div class="ech-btn-row">
-                    <a class="ech-btn is-mini" href="${esc(d.detay_url)}">Detay</a>
-                    <a class="ech-btn is-mini is-ghost" href="${esc(d.rapor_url)}" target="_blank">Rapor çıktısı</a>
-                    ${d.pdf_url ? `<a class="ech-btn is-mini is-ghost" href="${esc(d.pdf_url)}" target="_blank" rel="noopener">PDF</a>` : ''}
-                </div>
-            </div>`).join('');
-        const yeni = Object.entries(v.yeni || {}).map(([tip, url]) => `<a class="ech-btn is-mini" href="${esc(url)}">+ ${tip === 'bb' ? 'Bağımsız bölüm' : 'Arsa'} değerlemesi</a>`).join('');
-        $('dgh-islem-icerik').innerHTML = `
-            <div class="ech-ozet-grid">${alanlar.map(a => `<div class="ech-alan"><div class="lbl">${a[0]}</div><div class="val">${esc(a[1])}</div></div>`).join('')}</div>
-            <div class="ech-btn-row">${t.detay_url ? `<a class="ech-btn is-ghost is-mini" href="${esc(t.detay_url)}">Taşınmaz kaydı →</a>` : ''}${yeni}</div>
-            <div class="dgh-baslik">Değerleme raporları (${v.degerlemeler.length})</div>
-            ${raporlar || '<div class="ech-bos">Rapor yok.</div>'}`;
-    }
-
-    // ---- İmar durumu katmanları ----
-    // Süzgeç sunucuya gider: kümeler orada hesaplandığı için istemcide gizlemek
-    // yeterli olmaz, küme sayıları yanlış kalırdı.
-    function imarParam() {
-        const kutular = Array.from(document.querySelectorAll('[data-imar]'));
-        if (!kutular.length) return null;
-        const secili = kutular.filter(k => k.checked).map(k => k.dataset.imar);
-        if (secili.length === kutular.length) return null; // hepsi açık → süzgeç yok
-        return secili.join(',');
-    }
-    function imarUygula(q) {
-        const imar = imarParam();
-        if (imar !== null) q.set('imar', imar);
-        return q;
-    }
-    function imarRengi(id) {
-        return id === null || id === undefined ? IMAR_YOK_RENK : (IMAR_RENK[id] || IMAR_YOK_RENK);
-    }
-
 @if ($emsalGorebilir)
-    // ---- Emsal katmanı ----
-    function emsalAcik() {
-        return $('dgh-lyr-emsal').checked;
-    }
-    function emsalTurleri() {
-        return Array.from(document.querySelectorAll('[data-emsal-tur]')).filter(k => k.checked).map(k => k.dataset.emsalTur);
-    }
-    function emsalRengi(p) {
-        if (renkModu === 'imar') return imarRengi(p.imar_id);
-        const t = (p.tipler || [])[0];
-        return (EMSAL_TUR[t] && EMSAL_TUR[t].renk) || '#0ea5e9';
-    }
-    function emsalOgeOlustur(f) {
-        const p = f.properties;
-        const layer = L.geoJSON(f, { pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 7 }) }).getLayers()[0];
-        const merkez = layer.getBounds ? layer.getBounds().getCenter() : layer.getLatLng();
-        const renk = emsalRengi(p);
-        if (layer.setStyle) layer.setStyle({ color: renk, fillColor: renk, weight: 2, fillOpacity: 0.3, dashArray: '5 4' });
-        const marker = L.marker(merkez, {
-            icon: L.divIcon({ className: 'ech-marker-wrap', html: `<div class="dgh-emsal-marker" style="background:${renk}">${p.adet}</div>`, iconSize: [26, 26], iconAnchor: [13, 24] }),
-        });
-        const turAdlari = (p.tipler || []).map(t => (EMSAL_TUR[t] || {}).etiket || t).join(', ');
-        marker.bindTooltip(`<strong>${esc(p.ada)}/${esc(p.parsel)}</strong> · ${esc(p.mahalle || '')}<br>${p.adet} emsal · ${p.ortalama ? para(p.ortalama) + ' TL/m²' : '—'}<br><small>${esc(turAdlari)}</small>`, { direction: 'top', offset: [0, -20] });
-        const o = { p, layer, marker, merkez };
-        [layer, marker].forEach(x => x.on('click', () => emsalSec(o)));
-        return o;
-    }
-    function emsalCiz() {
-        emsalParselKatman.clearLayers(); emsalMarkerKatman.clearLayers();
-        emsalClusterKatman.clearLayers(); emsalKumeKatman.clearLayers();
-
-        const acik = emsalAcik();
-        [emsalParselKatman, emsalKumeKatman, emsalMarkerKatman, emsalClusterKatman]
-            .forEach(k => map.hasLayer(k) && map.removeLayer(k));
-        if (!acik) return;
-
-        if (emsalKumeler.length) {
-            emsalKumeler.forEach(k => {
-                const n = k.properties.adet, b = k.properties.bbox;
-                const [lng, lat] = k.geometry.coordinates;
-                const boy = Math.round(Math.min(58, 34 + Math.log10(n) * 8));
-                L.marker([lat, lng], { icon: L.divIcon({ html: `<div class="ech-cluster dgh-cluster is-emsal" style="width:${boy}px;height:${boy}px">${n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'B' : n}</div>`, className: 'ech-cluster-wrap', iconSize: [boy, boy] }) })
-                    .on('click', () => map.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [30, 30] }))
-                    .addTo(emsalKumeKatman);
-            });
-            map.addLayer(emsalKumeKatman);
-            return;
-        }
-
-        emsalOgeler.forEach(o => {
-            emsalParselKatman.addLayer(o.layer);
-            emsalMarkerKatman.addLayer(o.marker);
-        });
-        map.addLayer(emsalParselKatman);
-        if ($('dgh-lyr-cluster').checked) {
-            emsalMarkerKatman.eachLayer(m => emsalClusterKatman.addLayer(m));
-            map.addLayer(emsalClusterKatman);
-        } else {
-            map.addLayer(emsalMarkerKatman);
-        }
-    }
-    async function emsalYukle() {
-        if (!emsalAcik()) { emsalOgeler = []; emsalKumeler = []; emsalCiz(); return; }
-        if (emsalKontrol) emsalKontrol.abort();
-        const kontrol = emsalKontrol = new AbortController();
-
-        const b = map.getBounds().pad(0.1);
-        const q = imarUygula(new URLSearchParams());
-        q.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(','));
-        q.set('zoom', map.getZoom());
-        const turler = emsalTurleri();
-        if (turler.length) q.set('tip', turler.join(','));
-        ['ilce_id', 'mahalle_id'].forEach(k => filtre.get(k) && q.set(k, filtre.get(k)));
-
-        let fc;
-        try {
-            const r = await fetch(API.emsalGeojson + '?' + q, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            fc = await r.json();
-        } catch (e) {
-            if (e.name !== 'AbortError') bildir('Emsal katmanı yüklenemedi.');
-            return;
-        }
-        if (kontrol !== emsalKontrol) return;
-
-        // Hiçbir tür seçili değilse sunucuya sormaya gerek yok ama süzgeç de boş
-        // gitmemeli; burada gelen sonucu doğrudan kullanıyoruz.
-        emsalKumeler = fc.kumeli ? fc.features : [];
-        emsalHam = fc.kumeli ? [] : (fc.features || []);
-        emsalOgeler = emsalHam.map(emsalOgeOlustur);
-        emsalCiz();
-        $('dgh-emsal-sayi').textContent = (fc.toplam || 0).toLocaleString('tr-TR');
-    }
-    async function emsalSec(o) {
-        $('dgh-islem-panel').hidden = false;
-        $('dgh-islem-baslik').textContent = o.p.ada + '/' + o.p.parsel + ' · Emsaller';
-        $('dgh-islem-icerik').innerHTML = '<div class="ech-bos">Yükleniyor…</div>';
-        let v;
-        try {
-            const r = await fetch(API.emsalParsel + '/' + o.p.id, { headers: { Accept: 'application/json' } });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            v = await r.json();
-        } catch (e) {
-            $('dgh-islem-icerik').innerHTML = '<div class="ech-bos">Emsal bilgisi alınamadı.</div>';
-            return;
-        }
-        const alanlar = [
-            ['İlçe / Mahalle', [v.ilce, v.mahalle].filter(Boolean).join(' · ') || '—'],
-            ['Ada / Parsel', v.ada + '/' + v.parsel],
-            ['Alan', v.alan ? para(v.alan) + ' m²' : '—'],
-            ['İmar Durumu', v.imar || '—'],
-            ['Emsal (KAKS)', v.emsal ?? '—'],
-            ['Yençok / Yenaz', v.yenaz_yencok || '—'],
-        ];
-        const satirlar = v.emsaller.map(e => `
-            <div class="dgh-rapor">
-                <div><strong style="color:${esc(e.renk)}">${esc(e.tip_ad)}</strong>
-                    <span class="dgh-rapor-alt">${esc(e.belge_no || '—')} · ${tarih(e.tarih)}</span></div>
-                <div class="dgh-tutar">${e.birim_fiyat !== null ? para(e.birim_fiyat) + ' TL/m²' : '—'}</div>
-                <div class="ech-btn-row">
-                    ${e.evrak ? `<a class="ech-btn is-ghost is-mini" href="${esc(e.evrak)}" target="_blank" rel="noopener">Evrak</a>` : ''}
-                    <a class="ech-btn is-mini" href="${esc(e.duzenle)}">Düzenle</a>
-                </div>
-            </div>`).join('');
-        $('dgh-islem-icerik').innerHTML = `
-            <div class="ech-ozet-grid">${alanlar.map(a => `<div class="ech-alan"><div class="lbl">${a[0]}</div><div class="val">${esc(a[1])}</div></div>`).join('')}</div>
-            <div class="dgh-baslik">Emsaller (${v.emsaller.length})</div>
-            ${satirlar || '<div class="ech-bos">Emsal yok.</div>'}`;
-    }
-
-    // Renk modu değişince sunucuya tekrar gitmeden işaretçiler yeniden kurulur
-    function emsalYenidenCiz() {
-        emsalOgeler = emsalHam.map(emsalOgeOlustur);
-        emsalCiz();
-    }
-
-    $('dgh-lyr-emsal').addEventListener('change', () => {
-        document.querySelectorAll('.dgh-emsal-alt').forEach(el => el.classList.toggle('is-pasif', !emsalAcik()));
-        emsalYukle();
-    });
-    document.querySelectorAll('[data-emsal-tur]').forEach(k => k.addEventListener('change', emsalYukle));
-@else
-    const emsalYukle = () => {};
-    const emsalYenidenCiz = () => {};
+        emsal: {
+            geojson:   @json(route('panel.emsal.harita.geojson')),
+            parsel:    @json(url('/panel/emsal/harita/parsel')),
+            yeni:      @json(route('panel.emsal.olustur')),
+            turler:    @json(collect($emsalTipleri)->map(fn ($t) => ['deger' => $t->value, 'etiket' => $t->etiket(), 'renk' => $t->renk()])->all()),
+        },
 @endif
-
-    let imarZamanlayici = null;
-    document.querySelectorAll('[data-imar]').forEach(k => k.addEventListener('change', () => {
-        clearTimeout(imarZamanlayici);
-        imarZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 200);
-    }));
-    document.querySelectorAll('[data-imar-hepsi]').forEach(d => d.addEventListener('click', () => {
-        const ac = d.dataset.imarHepsi === '1';
-        document.querySelectorAll('[data-imar]').forEach(k => { k.checked = ac; });
-        clearTimeout(imarZamanlayici);
-        imarZamanlayici = setTimeout(() => { gorunumYukle(); emsalYukle(); }, 200);
-    }));
-
-    // ---- Katman anahtarları ----
-    document.querySelectorAll('[data-tur-katman]').forEach(k => k.addEventListener('change', ciz));
-    $('dgh-lyr-etiket').addEventListener('change', etiketGuncelle);
-    $('dgh-lyr-cluster').addEventListener('change', isaretciGuncelle);
-    document.querySelectorAll('#dgh-renk-grup .ech-radyo').forEach(el => el.addEventListener('click', () => {
-        renkModu = el.dataset.renk;
-        document.querySelectorAll('#dgh-renk-grup .ech-radyo').forEach(x => x.classList.toggle('is-aktif', x === el));
-        $('dgh-lejant-tur').hidden = renkModu !== 'tur';
-        $('dgh-lejant-birim').hidden = renkModu !== 'birim';
-        ciz();
-        emsalYenidenCiz();
-    }));
-
-    // ---- Araç çubuğu / paneller ----
-    const ac = (panelId, btnId) => { const p = $(panelId); p.hidden = !p.hidden; $(btnId).setAttribute('aria-expanded', String(!p.hidden)); };
-    $('dgh-katman-btn').addEventListener('click', () => ac('dgh-katman-panel', 'dgh-katman-btn'));
-    $('dgh-arama-btn').addEventListener('click', () => ac('dgh-arama-panel', 'dgh-arama-btn'));
-    $('dgh-fit-btn').addEventListener('click', () => tumSinir && tumSinir.isValid() && map.fitBounds(tumSinir, { padding: [40, 40], maxZoom: 17 }));
-    document.querySelectorAll('[data-panel-kapat]').forEach(b => b.addEventListener('click', () => {
-        $(b.dataset.panelKapat).hidden = true;
-        const btn = { 'dgh-katman-panel': 'dgh-katman-btn', 'dgh-arama-panel': 'dgh-arama-btn' }[b.dataset.panelKapat];
-        if (btn) $(btn).setAttribute('aria-expanded', 'false');
-        if (b.dataset.panelKapat === 'dgh-islem-panel' && secili) { const o = secili; secili = null; o.layer.setStyle && o.layer.setStyle(stil(o)); }
-    }));
-    document.querySelectorAll('.ech-panel-head[data-drag]').forEach(head => {
-        const panel = head.closest('.ech-panel');
-        head.addEventListener('mousedown', e => {
-            if (e.target.closest('button')) return;
-            const r = panel.getBoundingClientRect(), bx = e.clientX, by = e.clientY;
-            Object.assign(panel.style, { right: 'auto', bottom: 'auto', left: r.left + 'px', top: r.top + 'px' });
-            const mv = ev => Object.assign(panel.style, { left: (r.left + ev.clientX - bx) + 'px', top: (r.top + ev.clientY - by) + 'px' });
-            document.addEventListener('mousemove', mv);
-            document.addEventListener('mouseup', () => document.removeEventListener('mousemove', mv), { once: true });
-        });
-    });
-
-    // Hızlı ada/parsel: önce ekrandakiler arasında, yoksa sunucuda ara
-    $('dgh-hizli').addEventListener('submit', async e => {
-        e.preventDefault();
-        const ada = e.target.ada.value.trim(), parsel = e.target.parsel.value.trim();
-        if (!ada) return;
-        const o = ogeler.find(x => String(x.p.ada) === ada && (!parsel || String(x.p.parsel) === parsel));
-        if (o) { map.fitBounds(sinirOf(o), { maxZoom: 18, padding: [60, 60] }); sec(o); return; }
-        if (!await odaklan({ ada, ...(parsel ? { parsel } : {}) }).catch(() => false)) bildir('Bu ada/parselde değerlenmiş taşınmaz yok.');
-    });
-
-    function bildir(m) {
-        let k = $('dgh-bildirim');
-        if (!k) { k = document.createElement('div'); k.id = 'dgh-bildirim'; k.className = 'ech-bildirim'; k.setAttribute('role', 'status'); document.body.appendChild(k); }
-        k.textContent = m; k.classList.add('is-acik');
-        clearTimeout(k._t); k._t = setTimeout(() => k.classList.remove('is-acik'), 3200);
-    }
-
-    // Filtre formu
-    $('dgh-f-il').addEventListener('change', async e => {
-        const i = $('dgh-f-ilce'), m = $('dgh-f-mahalle');
-        i.innerHTML = '<option value="">— Tümü —</option>'; m.innerHTML = '<option value="">— Önce ilçe —</option>'; m.disabled = true;
-        i.disabled = !e.target.value;
-        if (e.target.value) (await (await fetch(API.ilceler + '/' + e.target.value)).json() || []).forEach(x => i.add(new Option(x.ad, x.id)));
-    });
-    $('dgh-f-ilce').addEventListener('change', async e => {
-        const m = $('dgh-f-mahalle');
-        m.innerHTML = '<option value="">— Tümü —</option>';
-        m.disabled = !e.target.value;
-        if (e.target.value) (await (await fetch(API.mahalleler + '/' + e.target.value)).json() || []).forEach(x => m.add(new Option(x.ad, x.id)));
-    });
-    $('dgh-arama-form').addEventListener('submit', e => {
-        e.preventDefault();
-        filtre = new URLSearchParams();
-        for (const [k, v] of new FormData(e.target)) if (v) filtre.set(k, v);
-        yukle(true);
-    });
-    $('dgh-temizle').addEventListener('click', () => {
-        $('dgh-arama-form').reset();
-        $('dgh-f-ilce').disabled = $('dgh-f-mahalle').disabled = true;
-        filtre = new URLSearchParams();
-        yukle(true);
-    });
-
-    // Adres parametreleri: ?tasinmaz=ID o taşınmazı seçer;
-    // ?merkez=enlem,boylam&zoom=Z&katman=imar,parselasyon görünümü ve ABB katmanlarını açar
-    const adres = new URLSearchParams(location.search);
-    const acilis = adres.get('tasinmaz');
-    const merkez = (adres.get('merkez') || '').split(',').map(Number);
-    const konumVar = merkez.length === 2 && merkez.every(Number.isFinite);
-    if (konumVar) map.setView(merkez, Number(adres.get('zoom')) || 17, { animate: false });
-    (adres.get('katman') || '').split(',').filter(Boolean).forEach(k => {
-        const kutu = document.querySelector(`.dgh-ov[data-ov="${CSS.escape(k)}"] input[type=checkbox]`);
-        if (kutu && !kutu.checked) kutu.click();
-    });
-    yukle(!acilis && !konumVar).then(() => { if (acilis) odaklan({ tasinmaz_id: acilis }).catch(() => {}); });
-})();
+    };
 </script>
+<script src="{{ asset('js/harita-esri.js') }}?v=40"></script>
 @endpush

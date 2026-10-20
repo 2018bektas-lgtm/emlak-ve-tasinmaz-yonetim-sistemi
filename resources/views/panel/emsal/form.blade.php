@@ -12,6 +12,8 @@
 
 @php
     $p = $emsal?->parsel;
+    // Haritadan gelindiyse alanlar ön dolgudan beslenir
+    $ilk = fn (string $alan) => $p?->{$alan} ?? ($onDolgu[$alan] ?? null);
     $secili = old('tip', $emsal?->tip?->value ?? \App\Enums\EmsalTipi::Encumen->value);
     $bolumler = old('bolumler', $emsal?->bagimsizBolumler?->map(fn ($b) => $b->only(['bb_no', 'kat', 'cephe', 'brut_alan', 'nitelik', 'bb_durumu']))->all() ?? []);
 @endphp
@@ -78,7 +80,7 @@
                 <select id="il_id" name="il_id" class="form-select" required>
                     <option value="">Seçin</option>
                     @foreach ($iller as $i)
-                        <option value="{{ $i->id }}" @selected((string) old('il_id', $p?->il_id) === (string) $i->id)>{{ $i->ad }}</option>
+                        <option value="{{ $i->id }}" @selected((string) old('il_id', $ilk('il_id')) === (string) $i->id)>{{ $i->ad }}</option>
                     @endforeach
                 </select>
                 @error('il_id')<span class="error">{{ $message }}</span>@enderror
@@ -88,7 +90,7 @@
                 <select id="ilce_id" name="ilce_id" class="form-select" required>
                     <option value="">Seçin</option>
                     @foreach ($ilceler as $i)
-                        <option value="{{ $i->id }}" @selected((string) old('ilce_id', $p?->ilce_id) === (string) $i->id)>{{ $i->ad }}</option>
+                        <option value="{{ $i->id }}" @selected((string) old('ilce_id', $ilk('ilce_id')) === (string) $i->id)>{{ $i->ad }}</option>
                     @endforeach
                 </select>
                 @error('ilce_id')<span class="error">{{ $message }}</span>@enderror
@@ -98,7 +100,7 @@
                 <select id="mahalle_id" name="mahalle_id" class="form-select" required>
                     <option value="">Seçin</option>
                     @foreach ($mahalleler as $m)
-                        <option value="{{ $m->id }}" @selected((string) old('mahalle_id', $p?->mahalle_id) === (string) $m->id)>{{ $m->ad }}</option>
+                        <option value="{{ $m->id }}" @selected((string) old('mahalle_id', $ilk('mahalle_id')) === (string) $m->id)>{{ $m->ad }}</option>
                     @endforeach
                 </select>
                 @error('mahalle_id')<span class="error">{{ $message }}</span>@enderror
@@ -108,17 +110,17 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="ada">Ada <span class="required">*</span></label>
-                <input id="ada" name="ada" class="form-input td-mono" value="{{ old('ada', $p?->ada) }}" maxlength="20" inputmode="numeric" required>
+                <input id="ada" name="ada" class="form-input td-mono" value="{{ old('ada', $ilk('ada')) }}" maxlength="20" inputmode="numeric" required>
                 @error('ada')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="parsel">Parsel <span class="required">*</span></label>
-                <input id="parsel" name="parsel" class="form-input td-mono" value="{{ old('parsel', $p?->parsel) }}" maxlength="20" inputmode="numeric" required>
+                <input id="parsel" name="parsel" class="form-input td-mono" value="{{ old('parsel', $ilk('parsel')) }}" maxlength="20" inputmode="numeric" required>
                 @error('parsel')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="alan">Parsel Alanı (m²)</label>
-                <input id="alan" name="alan" type="number" class="form-input td-mono" value="{{ old('alan', $p?->alan) }}" step="0.01" min="0">
+                <input id="alan" name="alan" type="number" class="form-input td-mono" value="{{ old('alan', $ilk('alan')) }}" step="0.01" min="0">
                 @error('alan')<span class="error">{{ $message }}</span>@enderror
             </div>
         </div>
@@ -129,19 +131,19 @@
                 <select id="imar_durumu_id" name="imar_durumu_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($imarDurumlari as $id)
-                        <option value="{{ $id->id }}" @selected((string) old('imar_durumu_id', $p?->imar_durumu_id) === (string) $id->id)>{{ $id->ad }}</option>
+                        <option value="{{ $id->id }}" @selected((string) old('imar_durumu_id', $ilk('imar_durumu_id')) === (string) $id->id)>{{ $id->ad }}</option>
                     @endforeach
                 </select>
                 <span class="hint">Haritada katman rengini bu belirler.</span>
             </div>
             <div class="form-field">
                 <label for="emsal">Emsal (KAKS)</label>
-                <input id="emsal" name="emsal" type="number" class="form-input td-mono" value="{{ old('emsal', $p?->emsal) }}" step="0.01" min="0" max="999.99">
+                <input id="emsal" name="emsal" type="number" class="form-input td-mono" value="{{ old('emsal', $ilk('emsal')) }}" step="0.01" min="0" max="999.99">
                 @error('emsal')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="yenaz_yencok">Yençok / Yenaz</label>
-                <input id="yenaz_yencok" name="yenaz_yencok" class="form-input" value="{{ old('yenaz_yencok', $p?->yenaz_yencok) }}" maxlength="50" placeholder="Örn. 5 kat">
+                <input id="yenaz_yencok" name="yenaz_yencok" class="form-input" value="{{ old('yenaz_yencok', $ilk('yenaz_yencok')) }}" maxlength="50" placeholder="Örn. 5 kat">
             </div>
         </div>
     </section>

@@ -283,6 +283,7 @@
         const abbNumaratajKatman = abbDinamik('ABB · Numarataj', ADRES_SERVIS, 0, { opacity: 0.90, minScale: 1500 });
 
         const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
+        const emsalKatman = new GraphicsLayer({ title: 'Emsaller', opacity: 0.70, visible: true });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
 
         const harita = new EsriMap({
@@ -296,6 +297,7 @@
                 abbYapiKatman,
                 abbNumaratajKatman,
                 parselKatman,
+                emsalKatman,
                 sorguKatman,
             ],
         });
@@ -332,6 +334,42 @@
          * ========================================================= */
         const SEM_PARSEL = { type: 'simple-fill', color: [245, 158, 11, 0.25], outline: { color: [245, 158, 11, 0.95], width: 1.6 } };
         const SEM_NOKTA  = { type: 'simple-marker', style: 'circle', size: 9, color: [245, 158, 11, 0.90], outline: { color: [14, 23, 38, 0.90], width: 1.4 } };
+
+        /* ---- Değerleme kipi ----
+         * Aynı modül iki haritayı çalıştırır. Altlıklar, ABB katmanları,
+         * TKGM/e-İmar sorguları ve panel davranışı ortaktır; ayrışan yerler
+         * yalnızca veri katmanı, sembol rengi ve parsel popup'ının içeriğidir.
+         */
+        const MOD = API.mod || 'tasinmaz';
+        const DEG = API.degerleme || {};
+        const EMSAL = API.emsal || null;
+        const IMAR_RENK = DEG.imarRenk || {};
+        const IMAR_YOK_RENK = '#94a3b8';
+        const DEG_TUR_RENK = { arsa: '#0d9488', bb: '#7c3aed', ikisi: '#f59e0b' };
+
+        // '#rrggbb' / 'hsl(...)' → Esri'nin kabul ettiği renk dizesi
+        function imarRengi(id) {
+            return (id === null || id === undefined) ? IMAR_YOK_RENK : (IMAR_RENK[id] || IMAR_YOK_RENK);
+        }
+
+        function semDoldur(renk, opaklik) {
+            return { type: 'simple-fill', color: renkAlfa(renk, opaklik === undefined ? 0.3 : opaklik), outline: { color: renk, width: 1.8 } };
+        }
+
+        function semNokta(renk) {
+            return { type: 'simple-marker', style: 'circle', size: 11, color: renk, outline: { color: [255, 255, 255, 0.95], width: 1.6 } };
+        }
+
+        // Esri renk dizesine alfa katmak için rgba'ya çevrilir
+        function renkAlfa(renk, alfa) {
+            const el = document.createElement('span');
+            el.style.color = renk;
+            document.body.appendChild(el);
+            const hesap = getComputedStyle(el).color; // rgb(r, g, b)
+            el.remove();
+            const p = hesap.match(/\d+/g) || [148, 163, 184];
+            return [Number(p[0]), Number(p[1]), Number(p[2]), alfa];
+        }
         const SEM_TKGM   = { type: 'simple-fill', color: [37, 99, 235, 0.18], outline: { color: [37, 99, 235, 0.95], width: 2 } };
         const SEM_EIMAR  = { type: 'simple-fill', color: [236, 72, 153, 0.14], outline: { color: [236, 72, 153, 0.90], width: 1.8, style: 'dash' } };
         const SEM_VURGU  = { type: 'simple-fill', color: [22, 163, 74, 0.20], outline: { color: [22, 163, 74, 0.95], width: 2.4 } };
@@ -607,6 +645,7 @@
         }
 
         katmanKontrolKur('hrm-ov-parsel', 'hrm-ov-parsel-op', parselKatman);
+        katmanKontrolKur('hrm-ov-emsal', 'hrm-ov-emsal-op', emsalKatman);
         katmanKontrolKur('hrm-ov-imar', 'hrm-ov-imar-op', imarKatman);
         katmanKontrolKur('hrm-ov-parselasyon', 'hrm-ov-parselasyon-op', parselasyonKatman);
         katmanKontrolKur('hrm-ov-belediye', 'hrm-ov-belediye-op', belediyeKatman);
@@ -727,6 +766,90 @@
             return kap;
         }
 
+        let birimAralik = [0, 0];
+
+        function degerlemePopup(p) {
+            const kap = document.createElement('div');
+            kap.className = 'hrm-pop';
+            const turAd = p.tur === 'ikisi' ? 'Arsa + Bağımsız Bölüm' : (p.tur === 'bb' ? 'Bağımsız Bölüm' : 'Arsa');
+            kap.innerHTML =
+                popUst('Değerleme', 'is-sistem', [p.ilce, p.mahalle].filter(Boolean).join(' · ')) +
+                popHero(p.ada, p.parsel, sayiBicim(p.alan, ' m²')) +
+                popListe([
+                    ['İmar Durumu', p.imar],
+                    ['Değerleme Türü', turAd],
+                    ['Arsa Raporu', p.arsa_sayisi || null],
+                    ['BB Raporu', p.bb_sayisi || null],
+                    ['Son Rapor Tarihi', p.son_tarih ? new Date(p.son_tarih).toLocaleDateString('tr-TR') : null],
+                    ['Son Toplam Değer', p.son_toplam ? sayiBicim(p.son_toplam, ' TL') : null],
+                    ['Arsa m² Değeri', p.birim ? sayiBicim(p.birim, ' TL/m²') : null],
+                ]) +
+                (DEG.tasinmaz ? '<a class="hrm-pop-eylem" href="' + kacis(DEG.tasinmaz.replace(/\/harita\/tasinmaz$/, '') + '?tasinmaz_id=' + p.id) + '">Değerlemeleri Aç</a>' : '');
+            return kap;
+        }
+
+        function emsalPopup(p) {
+            const kap = document.createElement('div');
+            kap.className = 'hrm-pop';
+            const turAdlari = (p.tipler || []).map(function (t) {
+                const bulunan = (EMSAL && EMSAL.turler || []).find(function (x) { return x.deger === t; });
+                return bulunan ? bulunan.etiket : t;
+            }).join(', ');
+            kap.innerHTML =
+                popUst('Emsal', 'is-tkgm', [p.ilce, p.mahalle].filter(Boolean).join(' · ')) +
+                popHero(p.ada, p.parsel, sayiBicim(p.alan, ' m²')) +
+                popListe([
+                    ['İmar Durumu', p.imar],
+                    ['Emsal Sayısı', p.adet],
+                    ['Türler', turAdlari],
+                    ['Son Satış', p.son_tarih ? new Date(p.son_tarih).toLocaleDateString('tr-TR') : null],
+                    ['Ortalama Birim Fiyat', p.ortalama ? sayiBicim(p.ortalama, ' TL/m²') : null],
+                ]) +
+                '<div id="hrm-emsal-detay">' + popYukleniyor('Emsaller getiriliyor…') + '</div>';
+            if (EMSAL && EMSAL.parsel) emsalDetayiDoldur(p.id);
+            return kap;
+        }
+
+        // Popup açıldıktan sonra parselin emsal satırları kutuya yazılır;
+        // encümen/senet evrakı varsa yeni sekmede açılacak bağlantı konur.
+        async function emsalDetayiDoldur(parselId) {
+            let v = null;
+            try { v = await jsonGetir(EMSAL.parsel + '/' + parselId); } catch (e) { v = null; }
+            const kutu = document.getElementById('hrm-emsal-detay');
+            if (!kutu) return;
+            if (!v) { kutu.innerHTML = popUyari('Emsal bilgisi alınamadı.'); return; }
+            kutu.innerHTML = '<div class="hrm-pop-bolum">' +
+                popBolumBaslik('Emsaller (' + v.emsaller.length + ')', 'is-eimar') +
+                (v.emsaller.length ? v.emsaller.map(function (e) {
+                    return '<div class="hrm-pop-emsal" style="--em-renk:' + kacis(e.renk) + '">' +
+                        '<div class="hrm-pop-emsal-ust"><strong>' + kacis(e.tip_ad) + '</strong>' +
+                            '<span>' + kacis(e.belge_no || '—') + ' · ' + (e.tarih ? new Date(e.tarih).toLocaleDateString('tr-TR') : '—') + '</span></div>' +
+                        '<div class="hrm-pop-emsal-fiyat">' + (e.birim_fiyat !== null ? sayiBicim(e.birim_fiyat, ' TL/m²') : '—') + '</div>' +
+                        '<div class="hrm-pop-emsal-eylem">' +
+                            (e.evrak ? '<a href="' + kacis(e.evrak) + '" target="_blank" rel="noopener">Evrakı aç ↗</a>' : '<span class="hrm-pop-evraksiz">Evrak yok</span>') +
+                            '<a href="' + kacis(e.duzenle) + '">Düzenle</a>' +
+                        '</div>' +
+                    '</div>';
+                }).join('') : '<p class="hrm-pop-bos">Emsal yok</p>') +
+            '</div>';
+        }
+
+        /* ---- İmar durumu süzgeci (iki katmana birden) ---- */
+        // Süzgeç sunucuya gider: kümeler orada hesaplandığı için istemcide
+        // gizlemek küme sayılarını yanlış bırakırdı.
+        function imarParam() {
+            const kutular = Array.prototype.slice.call(document.querySelectorAll('[data-imar]'));
+            if (!kutular.length) return null;
+            const secili = kutular.filter(function (k) { return k.checked; }).map(function (k) { return k.dataset.imar; });
+            return secili.length === kutular.length ? null : secili.join(',');
+        }
+
+        function imarEkle(url) {
+            const imar = imarParam();
+            if (imar === null) return url;
+            return url + (url.indexOf('?') === -1 ? '?' : '&') + 'imar=' + encodeURIComponent(imar);
+        }
+
         // Seçili kayıt modunda (?ids=) hepsi bir kerede yüklenir; aksi halde
         // yalnızca ekranda görünen alan istenir, kalabalık alanlar kümelenir.
         const SECILI_MOD = API.secilenSayi !== null && API.secilenSayi !== undefined;
@@ -755,10 +878,38 @@
             ];
         }
 
+        // Değerleme kipinde renk, katman panelindeki "Renk" seçimine göre
+        // imar durumundan / türden / m² değerinden gelir.
+        function degerlemeRenk(p) {
+            const secim = document.getElementById('hrm-deg-renk');
+            const mod = secim ? secim.value : 'imar';
+            if (mod === 'tur') return DEG_TUR_RENK[p.tur] || '#f59e0b';
+            if (mod === 'birim') {
+                if (p.birim === null || p.birim === undefined) return IMAR_YOK_RENK;
+                const t = birimAralik[1] > birimAralik[0]
+                    ? (Math.log(p.birim + 1) - Math.log(birimAralik[0] + 1)) / (Math.log(birimAralik[1] + 1) - Math.log(birimAralik[0] + 1))
+                    : 0.5;
+                return 'hsl(' + Math.round(140 - Math.max(0, Math.min(1, t)) * 140) + ', 78%, 45%)';
+            }
+            return imarRengi(p.imar_id);
+        }
+
         function parselGrafigi(f) {
             const geom = geoJsonGeometri(f.geometry);
             if (!geom) return null;
             const p = f.properties || {};
+            if (MOD === 'degerleme') {
+                const renk = degerlemeRenk(p);
+                return new Graphic({
+                    geometry: geom,
+                    symbol: geom.type === 'point' ? semNokta(renk) : semDoldur(renk),
+                    attributes: p,
+                    popupTemplate: {
+                        title: (p.ada || '—') + ' / ' + (p.parsel || '—'),
+                        content: function () { return degerlemePopup(p); },
+                    },
+                });
+            }
             return new Graphic({
                 geometry: geom,
                 symbol: geom.type === 'point' ? SEM_NOKTA : SEM_PARSEL,
@@ -779,6 +930,7 @@
                 const bbox = [g.xmin - px, g.ymin - py, g.xmax + px, g.ymax + py].map(function (v) { return v.toFixed(6); });
                 url += (url.indexOf('?') === -1 ? '?' : '&') + 'bbox=' + bbox.join(',') + '&zoom=' + Math.round(view.zoom);
             }
+            url = imarEkle(url);
 
             if (yuklemeKontrol) yuklemeKontrol.abort();
             const kontrol = yuklemeKontrol = new AbortController();
@@ -816,14 +968,127 @@
             }
         }
 
+        /* ---- Emsal katmanı ---- */
+        // Değerleme katmanıyla aynı bbox + kümeleme sözleşmesini konuşur,
+        // yalnızca ayrı bir GraphicsLayer'a çizer.
+        const emsalSayiEl = document.getElementById('hrm-emsal-sayi');
+        let emsalKontrol = null;
+        let emsalZamanlayici = null;
+
+        function emsalAcik() {
+            const kutu = document.getElementById('hrm-ov-emsal');
+            return !!(EMSAL && kutu && kutu.checked);
+        }
+
+        function emsalTurleri() {
+            return Array.prototype.slice.call(document.querySelectorAll('[data-emsal-tur]'))
+                .filter(function (k) { return k.checked; })
+                .map(function (k) { return k.dataset.emsalTur; });
+        }
+
+        function emsalGrafigi(f) {
+            const geom = geoJsonGeometri(f.geometry);
+            if (!geom) return null;
+            const p = f.properties || {};
+            const ilk = (p.tipler || [])[0];
+            const bulunan = (EMSAL.turler || []).find(function (x) { return x.deger === ilk; });
+            const renk = document.getElementById('hrm-deg-renk') && document.getElementById('hrm-deg-renk').value === 'imar'
+                ? imarRengi(p.imar_id)
+                : (bulunan ? bulunan.renk : '#0ea5e9');
+            return new Graphic({
+                geometry: geom,
+                symbol: geom.type === 'point' ? semNokta(renk) : {
+                    type: 'simple-fill', color: renkAlfa(renk, 0.22),
+                    outline: { color: renk, width: 2, style: 'dash' },
+                },
+                attributes: p,
+                popupTemplate: {
+                    title: (p.ada || '—') + ' / ' + (p.parsel || '—') + ' · Emsal',
+                    content: function () { return emsalPopup(p); },
+                },
+            });
+        }
+
+        async function emsalleriYukle() {
+            if (!EMSAL) return;
+            if (!emsalAcik()) { emsalKatman.removeAll(); if (emsalSayiEl) emsalSayiEl.textContent = '0'; return; }
+
+            const g = webMercatorUtils.webMercatorToGeographic(view.extent);
+            const px = (g.xmax - g.xmin) * 0.1, py = (g.ymax - g.ymin) * 0.1;
+            const bbox = [g.xmin - px, g.ymin - py, g.xmax + px, g.ymax + py].map(function (v) { return v.toFixed(6); });
+            let url = imarEkle(EMSAL.geojson + '?bbox=' + bbox.join(',') + '&zoom=' + Math.round(view.zoom));
+            const turler = emsalTurleri();
+            if (turler.length) url += '&tip=' + encodeURIComponent(turler.join(','));
+
+            if (emsalKontrol) emsalKontrol.abort();
+            const kontrol = emsalKontrol = new AbortController();
+            let fc;
+            try {
+                const yanit = await fetch(url, { headers: { Accept: 'application/json' }, signal: kontrol.signal });
+                if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                fc = await yanit.json();
+            } catch (e) {
+                if (e.name !== 'AbortError' && emsalSayiEl) emsalSayiEl.textContent = '0';
+                return;
+            }
+            if (kontrol !== emsalKontrol) return;
+
+            const grafikler = [];
+            (fc.features || []).forEach(function (f) {
+                if (f.properties && f.properties.kume) {
+                    kumeGrafikleri(f).forEach(function (x) { grafikler.push(x); });
+                    return;
+                }
+                const x = emsalGrafigi(f);
+                if (x) grafikler.push(x);
+            });
+            emsalKatman.removeAll();
+            emsalKatman.addMany(grafikler);
+            if (emsalSayiEl) emsalSayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
+        }
+
         function yuklemeyiZamanla() {
             clearTimeout(yuklemeZamanlayici);
             yuklemeZamanlayici = setTimeout(parselleriYukle, 250);
+            if (EMSAL) {
+                clearTimeout(emsalZamanlayici);
+                emsalZamanlayici = setTimeout(emsalleriYukle, 250);
+            }
+        }
+
+        /* ---- Değerleme kipi anahtarları ---- */
+        if (MOD === 'degerleme') {
+            let imarZamanlayici = null;
+            function suzgecTazele() {
+                clearTimeout(imarZamanlayici);
+                imarZamanlayici = setTimeout(function () { parselleriYukle(); emsalleriYukle(); }, 200);
+            }
+
+            document.querySelectorAll('[data-imar]').forEach(function (k) {
+                k.addEventListener('change', suzgecTazele);
+            });
+            document.querySelectorAll('[data-imar-hepsi]').forEach(function (d) {
+                d.addEventListener('click', function () {
+                    const ac = d.dataset.imarHepsi === '1';
+                    document.querySelectorAll('[data-imar]').forEach(function (k) { k.checked = ac; });
+                    suzgecTazele();
+                });
+            });
+
+            const renkSecim = document.getElementById('hrm-deg-renk');
+            if (renkSecim) renkSecim.addEventListener('change', function () { parselleriYukle(); emsalleriYukle(); });
+
+            const emsalKutu = document.getElementById('hrm-ov-emsal');
+            if (emsalKutu) emsalKutu.addEventListener('change', emsalleriYukle);
+            document.querySelectorAll('[data-emsal-tur]').forEach(function (k) {
+                k.addEventListener('change', emsalleriYukle);
+            });
         }
 
         async function kapsamYukle() {
             try {
-                const k = await jsonGetir(API.geojson + '?kapsam=1');
+                const k = await jsonGetir(imarEkle(API.geojson + '?kapsam=1'));
+                if (k && k.birim_aralik) birimAralik = k.birim_aralik;
                 if (k && k.bbox) {
                     const d = 0.0009; // tek nokta / küçük parsel: ~100 m pay
                     tumExtent = new Extent({ xmin: k.bbox[0] - d, ymin: k.bbox[1] - d, xmax: k.bbox[2] + d, ymax: k.bbox[3] + d, spatialReference: WGS84 });
@@ -950,7 +1215,39 @@
             mapEl.classList.toggle('hrm-cursor-help', bilgiModu);
         });
 
-        function tkgmPopupGovde(ozellik, eimarDurum) {
+        /**
+         * Sorgulanan parselden kayıt açma bağlantıları (yalnızca değerleme
+         * kipinde). Konum TKGM mahalle kimliğiyle taşınır; yerel il/ilçe/
+         * mahalle sunucuda ondan çözülür. e-İmar sonucu geldiyse KAKS ve
+         * Yençok da forma yazılır.
+         */
+        function kayitEylemleri(o, eimar) {
+            if (MOD !== 'degerleme') return '';
+            const q = new URLSearchParams();
+            if (o.mahalleId) q.set('mahalle_tkgm', o.mahalleId);
+            if (o.adaNo) q.set('ada', o.adaNo);
+            if (o.parselNo) q.set('parsel', o.parselNo);
+            if (o.alan) q.set('alan', o.alan);
+            if (eimar && eimar.kaks) q.set('emsal', eimar.kaks);
+            if (eimar && eimar.hmax) q.set('yenaz_yencok', eimar.hmax);
+            if (eimar && eimar.kullanim) q.set('imar_ad', eimar.kullanim);
+
+            const baglar = [];
+            if (EMSAL && EMSAL.yeni) {
+                baglar.push('<a class="hrm-pop-eylem is-emsal" href="' + kacis(EMSAL.yeni + '?' + q) + '">+ Emsal Ekle</a>');
+            }
+            if (DEG.yeniRapor) {
+                // Değerleme envanterdeki taşınmazdan açılır: arama ekranı
+                // ada/parsel ile süzülmüş gelir.
+                const dq = new URLSearchParams();
+                if (o.adaNo) dq.set('ada', o.adaNo);
+                if (o.parselNo) dq.set('parsel', o.parselNo);
+                baglar.push('<a class="hrm-pop-eylem" href="' + kacis(DEG.yeniRapor + '?' + dq) + '">+ Değerleme Raporu</a>');
+            }
+            return baglar.length ? '<div class="hrm-pop-eylemler">' + baglar.join('') + '</div>' : '';
+        }
+
+        function tkgmPopupGovde(ozellik, eimarDurum, eimarVeri) {
             const o = ozellik || {};
             return '' +
                 popUst('TKGM', 'is-tkgm', [o.ilAd, o.ilceAd, o.mahalleAd].filter(Boolean).join(' · ')) +
@@ -962,7 +1259,8 @@
                     ['Pafta', o.pafta],
                     ['Mevkii', o.mevkii],
                 ]) +
-                '<div id="hrm-eimar-kutu">' + eimarDurum + '</div>';
+                '<div id="hrm-eimar-kutu">' + eimarDurum + '</div>' +
+                '<div id="hrm-kayit-eylem">' + kayitEylemleri(o, eimarVeri) + '</div>';
         }
 
         function eimarGovde(d) {
@@ -1074,7 +1372,7 @@
          * kullanır. Kapsama alanı dışında veya planı olmayan yerde hata döner —
          * bu bir arıza değil, dipnot olarak gösterilir.
          */
-        async function eimarYaz(kap, sozu) {
+        async function eimarYaz(kap, sozu, tkgmOzellik) {
             let kutu = kap && kap.querySelector ? kap.querySelector('#hrm-eimar-kutu') : null;
             if (!kutu) kutu = document.querySelector('#hrm-eimar-kutu');
             if (!kutu) return;
@@ -1086,6 +1384,9 @@
             }
 
             kutu.innerHTML = eimarGovde(sonuc.veri);
+            // e-İmar geldikten sonra KAKS/Hmax de form bağlantılarına eklenir
+            const eylem = document.querySelector('#hrm-kayit-eylem');
+            if (eylem && tkgmOzellik) eylem.innerHTML = kayitEylemleri(tkgmOzellik, sonuc.veri);
             const eGeom = geoJsonGeometri(sonuc.veri.geometry);
             if (eGeom) sorguKatman.add(new Graphic({ geometry: eGeom, symbol: SEM_EIMAR }));
         }
@@ -1120,7 +1421,7 @@
             kap.innerHTML = tkgmPopupGovde(parsel.properties, popYukleniyor('e-İmar sorgulanıyor…'));
             popupAc(evt.mapPoint, 'Parsel Bilgisi', kap);
 
-            await eimarYaz(kap, eimarSozu);
+            await eimarYaz(kap, eimarSozu, parsel.properties);
         });
 
         /* =========================================================
@@ -1234,7 +1535,7 @@
                 apMesajVer('Parsel bulundu ve haritaya işlendi.', 'ok');
 
                 if (eimarSozu) {
-                    await eimarYaz(kap, eimarSozu);
+                    await eimarYaz(kap, eimarSozu, veri.properties);
                 } else {
                     const kutu = kap.querySelector('#hrm-eimar-kutu');
                     if (kutu) kutu.innerHTML = '<div class="hrm-pop-dipnot">e-İmar: parsel merkezi hesaplanamadı</div>';
