@@ -110,7 +110,7 @@
             display: none !important;
         }
     </style>
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=4">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=5">
 @endpush
 
 @php
@@ -668,9 +668,15 @@
             <input type="hidden" name="il_id"><input type="hidden" name="ilce_id"><input type="hidden" name="mahalle_id">
             <input type="hidden" name="ada"><input type="hidden" name="parsel">
 
-            <div class="hrm-modal-alan is-tam">
-                <label>Emsal Türü</label>
-                <div class="hrm-modal-tur">
+            <section class="form-section">
+                <div class="form-section-head">
+                    <span class="form-section-num">1</span>
+                    <div class="form-section-head-text">
+                        <h3>Emsal Türü</h3>
+                        <small>Satış bedelinin dayandığı belge; seçime göre alanlar değişir.</small>
+                    </div>
+                </div>
+                <div class="hrm-modal-tur" role="radiogroup" aria-label="Emsal türü">
                     @foreach ($emsalTipleri as $i => $t)
                         <label class="hrm-modal-tur-kart" style="--em-renk:{{ $t->renk() }}">
                             <input type="radio" name="tip" value="{{ $t->value }}" @checked($i === 0)>
@@ -678,34 +684,60 @@
                         </label>
                     @endforeach
                 </div>
-            </div>
+            </section>
 
-            <div class="hrm-modal-alan"><label>Tarih *</label><input type="date" name="tarih" max="{{ now()->format('Y-m-d') }}" required></div>
-            <div class="hrm-modal-alan"><label>Birim Fiyat (TL/m²) *</label><input type="number" name="birim_fiyat" step="0.01" min="0" required></div>
+            <section class="form-section">
+                <div class="form-section-head">
+                    <span class="form-section-num">2</span>
+                    <div class="form-section-head-text">
+                        <h3>Satış Bilgileri</h3>
+                        <small>Birim fiyat değerleme hesaplarında emsal olarak kullanılır.</small>
+                    </div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field"><label>Tarih <span class="required">*</span></label><input type="date" name="tarih" class="form-input" max="{{ now()->format('Y-m-d') }}" required></div>
+                    <div class="form-field"><label>Birim Fiyat (TL/m²) <span class="required">*</span></label><input type="number" name="birim_fiyat" class="form-input td-mono" step="0.01" min="0" required></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="encumen senet"><label>Satılan Hisse</label><input type="text" name="satilan_hisse" class="form-input td-mono" maxlength="50" placeholder="Örn. 1/2"></div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field hrm-modal-alan" data-tur-alan="encumen mahkeme"><label>Karar No</label><input type="text" name="karar_no" class="form-input td-mono" maxlength="100"></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="encumen"><label>Kayıt No</label><input type="text" name="kayit_no" class="form-input td-mono" maxlength="100"></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="senet"><label>Yevmiye No</label><input type="text" name="yevmiye_no" class="form-input td-mono" maxlength="100"></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="senet"><label>Satış Durumu</label><input type="text" name="satis_durumu" class="form-input" maxlength="50"></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="mahkeme"><label>Esas No</label><input type="text" name="esas_no" class="form-input td-mono" maxlength="100"></div>
+                    <div class="form-field hrm-modal-alan" data-tur-alan="mahkeme"><label>Dava Tarihi</label><input type="date" name="dava_tarihi" class="form-input"></div>
+                </div>
+            </section>
 
-            <div class="hrm-modal-alan" data-tur-alan="encumen senet"><label>Satılan Hisse</label><input type="text" name="satilan_hisse" maxlength="50" placeholder="Örn. 1/2"></div>
-            <div class="hrm-modal-alan" data-tur-alan="encumen mahkeme"><label>Karar No</label><input type="text" name="karar_no" maxlength="100"></div>
-            <div class="hrm-modal-alan" data-tur-alan="encumen"><label>Kayıt No</label><input type="text" name="kayit_no" maxlength="100"></div>
-            <div class="hrm-modal-alan" data-tur-alan="senet"><label>Yevmiye No</label><input type="text" name="yevmiye_no" maxlength="100"></div>
-            <div class="hrm-modal-alan" data-tur-alan="senet"><label>Satış Durumu</label><input type="text" name="satis_durumu" maxlength="50"></div>
-            <div class="hrm-modal-alan" data-tur-alan="mahkeme"><label>Esas No</label><input type="text" name="esas_no" maxlength="100"></div>
-            <div class="hrm-modal-alan" data-tur-alan="mahkeme"><label>Dava Tarihi</label><input type="date" name="dava_tarihi"></div>
-
-            <div class="hrm-modal-alan"><label>Parsel Alanı (m²)</label><input type="number" name="alan" step="0.01" min="0"></div>
-            <div class="hrm-modal-alan">
-                <label>İmar Durumu</label>
-                <select name="imar_durumu_id">
-                    <option value="">Seçin</option>
-                    @foreach (\App\Models\ImarDurumu::where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']) as $id)
-                        <option value="{{ $id->id }}">{{ $id->ad }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="hrm-modal-alan"><label>Emsal (KAKS)</label><input type="number" name="emsal" step="0.01" min="0" max="999.99"></div>
-            <div class="hrm-modal-alan"><label>Yençok / Yenaz</label><input type="text" name="yenaz_yencok" maxlength="50"></div>
-
-            <div class="hrm-modal-alan is-tam"><label>Evrak (PDF / görsel)</label><input type="file" name="evrak" accept=".pdf,.jpg,.jpeg,.png"></div>
-            <div class="hrm-modal-alan is-tam"><label>Açıklama</label><textarea name="aciklama" rows="2" maxlength="2000"></textarea></div>
+            <section class="form-section">
+                <div class="form-section-head">
+                    <span class="form-section-num">3</span>
+                    <div class="form-section-head-text">
+                        <h3>Parsel ve İmar</h3>
+                        <small>TKGM ve e-İmar'dan gelen değerler doldurulmuştur; gerekirse düzeltin.</small>
+                    </div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field"><label>Parsel Alanı (m²)</label><input type="number" name="alan" class="form-input td-mono" step="0.01" min="0"></div>
+                    <div class="form-field hrm-modal-alan">
+                        <label>İmar Durumu</label>
+                        <select name="imar_durumu_id" class="form-select">
+                            <option value="">Seçin</option>
+                            @foreach (\App\Models\ImarDurumu::where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']) as $id)
+                                <option value="{{ $id->id }}">{{ $id->ad }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-field"><label>Emsal (KAKS)</label><input type="number" name="emsal" class="form-input td-mono" step="0.01" min="0" max="999.99"></div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field"><label>Yençok / Yenaz</label><input type="text" name="yenaz_yencok" class="form-input" maxlength="50" placeholder="Örn. 5 kat"></div>
+                    <div class="form-field"><label>Evrak</label><input type="file" name="evrak" class="form-input" accept=".pdf,.jpg,.jpeg,.png"><span class="hint">PDF ya da görsel, en fazla 10 MB.</span></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-field"><label>Açıklama</label><textarea name="aciklama" class="form-textarea" rows="2" maxlength="2000"></textarea></div>
+                </div>
+            </section>
         </form>
     </template>
     @endif
@@ -714,25 +746,58 @@
         <form class="hrm-modal-form" data-form="degerleme" enctype="multipart/form-data">
             <div class="hrm-modal-ozet" data-ozet></div>
 
-            <div class="hrm-modal-alan is-tam">
-                <label>Değerleme Türü</label>
-                <div class="hrm-modal-tur" data-deg-tur></div>
-            </div>
+            <section class="form-section">
+                <div class="form-section-head">
+                    <span class="form-section-num">1</span>
+                    <div class="form-section-head-text">
+                        <h3>Değerleme Türü</h3>
+                        <small>Taşınmazın kayıt tipine göre açılabilen türler listelenir.</small>
+                    </div>
+                </div>
+                <div class="hrm-modal-tur" data-deg-tur role="radiogroup" aria-label="Değerleme türü"></div>
+            </section>
 
-            <div class="hrm-modal-alan" data-deg-alan="bb"><label>BB No *</label><input type="text" name="bb_no" maxlength="30"></div>
-            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Kat</label><input type="text" name="kat" maxlength="30"></div>
-            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Nitelik</label><input type="text" name="bb_nitelik" maxlength="100"></div>
-            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Oda Sayısı</label><input type="text" name="oda_sayisi" maxlength="20" placeholder="Örn. 3+1"></div>
-            <div class="hrm-modal-alan" data-deg-alan="bb"><label>Brüt Alan (m²)</label><input type="number" name="brut_alan" step="0.01" min="0"></div>
-            <div class="hrm-modal-alan" data-deg-alan="arsa"><label>Hisse Alanı (m²)</label><input type="number" name="hisse_alan" step="0.01" min="0"></div>
+            <section class="form-section" data-deg-bolum="bb">
+                <div class="form-section-head">
+                    <span class="form-section-num">2</span>
+                    <div class="form-section-head-text">
+                        <h3>Bağımsız Bölüm</h3>
+                        <small>Değerlenen bölümün bilgileri.</small>
+                    </div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field hrm-modal-alan" data-deg-alan="bb"><label>BB No <span class="required">*</span></label><input type="text" name="bb_no" class="form-input td-mono" maxlength="30"></div>
+                    <div class="form-field hrm-modal-alan" data-deg-alan="bb"><label>Kat</label><input type="text" name="kat" class="form-input" maxlength="30"></div>
+                    <div class="form-field hrm-modal-alan" data-deg-alan="bb"><label>Oda Sayısı</label><input type="text" name="oda_sayisi" class="form-input" maxlength="20" placeholder="Örn. 3+1"></div>
+                </div>
+                <div class="form-row form-row-2">
+                    <div class="form-field hrm-modal-alan" data-deg-alan="bb"><label>Nitelik</label><input type="text" name="bb_nitelik" class="form-input" maxlength="100"></div>
+                    <div class="form-field hrm-modal-alan" data-deg-alan="bb"><label>Brüt Alan (m²)</label><input type="number" name="brut_alan" class="form-input td-mono" step="0.01" min="0"></div>
+                </div>
+            </section>
 
-            <div class="hrm-modal-alan"><label>Birim Fiyat (TL/m²)</label><input type="number" name="birim_fiyat" step="0.01" min="0"></div>
-            <div class="hrm-modal-alan"><label>Toplam Bedel (TL)</label><input type="number" name="toplam_bedel" step="0.01" min="0"><small>Boşsa birim fiyat × alan hesaplanır.</small></div>
-            <div class="hrm-modal-alan"><label>Rapor No</label><input type="text" name="rapor_no" maxlength="100"></div>
-            <div class="hrm-modal-alan"><label>Rapor Tarihi *</label><input type="date" name="rapor_tarihi" value="{{ now()->format('Y-m-d') }}" required></div>
-
-            <div class="hrm-modal-alan is-tam"><label>Rapor PDF</label><input type="file" name="evrak" accept=".pdf"></div>
-            <div class="hrm-modal-alan is-tam"><label>Açıklama</label><textarea name="aciklama" rows="2" maxlength="2000"></textarea></div>
+            <section class="form-section">
+                <div class="form-section-head">
+                    <span class="form-section-num" data-deg-num>3</span>
+                    <div class="form-section-head-text">
+                        <h3>Değer ve Rapor</h3>
+                        <small>Toplam bedel boşsa birim fiyat × alan olarak hesaplanır.</small>
+                    </div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field hrm-modal-alan" data-deg-alan="arsa"><label>Hisse Alanı (m²)</label><input type="number" name="hisse_alan" class="form-input td-mono" step="0.01" min="0"></div>
+                    <div class="form-field"><label>Birim Fiyat (TL/m²)</label><input type="number" name="birim_fiyat" class="form-input td-mono" step="0.01" min="0"></div>
+                    <div class="form-field"><label>Toplam Bedel (TL)</label><input type="number" name="toplam_bedel" class="form-input td-mono" step="0.01" min="0"></div>
+                </div>
+                <div class="form-row form-row-3">
+                    <div class="form-field"><label>Rapor No</label><input type="text" name="rapor_no" class="form-input td-mono" maxlength="60"></div>
+                    <div class="form-field"><label>Rapor Tarihi <span class="required">*</span></label><input type="date" name="rapor_tarihi" class="form-input" value="{{ now()->format('Y-m-d') }}" required></div>
+                    <div class="form-field"><label>Rapor PDF</label><input type="file" name="evrak" class="form-input" accept=".pdf"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-field"><label>Açıklama</label><textarea name="aciklama" class="form-textarea" rows="2" maxlength="2000"></textarea></div>
+                </div>
+            </section>
         </form>
     </template>
 </div>
@@ -777,5 +842,5 @@
 @endif
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=42"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=43"></script>
 @endpush

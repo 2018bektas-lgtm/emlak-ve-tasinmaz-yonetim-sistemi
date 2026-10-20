@@ -1104,8 +1104,8 @@
 
             const ayak = document.createElement('div');
             ayak.className = 'hrm-modal-ayak';
-            ayak.innerHTML = '<button type="button" class="hrm-form-btn is-ghost" data-vazgec>Vazgeç</button>' +
-                '<button type="submit" class="hrm-form-btn">Kaydet</button>';
+            ayak.innerHTML = '<button type="button" class="btn-cancel" data-vazgec>Vazgeç</button>' +
+                '<button type="submit" class="btn-submit">Kaydet</button>';
             form.appendChild(ayak);
             ayak.querySelector('[data-vazgec]').addEventListener('click', modalKapat);
 
@@ -1274,6 +1274,12 @@
                     alan.hidden = !gorunur;
                     alan.querySelectorAll('input, select, textarea').forEach(function (g) { g.disabled = !gorunur; });
                 });
+                // Arsa değerlemesinde "Bağımsız Bölüm" bölümü tamamen kalkar,
+                // kalan bölüm numarası kaymasın diye yeniden numaralanır
+                const bbBolum = form.querySelector('[data-deg-bolum="bb"]');
+                if (bbBolum) bbBolum.hidden = tur !== 'bb';
+                const num = form.querySelector('[data-deg-num]');
+                if (num) num.textContent = tur === 'bb' ? '3' : '2';
                 form.querySelectorAll('.hrm-modal-tur-kart').forEach(function (k) {
                     k.classList.toggle('is-secili', k.querySelector('input').checked);
                 });
