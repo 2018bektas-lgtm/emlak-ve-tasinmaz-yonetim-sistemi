@@ -124,6 +124,11 @@
 
 <div class="hrm-shell" id="hrm-shell">
     <div class="hrm-toolbar" role="toolbar" aria-label="Harita araç çubuğu">
+        <a class="hrm-tool" href="{{ route('panel.dashboard') }}" title="Ana sayfaya dön">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>
+            <span>Ana Sayfa</span>
+        </a>
+
         <a class="hrm-tool" href="{{ route('panel.tasinmazlar.index') }}" title="Listeye dön">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4 h3 a2 2 0 0 1 2 2 v12 a2 2 0 0 1-2 2 h-3"/><path d="M10 16 l-4-4 4-4 M14 12 H6"/></svg>
             <span>Liste</span>
@@ -586,5 +591,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=43"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=45"></script>
 @endpush

@@ -429,6 +429,16 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
     Route::prefix('kira')->name('kira.')->middleware('izin:kira.goruntule')->group(function () {
         Route::get('/', [KiraController::class, 'index'])->name('index');
         Route::get('excel', [KiraController::class, 'excelIndir'])->name('excel');
+
+        Route::get('harita', [KiraController::class, 'harita'])->name('harita');
+        Route::get('harita/geojson', [KiraController::class, 'haritaGeojson'])->name('harita.geojson');
+        Route::get('harita/dosya/{dosyaId}', [KiraController::class, 'haritaDosya'])
+            ->whereNumber('dosyaId')->name('harita.dosya');
+
+        Route::get('yeni', [KiraController::class, 'olustur'])
+            ->middleware('izin:kira.olustur')->name('olustur');
+        Route::post('yeni', [KiraController::class, 'kaydet'])
+            ->middleware('izin:kira.olustur')->name('kaydet');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

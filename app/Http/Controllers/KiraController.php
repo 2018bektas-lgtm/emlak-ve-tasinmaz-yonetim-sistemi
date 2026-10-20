@@ -2,18 +2,28 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Il;
 use App\Models\Ilce;
+use App\Models\ImarDurumu;
 use App\Models\KiraDosyasi;
 use App\Models\KiraHukukiDurum;
 use App\Models\KiraIsKolu;
 use App\Models\KiraKiraci;
 use App\Models\KiraKiracilikDurum;
+use App\Models\KiraKoordinat;
+use App\Models\KiraMuhasebeNiteligi;
 use App\Models\KiraSozlesme;
 use App\Models\KiraTasinmaz;
 use App\Models\Mahalle;
+use App\Support\HaritaGorunum;
 use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -71,6 +81,413 @@ class KiraController extends Controller
     public function excelIndir(Request $request): StreamedResponse
     {
         return $this->index($request->merge(['excel' => 1]));
+    }
+
+    public function harita(Request $request): View
+    {
+        $kullanilan = KiraTasinmaz::query()->whereNotNull('imar_durumu_id')->distinct()->pluck('imar_durumu_id');
+
+        return view('panel.kira.harita', [
+            'iller' => Il::orderBy('ad')->get(['id', 'ad']),
+            'isKollari' => KiraIsKolu::aktif()->get(['id', 'ad']),
+            'ekleyebilir' => $request->user()->izinVarMi('kira.olustur'),
+            'imarDurumlari' => ImarDurumu::whereIn('id', $kullanilan)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']),
+        ]);
+    }
+
+    /**
+     * Haritanın kira katmanı. Dosya değil **konum** çizilir: geometri
+     * kira_koordinatlari'nda, bbox indexli — değerleme/emsal katmanlarıyla
+     * aynı kümeleme sözleşmesini konuşur.
+     */
+    public function haritaGeojson(Request $request): JsonResponse
+    {
+        $imar = DegerlemeController::imarSuzgeci($request);
+        $f = $this->filtre($request);
+
+        $dosyaIdleri = $this->sorgu($f)->select('id');
+
+        $koordinatlar = KiraKoordinat::query()
+            ->whereIn('kira_dosya_id', $dosyaIdleri)
+            ->when($imar !== null, fn ($s) => $s->whereIn('kira_dosya_id', KiraTasinmaz::query()->select('kira_dosya_id')
+                ->where(function ($w) use ($imar) {
+                    if ($imar['idler'] === [] && ! $imar['yok']) {
+                        $w->whereRaw('1 = 0');
+
+                        return;
+                    }
+                    if ($imar['idler'] !== []) {
+                        $w->whereIn('imar_durumu_id', $imar['idler']);
+                    }
+                    if ($imar['yok']) {
+                        $w->orWhereNull('imar_durumu_id');
+                    }
+                })));
+
+        if ($request->boolean('kapsam')) {
+            return response()->json(HaritaGorunum::kapsam($koordinatlar));
+        }
+
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
+        $gorunen = (clone $koordinatlar)
+            ->when($bbox, fn ($s) => $s->alanda($bbox))
+            ->with(['dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,is_kolu_id', 'dosya.isKolu:id,ad',
+                'dosya.aktifSozlesme',
+                'dosya.anaKiraci:id,kira_dosya_id,ad_unvan',
+                'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,yuzolcum,imar_durumu_id',
+                'dosya.tasinmaz.ilce:id,ad', 'dosya.tasinmaz.mahalle:id,ad'])
+            ->get();
+
+        $features = [];
+        foreach ($gorunen as $k) {
+            $geo = $k->geoJson();
+            $d = $k->dosya;
+            if (! $geo || ! $d) {
+                continue;
+            }
+            $t = $d->tasinmaz;
+            $features[] = [
+                'type' => 'Feature',
+                'id' => $d->id,
+                'geometry' => $geo,
+                'properties' => [
+                    'id' => $d->id,
+                    'dosya_no' => $d->dosya_no,
+                    'ada' => $t?->ada,
+                    'parsel' => $t?->parsel,
+                    'ilce' => $t?->ilce?->ad,
+                    'mahalle' => $t?->mahalle?->ad,
+                    'alan' => $t?->yuzolcum !== null ? (float) $t->yuzolcum : null,
+                    'imar_id' => $t?->imar_durumu_id,
+                    'isyeri' => $d->isyeri_adi,
+                    'is_kolu' => $d->isKolu?->ad,
+                    'kiraci' => $d->anaKiraci?->ad_unvan,
+                    'dolu_bos' => $d->dolu_bos->value,
+                    'ihale' => $d->ihale_turu->etiket(),
+                    // Sözleşme bitişine göre renklendirme istemcide yapılır
+                    'kalan_gun' => $d->aktifSozlesme?->kalanGun(),
+                ],
+            ];
+        }
+
+        return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
+    }
+
+    /** Harita yan paneli: dosyanın özeti, sözleşmesi ve bedeli. */
+    public function haritaDosya(int $dosyaId): JsonResponse
+    {
+        $d = KiraDosyasi::with(['anaKiraci', 'isKolu', 'tasinmaz.ilce', 'tasinmaz.mahalle', 'tasinmaz.imarDurumu', 'aktifSozlesme.bedeller'])
+            ->findOrFail($dosyaId);
+        $t = $d->tasinmaz;
+        $s = $d->aktifSozlesme;
+        $bedel = $s?->guncelBedel();
+
+        return response()->json([
+            'id' => $d->id,
+            'dosya_no' => $d->dosya_no,
+            'isyeri' => $d->isyeri_adi,
+            'is_kolu' => $d->isKolu?->ad,
+            'kiraci' => $d->anaKiraci?->ad_unvan,
+            'telefon' => $d->anaKiraci?->telefon,
+            'dolu_bos' => $d->dolu_bos->etiket(),
+            'ihale' => $d->ihale_turu->etiket(),
+            'ilce' => $t?->ilce?->ad,
+            'mahalle' => $t?->mahalle?->ad,
+            'ada_parsel' => $t?->adaParsel(),
+            'alan' => $t?->yuzolcum !== null ? (float) $t->yuzolcum : null,
+            'imar' => $t?->imarDurumu?->ad,
+            'adres' => $t?->adres,
+            'baslangic' => $s?->baslangic_tarihi?->toDateString(),
+            'bitis' => $s?->bitis_tarihi?->toDateString(),
+            'kalan_gun' => $s?->kalanGun(),
+            'yillik_bedel' => $bedel?->yillik_bedel !== null ? (float) $bedel->yillik_bedel : null,
+            'liste' => route('panel.kira.index', ['q' => $d->dosya_no]),
+        ]);
+    }
+
+    /**
+     * Haritadan "Kira Dosyası Aç" ile gelindiğinde formun ön dolgusu.
+     * Konum TKGM mahalle kimliğiyle gelir; yerel il/ilçe/mahalle ondan çözülür.
+     */
+    public function haritaOnDolgu(Request $request): JsonResponse
+    {
+        return response()->json($this->onDolgu($request));
+    }
+
+    public function olustur(Request $request): View
+    {
+        return view('panel.kira.form', $this->formVerisi(null, $request));
+    }
+
+    /**
+     * Yeni dosya: dosya + kiracı + taşınmaz + sözleşme + bedeller tek işlemde
+     * yazılır. Parçalardan biri düşerse yarım dosya kalmasın diye hepsi aynı
+     * veritabanı işleminde.
+     */
+    public function kaydet(Request $request): RedirectResponse
+    {
+        $veri = $this->dogrula($request);
+
+        $dosya = DB::transaction(function () use ($veri, $request) {
+            $dosya = KiraDosyasi::create([
+                'dosya_no' => $veri['dosya_no'],
+                'eski_dosya_no' => $veri['eski_dosya_no'] ?? null,
+                'ana_dosya_id' => $veri['ana_dosya_id'] ?? null,
+                'isyeri_adi' => $veri['isyeri_adi'] ?? null,
+                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
+                'dolu_bos' => $veri['dolu_bos'],
+                'ihale_turu' => $veri['ihale_turu'],
+                'hukuki_durum_id' => $veri['hukuki_durum_id'] ?? null,
+                'kiracilik_durum_id' => $veri['kiracilik_durum_id'] ?? null,
+                'muhasebe_niteligi_id' => $veri['muhasebe_niteligi_id'] ?? null,
+                'sozlesme_aktif_mi' => $request->boolean('sozlesme_aktif_mi'),
+                'tahliye_ihbarnamesi_mi' => $request->boolean('tahliye_ihbarnamesi_mi'),
+                'arac_kapasitesi' => $veri['arac_kapasitesi'] ?? null,
+                'uyari' => $veri['uyari'] ?? null,
+                'aciklama' => $veri['aciklama'] ?? null,
+                'sorumlu_personel_id' => $veri['sorumlu_personel_id'] ?? null,
+                'olusturan_id' => $request->user()->id,
+            ]);
+
+            if (filled($veri['kiraci_ad_unvan'] ?? null)) {
+                $dosya->kiracilar()->create([
+                    'tip' => 'ana',
+                    'ad_unvan' => $veri['kiraci_ad_unvan'],
+                    'tc_vergi_no' => $veri['kiraci_tc_vergi_no'] ?? null,
+                    'telefon' => $veri['kiraci_telefon'] ?? null,
+                    'eposta' => $veri['kiraci_eposta'] ?? null,
+                    'adres' => $veri['kiraci_adres'] ?? null,
+                    'iban' => $veri['kiraci_iban'] ?? null,
+                    'avukat' => $veri['kiraci_avukat'] ?? null,
+                ]);
+            }
+
+            $dosya->tasinmaz()->create([
+                'tasinmaz_id' => $veri['tasinmaz_id'] ?? null,
+                'il_id' => $veri['il_id'] ?? null,
+                'ilce_id' => $veri['ilce_id'] ?? null,
+                'mahalle_id' => $veri['mahalle_id'] ?? null,
+                'ada' => $veri['ada'] ?? null,
+                'parsel' => $veri['parsel'] ?? null,
+                'adres' => $veri['adres'] ?? null,
+                'yuzolcum' => $veri['yuzolcum'] ?? null,
+                'imar_durumu_id' => $veri['imar_durumu_id'] ?? null,
+            ]);
+
+            $sozlesme = $dosya->sozlesmeler()->create([
+                'sozlesme_no' => $veri['sozlesme_no'] ?? null,
+                'baslangic_tarihi' => $veri['baslangic_tarihi'],
+                'bitis_tarihi' => $veri['bitis_tarihi'],
+                'sure_ay' => $veri['sure_ay'] ?? null,
+                'taksit_sayisi' => $veri['taksit_sayisi'] ?? null,
+                'odeme_sekli' => $veri['odeme_sekli'] ?? null,
+                'sozlesme_tarihi' => $veri['sozlesme_tarihi'] ?? null,
+                'noter_tarihi' => $veri['noter_tarihi'] ?? null,
+                'yevmiye_no' => $veri['yevmiye_no'] ?? null,
+                'kdv_orani' => $veri['kdv_orani'] ?? null,
+                'kdv_dahil_mi' => $request->boolean('kdv_dahil_mi'),
+                'artirma_yontemi' => $veri['artirma_yontemi'] ?? null,
+                'aktif_mi' => true,
+            ]);
+
+            foreach ($this->bedelSatirlari($veri['bedeller'] ?? []) as $satir) {
+                $sozlesme->bedeller()->create($satir);
+            }
+
+            // Haritadan gelindiyse parsel geometrisi de kaydedilir
+            $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
+            if (is_array($geometri) && isset($geometri['type'])) {
+                $dosya->koordinat()->create(['koordinat' => $geometri]);
+            }
+
+            return $dosya;
+        });
+
+        return redirect()->route('panel.kira.index')
+            ->with('basari', $dosya->dosya_no.' numaralı kira dosyası oluşturuldu.');
+    }
+
+    /**
+     * Haritadan gelen parseli form alanlarına çevirir: TKGM mahalle kimliği
+     * yerel il/ilçe/mahalleye çözülür, geometri ve alan TKGM'den alınır.
+     * Referans sistemde yalnız geometri haritadan geliyordu; ada/parsel ve
+     * alan elle giriliyordu.
+     *
+     * @return array<string, mixed>
+     */
+    private function onDolgu(Request $request): array
+    {
+        $dolgu = array_filter([
+            'ada' => trim((string) $request->query('ada', '')),
+            'parsel' => trim((string) $request->query('parsel', '')),
+        ], fn ($v) => $v !== '');
+
+        $mahalle = $request->query('mahalle_tkgm')
+            ? Mahalle::with('ilce')->where('tkgm_id', $request->query('mahalle_tkgm'))->first()
+            : null;
+
+        if ($mahalle) {
+            $dolgu['mahalle_id'] = $mahalle->id;
+            $dolgu['ilce_id'] = $mahalle->ilce_id;
+            $dolgu['il_id'] = $mahalle->ilce?->il_id;
+            $dolgu['mahalle_ad'] = $mahalle->ad;
+            $dolgu['ilce_ad'] = $mahalle->ilce?->ad;
+        }
+
+        // Geometri ve resmî alan TKGM'den; ağ hatası formu engellemez
+        if ($mahalle && ($dolgu['ada'] ?? '') !== '' && ($dolgu['parsel'] ?? '') !== '') {
+            try {
+                $yanit = Http::timeout(10)
+                    ->withHeaders(['Accept' => 'application/json', 'User-Agent' => 'EmlakYonetim/1.0'])
+                    ->get("https://cbsapi.tkgm.gov.tr/megsiswebapi.v3.1/api/parsel/{$mahalle->tkgm_id}/{$dolgu['ada']}/{$dolgu['parsel']}");
+                $veri = $yanit->successful() ? $yanit->json() : null;
+                if (is_array($veri) && ! empty($veri['geometry'])) {
+                    $dolgu['koordinat'] = json_encode($veri['geometry']);
+                    $dolgu['yuzolcum'] = $this->tkgmSayisi($veri['properties']['alan'] ?? null);
+                    $dolgu['nitelik'] = $veri['properties']['nitelik'] ?? null;
+                }
+            } catch (\Throwable $e) {
+                // Geometri sonradan haritadan eklenebilir
+            }
+        }
+
+        return array_filter($dolgu, fn ($v) => $v !== null && $v !== '');
+    }
+
+    /** TKGM sayıları Türkçe biçimde gelir: "618.795,00" → 618795.0 */
+    private function tkgmSayisi(mixed $deger): ?float
+    {
+        $ham = trim((string) $deger);
+        if ($ham === '') {
+            return null;
+        }
+        $nokta = strrpos($ham, '.');
+        $virgul = strrpos($ham, ',');
+
+        if ($nokta !== false && $virgul !== false) {
+            $sayi = $virgul > $nokta
+                ? str_replace(',', '.', str_replace('.', '', $ham))
+                : str_replace(',', '', $ham);
+        } elseif ($virgul !== false) {
+            $sayi = str_replace(',', '.', $ham);
+        } else {
+            $sayi = $ham;
+        }
+
+        return is_numeric($sayi) ? (float) $sayi : null;
+    }
+
+    /** @return array<string, mixed> */
+    private function formVerisi(?KiraDosyasi $dosya, Request $request): array
+    {
+        $onDolgu = $dosya ? [] : $this->onDolgu($request);
+        $ilId = old('il_id', $onDolgu['il_id'] ?? $request->query('il_id'));
+        $ilceId = old('ilce_id', $onDolgu['ilce_id'] ?? $request->query('ilce_id'));
+
+        return [
+            'dosya' => $dosya,
+            'onDolgu' => $onDolgu,
+            'iller' => Il::orderBy('ad')->get(['id', 'ad']),
+            'ilceler' => $ilId ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad']) : collect(),
+            'mahalleler' => $ilceId ? Mahalle::where('ilce_id', $ilceId)->orderBy('ad')->get(['id', 'ad']) : collect(),
+            'isKollari' => KiraIsKolu::aktif()->get(['id', 'ad']),
+            'hukukiDurumlar' => KiraHukukiDurum::aktif()->get(['id', 'ad']),
+            'kiracilikDurumlar' => KiraKiracilikDurum::aktif()->get(['id', 'ad']),
+            'muhasebeNitelikleri' => KiraMuhasebeNiteligi::aktif()->get(['id', 'ad']),
+            'imarDurumlari' => ImarDurumu::where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']),
+            'anaDosyalar' => KiraDosyasi::whereNull('ana_dosya_id')->orderBy('dosya_no')->limit(500)->get(['id', 'dosya_no', 'isyeri_adi']),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function dogrula(Request $request): array
+    {
+        return $request->validate([
+            // Dosya
+            'dosya_no' => ['required', 'string', 'max:50', 'unique:kira_dosyalari,dosya_no'],
+            'eski_dosya_no' => ['nullable', 'string', 'max:50'],
+            'ana_dosya_id' => ['nullable', 'exists:kira_dosyalari,id'],
+            'isyeri_adi' => ['nullable', 'string', 'max:200'],
+            'is_kolu_id' => ['nullable', 'exists:kira_is_kollari,id'],
+            'dolu_bos' => ['required', Rule::in(['dolu', 'bos'])],
+            'ihale_turu' => ['required', Rule::in(['ihaleli', 'ihalesiz'])],
+            'arac_kapasitesi' => ['nullable', 'integer', 'min:0', 'max:100000'],
+            'hukuki_durum_id' => ['nullable', 'exists:kira_hukuki_durumlar,id'],
+            'kiracilik_durum_id' => ['nullable', 'exists:kira_kiracilik_durumlari,id'],
+            'muhasebe_niteligi_id' => ['nullable', 'exists:kira_muhasebe_nitelikleri,id'],
+            'sorumlu_personel_id' => ['nullable', 'exists:kullanicilar,id'],
+            'uyari' => ['nullable', 'string', 'max:300'],
+            'aciklama' => ['nullable', 'string', 'max:5000'],
+
+            // Kiracı (boş bırakılabilir: boş yerlerde kiracı yok)
+            'kiraci_ad_unvan' => ['nullable', 'string', 'max:250', 'required_if:dolu_bos,dolu'],
+            'kiraci_tc_vergi_no' => ['nullable', 'string', 'max:20'],
+            'kiraci_telefon' => ['nullable', 'string', 'max:30'],
+            'kiraci_eposta' => ['nullable', 'email', 'max:150'],
+            'kiraci_adres' => ['nullable', 'string', 'max:1000'],
+            'kiraci_iban' => ['nullable', 'string', 'max:34'],
+            'kiraci_avukat' => ['nullable', 'string', 'max:200'],
+
+            // Taşınmaz
+            'tasinmaz_id' => ['nullable', 'exists:tasinmazlar,id'],
+            'il_id' => ['nullable', 'exists:iller,id'],
+            'ilce_id' => ['nullable', 'exists:ilceler,id'],
+            'mahalle_id' => ['nullable', 'exists:mahalleler,id'],
+            'ada' => ['nullable', 'string', 'max:20'],
+            'parsel' => ['nullable', 'string', 'max:20'],
+            'adres' => ['nullable', 'string', 'max:1000'],
+            'yuzolcum' => ['nullable', 'numeric', 'min:0', 'max:99999999999'],
+            'imar_durumu_id' => ['nullable', 'exists:imar_durumlari,id'],
+            'koordinat' => ['nullable', 'string', 'max:200000'],
+
+            // Sözleşme
+            'sozlesme_no' => ['nullable', 'string', 'max:60'],
+            'baslangic_tarihi' => ['required', 'date'],
+            'bitis_tarihi' => ['required', 'date', 'after:baslangic_tarihi'],
+            'sure_ay' => ['nullable', 'integer', 'min:1', 'max:1200'],
+            'taksit_sayisi' => ['nullable', 'integer', 'min:1', 'max:255'],
+            'odeme_sekli' => ['nullable', 'string', 'max:80'],
+            'sozlesme_tarihi' => ['nullable', 'date'],
+            'noter_tarihi' => ['nullable', 'date'],
+            'yevmiye_no' => ['nullable', 'string', 'max:60'],
+            'kdv_orani' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'artirma_yontemi' => ['nullable', 'string', 'max:100'],
+
+            // Bedeller
+            'bedeller' => ['required', 'array', 'min:1', 'max:30'],
+            'bedeller.*.yillik_bedel' => ['required', 'numeric', 'min:0', 'max:9999999999999'],
+            'bedeller.*.donem_baslangic' => ['nullable', 'date'],
+            'bedeller.*.donem_bitis' => ['nullable', 'date'],
+            'bedeller.*.tufe_orani' => ['nullable', 'numeric', 'min:-100', 'max:999'],
+        ], [
+            'bitis_tarihi.after' => 'Kira bitiş tarihi başlangıçtan sonra olmalı.',
+            'kiraci_ad_unvan.required_if' => 'Dolu bir yerde kiracı adı/unvanı girilmeli.',
+            'bedeller.required' => 'En az bir yıl için kira bedeli girilmeli.',
+        ]);
+    }
+
+    /**
+     * Form satırlarını bedel kayıtlarına çevirir. Boş satırlar atılır, yıl
+     * sırası baştan numaralanır — kullanıcı aradan satır silmiş olabilir.
+     *
+     * @param  array<int, array<string, mixed>>  $satirlar
+     * @return array<int, array<string, mixed>>
+     */
+    private function bedelSatirlari(array $satirlar): array
+    {
+        $dolu = array_values(array_filter($satirlar, fn ($s) => filled($s['yillik_bedel'] ?? null)));
+
+        return array_map(fn ($s, $i) => [
+            'yil_sirasi' => $i + 1,
+            'donem_baslangic' => $s['donem_baslangic'] ?? null,
+            'donem_bitis' => $s['donem_bitis'] ?? null,
+            'yillik_bedel' => $s['yillik_bedel'],
+            'tufe_orani' => $s['tufe_orani'] ?? null,
+        ], $dolu, array_keys($dolu));
     }
 
     /**

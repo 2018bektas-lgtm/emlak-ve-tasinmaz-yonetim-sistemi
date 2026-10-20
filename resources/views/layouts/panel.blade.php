@@ -65,14 +65,14 @@
             'Kira İşlemleri' => [
                 ['label' => 'Kira', 'icon' => 'key', 'children' => [
                     ['label' => 'Kira İşleri Sorgulama', 'route' => 'panel.kira.index', 'izin' => 'kira.goruntule'],
+                    ['label' => 'Yeni Kira Dosyası', 'route' => 'panel.kira.olustur', 'izin' => 'kira.olustur'],
+                    ['label' => 'Kira Haritası', 'route' => 'panel.kira.harita', 'izin' => 'kira.goruntule'],
                     ['label' => 'Standart Sorgular', 'children' => [
                         ['label' => 'Son Bir Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 30], 'izin' => 'kira.goruntule'],
                         ['label' => 'Son Üç Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 90], 'izin' => 'kira.goruntule'],
                         ['label' => 'Süresi Dolmuş Sözleşmeler', 'route' => 'panel.kira.index', 'params' => ['durum' => 'dolmus'], 'izin' => 'kira.goruntule'],
                     ]],
                     // Aşağıdakiler henüz yapılmadı; rotası olmadığı için "Yakında" görünür
-                    ['label' => 'Yeni Kira Dosyası'],
-                    ['label' => 'Kira Haritası'],
                     ['label' => 'Kira Alanları'],
                     ['label' => 'Kod Tabloları'],
                 ]],

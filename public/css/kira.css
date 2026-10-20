@@ -114,3 +114,69 @@
     .kr-detay-izgara { grid-template-columns: 1fr; }
     .kr-ara { flex-wrap: wrap; }
 }
+
+/* ---------- Ekleme formu ---------- */
+.kr-secim { display: flex; gap: 8px; }
+.kr-secim-kart {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1.5px solid #dbe0e8;
+    border-radius: 11px;
+    background: #fff;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.kr-secim-kart:hover { border-color: var(--kr-renk); }
+.kr-secim-kart input { accent-color: var(--kr-renk); }
+.kr-secim-kart:has(input:checked) {
+    border-color: var(--kr-renk);
+    background: color-mix(in srgb, var(--kr-renk) 9%, #fff);
+}
+
+.kr-satir-onay {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0e1726;
+    cursor: pointer;
+}
+.kr-satir-onay input { accent-color: #0ea5e9; }
+
+.kr-onaylar { flex-direction: row; flex-wrap: wrap; gap: 20px; align-items: center; }
+
+/* Bedel üreteci */
+.kr-uretec {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    background: #f8fafc;
+}
+.kr-uretec .kr-alan { flex: 0 0 160px; }
+.kr-uretec input {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1.5px solid #dbe0e8;
+    border-radius: 10px;
+    background: #fff;
+    font: inherit;
+    font-size: 0.84rem;
+}
+
+.kr-bedel-tablo td { padding: 6px 8px; vertical-align: middle; }
+.kr-bedel-tablo .form-input { min-width: 0; width: 100%; min-height: 38px; }
+.kr-yil-no { font-weight: 700; color: #64748b; text-align: center; }
+
+/* Boş yerde kiracı bölümü soluklaşır */
+.form-section.is-pasif { opacity: 0.5; }

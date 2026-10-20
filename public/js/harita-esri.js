@@ -342,8 +342,10 @@
          */
         const MOD = API.mod || 'tasinmaz';
         const DEG = API.degerleme || {};
+        const KIRA = API.kira || {};
         const EMSAL = API.emsal || null;
-        const IMAR_RENK = DEG.imarRenk || {};
+        const IMAR_RENK = DEG.imarRenk || KIRA.imarRenk || {};
+        const KIRA_DURUM_RENK = { dolu: '#dc2626', bos: '#16a34a' };
         const IMAR_YOK_RENK = '#94a3b8';
         const DEG_TUR_RENK = { arsa: '#0d9488', bb: '#7c3aed', ikisi: '#f59e0b' };
 
@@ -548,7 +550,10 @@
          *    - Katman arama kutusu + "Hepsini Kapat"
          *    - Opaklık "varsayılana döndür"
          * ========================================================= */
-        const KATMAN_ONBELLEK_ANAHTAR = 'etys-harita-katman-v1';
+        // Üç harita da aynı katman id'lerini (hrm-ov-parsel vb.) kullanıyor;
+        // anahtar kipe göre ayrılmazsa birinde kapatılan katman diğerinde de
+        // kapalı açılıyordu.
+        const KATMAN_ONBELLEK_ANAHTAR = 'etys-harita-katman-v1-' + MOD;
         function katmanTercihOku() {
             try { return JSON.parse(localStorage.getItem(KATMAN_ONBELLEK_ANAHTAR)) || {}; }
             catch (e) { return {}; }
@@ -768,6 +773,68 @@
 
         let birimAralik = [0, 0];
 
+        /* ---- Kira kipi ---- */
+        // Renk: doluluk (varsayılan), imar durumu ya da sözleşme bitişine kalan süre
+        function kiraRenk(p) {
+            const secim = document.getElementById('hrm-deg-renk');
+            const mod = secim ? secim.value : 'durum';
+            if (mod === 'imar') return imarRengi(p.imar_id);
+            if (mod === 'bitis') {
+                const g = p.kalan_gun;
+                if (g === null || g === undefined) return IMAR_YOK_RENK;
+                if (g < 0) return '#991b1b';
+                if (g <= 30) return '#dc2626';
+                if (g <= 90) return '#f59e0b';
+                return '#16a34a';
+            }
+            return KIRA_DURUM_RENK[p.dolu_bos] || IMAR_YOK_RENK;
+        }
+
+        function kiraPopup(p) {
+            const kap = document.createElement('div');
+            kap.className = 'hrm-pop';
+            kap.innerHTML =
+                popUst('Kira Dosyası', 'is-sistem', [p.ilce, p.mahalle].filter(Boolean).join(' · ')) +
+                popHero(p.ada, p.parsel, sayiBicim(p.alan, ' m²')) +
+                popListe([
+                    ['Dosya No', p.dosya_no],
+                    ['Kiracı', p.kiraci],
+                    ['İşyeri', p.isyeri],
+                    ['İş Kolu', p.is_kolu],
+                    ['Doluluk', p.dolu_bos === 'bos' ? 'Boş' : 'Dolu'],
+                    ['İhale', p.ihale],
+                ]) +
+                '<div id="hrm-kira-detay">' + popYukleniyor('Sözleşme getiriliyor…') + '</div>';
+            if (KIRA.dosya) kiraDetayiDoldur(p.id);
+            return kap;
+        }
+
+        // Popup açıldıktan sonra sözleşme ve bedel kutuya yazılır
+        async function kiraDetayiDoldur(dosyaId) {
+            let v = null;
+            try { v = await jsonGetir(KIRA.dosya + '/' + dosyaId); } catch (e) { v = null; }
+            const kutu = document.getElementById('hrm-kira-detay');
+            if (!kutu) return;
+            if (!v) { kutu.innerHTML = popUyari('Dosya bilgisi alınamadı.'); return; }
+
+            const kalan = v.kalan_gun === null || v.kalan_gun === undefined
+                ? null
+                : (v.kalan_gun < 0 ? Math.abs(v.kalan_gun) + ' gün geçti' : v.kalan_gun + ' gün kaldı');
+
+            kutu.innerHTML = '<div class="hrm-pop-bolum">' +
+                popBolumBaslik('Sözleşme', 'is-eimar') +
+                popListe([
+                    ['Kira Dönemi', v.baslangic ? (new Date(v.baslangic).toLocaleDateString('tr-TR') + ' – ' + new Date(v.bitis).toLocaleDateString('tr-TR')) : null],
+                    ['Durum', kalan],
+                    ['Yıllık Bedel', v.yillik_bedel ? sayiBicim(v.yillik_bedel, ' TL') : null],
+                    ['İmar Durumu', v.imar],
+                    ['Telefon', v.telefon],
+                    ['Adres', v.adres],
+                ]) +
+                (v.liste ? '<a class="hrm-pop-eylem" href="' + kacis(v.liste) + '">Dosyayı Listede Aç</a>' : '') +
+            '</div>';
+        }
+
         function degerlemePopup(p) {
             const kap = document.createElement('div');
             kap.className = 'hrm-pop';
@@ -907,6 +974,18 @@
                     popupTemplate: {
                         title: (p.ada || '—') + ' / ' + (p.parsel || '—'),
                         content: function () { return degerlemePopup(p); },
+                    },
+                });
+            }
+            if (MOD === 'kira') {
+                const renk = kiraRenk(p);
+                return new Graphic({
+                    geometry: geom,
+                    symbol: geom.type === 'point' ? semNokta(renk) : semDoldur(renk),
+                    attributes: p,
+                    popupTemplate: {
+                        title: p.dosya_no + ' · ' + (p.ada || '—') + '/' + (p.parsel || '—'),
+                        content: function () { return kiraPopup(p); },
                     },
                 });
             }
@@ -1304,6 +1383,29 @@
             document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modalKatman.hidden) modalKapat(); });
         }
 
+        /* ---- Kira kipi anahtarları ---- */
+        if (MOD === 'kira') {
+            let kiraZamanlayici = null;
+            const kiraTazele = function () {
+                clearTimeout(kiraZamanlayici);
+                kiraZamanlayici = setTimeout(parselleriYukle, 200);
+            };
+
+            document.querySelectorAll('[data-imar]').forEach(function (k) {
+                k.addEventListener('change', kiraTazele);
+            });
+            document.querySelectorAll('[data-imar-hepsi]').forEach(function (d) {
+                d.addEventListener('click', function () {
+                    const ac = d.dataset.imarHepsi === '1';
+                    document.querySelectorAll('[data-imar]').forEach(function (k) { k.checked = ac; });
+                    kiraTazele();
+                });
+            });
+
+            const renkSecim = document.getElementById('hrm-deg-renk');
+            if (renkSecim) renkSecim.addEventListener('change', parselleriYukle);
+        }
+
         /* ---- Değerleme kipi anahtarları ---- */
         if (MOD === 'degerleme') {
             let imarZamanlayici = null;
@@ -1470,6 +1572,19 @@
          * Yençok da forma yazılır.
          */
         function kayitEylemleri(o, eimar) {
+            // Kira kipinde kayıt tam sayfa formda açılır: form altı bölümlü,
+            // modale sığmaz. Parsel bilgisi sorgu dizesiyle taşınır.
+            if (MOD === 'kira') {
+                if (!KIRA.ekleyebilir || !KIRA.yeni) return '';
+                const kq = new URLSearchParams();
+                if (o.mahalleId) kq.set('mahalle_tkgm', o.mahalleId);
+                if (o.adaNo) kq.set('ada', o.adaNo);
+                if (o.parselNo) kq.set('parsel', o.parselNo);
+
+                return '<div class="hrm-pop-eylemler">' +
+                    '<a class="hrm-pop-eylem" href="' + kacis(KIRA.yeni + '?' + kq) + '">+ Kira Dosyası Aç</a>' +
+                '</div>';
+            }
             if (MOD !== 'degerleme') return '';
             const q = new URLSearchParams();
             if (o.mahalleId) q.set('mahalle_tkgm', o.mahalleId);
