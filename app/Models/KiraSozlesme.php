@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Kira sözleşmesi. Bedeller yıl bazlı ayrı satırlarda (kira_bedelleri) durur;
@@ -57,6 +58,34 @@ class KiraSozlesme extends Model
     public function bedeller(): HasMany
     {
         return $this->hasMany(KiraBedel::class, 'kira_sozlesme_id')->orderBy('yil_sirasi');
+    }
+
+    /** Bu dönemin kiracıları — dönem değişince kiracı da değişir. */
+    public function kiracilar(): HasMany
+    {
+        return $this->hasMany(KiraKiraci::class, 'kira_sozlesme_id');
+    }
+
+    public function anaKiraci(): HasOne
+    {
+        return $this->hasOne(KiraKiraci::class, 'kira_sozlesme_id')->where('tip', 'ana');
+    }
+
+    public function belgeler(): HasMany
+    {
+        return $this->hasMany(KiraBelge::class, 'kira_sozlesme_id');
+    }
+
+    /** Bugün yürürlükte mi? Hem işaret hem tarih aralığı aranır. */
+    public function yururlukteMi(): bool
+    {
+        if (! $this->aktif_mi) {
+            return false;
+        }
+        $bugun = now()->startOfDay();
+
+        return (! $this->baslangic_tarihi || $this->baslangic_tarihi->lte($bugun))
+            && (! $this->bitis_tarihi || $this->bitis_tarihi->gte($bugun));
     }
 
     /** Yürürlükteki dönemin bedeli: bugünü kapsayan satır, yoksa sonuncusu. */

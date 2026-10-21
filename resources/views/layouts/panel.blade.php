@@ -17,6 +17,32 @@
 <body class="app-shell @yield('shellClass')">
     @php
         $currentRoute = request()->route()?->getName();
+
+        /**
+         * Menü girdisi aktif mi?
+         *
+         * Yalnız rota adına bakmak yetmiyor: "Standart Sorgular" altındaki
+         * girdilerin hepsi aynı rotayı (panel.kira.index) gösterip yalnızca
+         * sorgu parametresiyle ayrışıyor. Parametre eşleşmezse girdi aktif
+         * sayılmaz; aksi hâlde düz listede hepsi birden yanıyordu.
+         */
+        $menuParamEslesti = function (array $params): bool {
+            foreach ($params as $ad => $deger) {
+                if ((string) request()->query($ad, '') !== (string) $deger) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+        $menuAktif = function (?array $girdi) use ($currentRoute, $menuParamEslesti): bool {
+            if (! $girdi || ! isset($girdi['route']) || $currentRoute !== $girdi['route']) {
+                return false;
+            }
+
+            return $menuParamEslesti($girdi['params'] ?? []);
+        };
+
         $navGroups = [
             'Ana Menü' => [
                 ['label' => 'Özet', 'route' => 'panel.dashboard', 'icon' => 'grid'],
@@ -66,15 +92,18 @@
             'Kira İşlemleri' => [
                 ['label' => 'Kira', 'icon' => 'key', 'children' => [
                     ['label' => 'Kira İşleri Sorgulama', 'route' => 'panel.kira.index', 'izin' => 'kira.goruntule'],
+                    ['label' => 'Kira Alanları', 'route' => 'panel.kira.alanlar.index', 'izin' => 'kira.goruntule'],
                     ['label' => 'Yeni Kira Dosyası', 'route' => 'panel.kira.olustur', 'izin' => 'kira.olustur'],
+                    ['label' => 'Yeni Kira Alanı', 'route' => 'panel.kira.alanlar.olustur', 'izin' => 'kira.olustur'],
                     ['label' => 'Kira Haritası', 'route' => 'panel.kira.harita', 'izin' => 'kira.goruntule'],
                     ['label' => 'Standart Sorgular', 'children' => [
                         ['label' => 'Son Bir Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 30], 'izin' => 'kira.goruntule'],
                         ['label' => 'Son Üç Ayı Kalanlar', 'route' => 'panel.kira.index', 'params' => ['kalan' => 90], 'izin' => 'kira.goruntule'],
                         ['label' => 'Süresi Dolmuş Sözleşmeler', 'route' => 'panel.kira.index', 'params' => ['durum' => 'dolmus'], 'izin' => 'kira.goruntule'],
+                        ['label' => 'Ana Dosyalar', 'route' => 'panel.kira.index', 'params' => ['ana_dosya' => 1], 'izin' => 'kira.goruntule'],
+                        ['label' => 'Boş Alanlar', 'route' => 'panel.kira.alanlar.index', 'params' => ['dolu_bos' => 'bos'], 'izin' => 'kira.goruntule'],
                     ]],
-                    // Aşağıdakiler henüz yapılmadı; rotası olmadığı için "Yakında" görünür
-                    ['label' => 'Kira Alanları'],
+                    // Henüz yapılmadı; rotası olmadığı için "Yakında" görünür
                     ['label' => 'Kod Tabloları'],
                 ]],
             ],
@@ -186,16 +215,16 @@
                             if (! $hasChildren && ! $hasRoute && ($item['children'] ?? []) !== []) {
                                 continue;
                             }
-                            $active = $hasRoute && $currentRoute === $item['route'];
+                            $active = $menuAktif($item);
                             $activeChild = false;
                             if ($hasChildren) {
                                 foreach ($children as $child) {
-                                    if (isset($child['route']) && $currentRoute === $child['route']) {
+                                    if ($menuAktif($child)) {
                                         $activeChild = true;
                                         break;
                                     }
                                     foreach ($child['children'] ?? [] as $alt) {
-                                        if (isset($alt['route']) && $currentRoute === $alt['route']) {
+                                        if ($menuAktif($alt)) {
                                             $activeChild = true;
                                             break 2;
                                         }
@@ -228,11 +257,11 @@
                                                 }
                                                 $childHasChildren = $childGrandchildren !== [];
                                                 $childHref = isset($child['route']) ? route($child['route'], $child['params'] ?? []) : '#';
-                                                $childActive = isset($child['route']) && $currentRoute === $child['route'];
+                                                $childActive = $menuAktif($child);
                                                 $childActiveGrandchild = false;
                                                 if ($childHasChildren) {
                                                     foreach ($childGrandchildren as $gc) {
-                                                        if (isset($gc['route']) && $currentRoute === $gc['route']) {
+                                                        if ($menuAktif($gc)) {
                                                             $childActiveGrandchild = true;
                                                             break;
                                                         }
@@ -253,7 +282,7 @@
                                                         @foreach ($childGrandchildren as $gc)
                                                             @php
                                                                 $gcHref = isset($gc['route']) ? route($gc['route'], $gc['params'] ?? []) : '#';
-                                                                $gcActive = isset($gc['route']) && $currentRoute === $gc['route'];
+                                                                $gcActive = $menuAktif($gc);
                                                                 $gcDisabled = ! isset($gc['route']);
                                                             @endphp
                                                             <a href="{{ $gcHref }}"

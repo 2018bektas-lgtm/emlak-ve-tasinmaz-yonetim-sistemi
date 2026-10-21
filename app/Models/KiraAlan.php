@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\KiraciTipi;
 use App\Enums\KiraDoluBos;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -79,11 +80,28 @@ class KiraAlan extends Model
             : null;
     }
 
-    /** Kiracı alan düzeyinde girilmemişse dosyanın ana kiracısı geçerlidir. */
+    /**
+     * Kiracı alan düzeyinde girilmemişse dosyanın güncel kiracısı geçerlidir.
+     *
+     * Dosyada birden çok kiracılık dönemi olabilir; yürürlükteki dönemin
+     * kiracısı aranır, yoksa en son eklenen satır.
+     */
     public function kiraci(): ?string
     {
-        return $this->kiraci_ad_unvan
-            ?: $this->dosya?->kiracilar->firstWhere('tip', \App\Enums\KiraciTipi::Ana)?->ad_unvan;
+        if ($this->kiraci_ad_unvan) {
+            return $this->kiraci_ad_unvan;
+        }
+
+        $kiracilar = $this->dosya?->kiracilar;
+        if (! $kiracilar) {
+            return null;
+        }
+
+        $anaKiracilar = $kiracilar->where('tip', KiraciTipi::Ana);
+        $aktifDonemId = $this->dosya?->aktifSozlesme?->id;
+
+        return ($aktifDonemId ? $anaKiracilar->firstWhere('kira_sozlesme_id', $aktifDonemId) : null)?->ad_unvan
+            ?? $anaKiracilar->sortByDesc('id')->first()?->ad_unvan;
     }
 
     public function scopeAktif(Builder $q): Builder

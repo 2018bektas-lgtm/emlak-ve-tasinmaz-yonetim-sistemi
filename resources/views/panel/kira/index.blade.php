@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
     {{-- Kolon seçim paneli ve kolon filtresi stilleri burada --}}
     <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=7">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=3">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=6">
 @endpush
 
 @php
@@ -18,7 +18,14 @@
     $sorguDurumsuz = collect(request()->query())->except(['dolu_bos', 'page'])->all();
     $filtreVar = collect($filtre)->filter(fn ($v) => filled($v))->isNotEmpty();
     // Hızlı sorgu rozetleri: hangisi etkin, başlıkta gösterilir
-    $etkinKisayol = $filtre['kalan'] ? $filtre['kalan'].' gün' : ($filtre['durum'] === 'dolmus' ? 'Süresi dolmuş' : null);
+    $etkinKisayol = $filtre['kalan']
+        ? $filtre['kalan'].' gün'
+        : ($filtre['durum'] === 'dolmus' ? 'Süresi dolmuş' : ($filtre['ana_dosya'] ? 'Ana dosyalar' : null));
+    // Ana dosya sorgusunda alt sözleşme toplamı anlam kazanır; kolonu kendiliğinden
+    // aç — kullanıcının kayıtlı tercihi ($gorunurKolonlar) değişmez.
+    $tabloKolonlari = $filtre['ana_dosya']
+        ? array_values(array_unique(array_merge($gorunurKolonlar, ['alt_dosya_sayisi', 'alt_bedel_toplam'])))
+        : $gorunurKolonlar;
 @endphp
 
 @section('content')
@@ -174,6 +181,10 @@
                 <input type="checkbox" name="tahliye" value="1" @checked($filtre['tahliye'])>
                 <span>Yalnız tahliye ihbarnamesi çekilenler</span>
             </label>
+            <label class="kr-alan kr-onay">
+                <input type="checkbox" name="ana_dosya" value="1" @checked($filtre['ana_dosya'])>
+                <span>Yalnız ana dosyalar (altında dosya bulunanlar)</span>
+            </label>
         </div>
 
         <div class="kr-detay-ayak">
@@ -216,12 +227,14 @@
         </div>
     </div>
 
-    <div class="tl-tablo-wrap">
+    {{-- tl-genis: başlık ve İşlem sütunu yapışkan, tablo yatay kayar --}}
+    <div class="tl-tablo-wrap tl-genis">
         <table class="tl-tablo kr-tablo" id="kiraTablo">
             <thead>
                 <tr>
+                    <th class="tl-sticky-sol tl-th-islem">İşlem</th>
                     @foreach ($kolonKatalog as $anahtar => $etiket)
-                        <th data-kolon="{{ $anahtar }}" @class(['is-gizli' => ! in_array($anahtar, $gorunurKolonlar, true)])>
+                        <th data-kolon="{{ $anahtar }}" @class(['is-gizli' => ! in_array($anahtar, $tabloKolonlari, true)])>
                             <span class="tl-th-inner">
                                 <span class="tl-th-metin">{{ $etiket }}</span>
                                 <button type="button" class="tl-th-flt" data-tl-flt="{{ $anahtar }}" data-tl-flt-etiket="{{ $etiket }}" title="Bu kolonda ara" aria-label="Bu kolonda ara">
@@ -230,7 +243,6 @@
                             </span>
                         </th>
                     @endforeach
-                    <th class="tl-th-islem"></th>
                 </tr>
             </thead>
             <tbody>
@@ -241,19 +253,74 @@
                         $kalan = $s?->kalanGun();
                         $bedel = $s?->guncelBedel();
                         $ana = $k->kiracilar->firstWhere('tip', \App\Enums\KiraciTipi::Ana);
+                        // İlk sınırı olan alanın merkezi — satırdaki harita bağlantısı
+                        $p = $k->alanlar->firstWhere(fn ($a) => $a->poligon?->merkez_lat !== null)?->poligon;
+                        $merkez = $p ? $p->merkez_lat.','.$p->merkez_lng : null;
                         $altlar = $k->kiracilar->where('tip', \App\Enums\KiraciTipi::Alt);
-                        $hucre = function (string $a, array $ek = []) use ($gorunurKolonlar) {
-                            $ek['is-gizli'] = ! in_array($a, $gorunurKolonlar, true);
+                        $hucre = function (string $a, array $ek = []) use ($tabloKolonlari) {
+                            $ek['is-gizli'] = ! in_array($a, $tabloKolonlari, true);
 
                             return $ek;
                         };
                     @endphp
                     <tr>
+                        <td class="tl-sticky-sol tl-td-islem">
+                            <div class="tl-dd">
+                                <button type="button" class="tl-dd-btn" data-dd-toggle>
+                                    İşlem
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                                </button>
+                                <div class="tl-dd-menu">
+                                    <a href="{{ route('panel.kira.detay', $k->id) }}" class="tl-dd-item">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        Bilgi Kartı
+                                    </a>
+                                    @can('kira.duzenle')
+                                        <a href="{{ route('panel.kira.duzenle', $k->id) }}" class="tl-dd-item">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                                            Düzenle
+                                        </a>
+                                    @endcan
+                                    @can('kira.olustur')
+                                        {{-- Kiracı değişikliği en çok yapılan işlem: listeden tek adımda --}}
+                                        <a href="{{ route('panel.kira.donem.olustur', $k->id) }}" class="tl-dd-item">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+                                            Yeni Kiracı
+                                        </a>
+                                    @endcan
+                                    <a href="{{ route('panel.kira.alanlar.index', ['dosya_no' => $k->dosya_no]) }}" class="tl-dd-item">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4-2 12-6 2-6-2z"/></svg>
+                                        Kira Alanları
+                                    </a>
+                                    @can('kira.olustur')
+                                        <a href="{{ route('panel.kira.alanlar.olustur', ['dosya' => $k->id]) }}" class="tl-dd-item">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                            Alan Ekle
+                                        </a>
+                                    @endcan
+                                    @if ($merkez)
+                                        <a href="{{ route('panel.kira.harita', ['merkez' => $merkez, 'zoom' => 17]) }}" class="tl-dd-item">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+                                            Haritada Göster
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        </td>
                         <td data-kolon="dosya_no" @class($hucre('dosya_no'))>
                             <a href="{{ route('panel.kira.detay', $k->id) }}" class="kr-dosya-link td-mono">{{ $k->dosya_no }}</a>
                         </td>
                         <td data-kolon="eski_dosya_no" @class($hucre('eski_dosya_no', ['td-mono' => true]))>{{ $k->eski_dosya_no ?: '—' }}</td>
-                        <td data-kolon="ana_dosya" @class($hucre('ana_dosya', ['td-mono' => true]))>{{ $k->anaDosya?->dosya_no ?: '—' }}</td>
+                        <td data-kolon="ana_dosya" @class($hucre('ana_dosya', ['td-mono' => true]))>
+                            @if ($k->anaDosya)
+                                <a href="{{ route('panel.kira.detay', $k->ana_dosya_id) }}" class="kr-dosya-link td-mono">{{ $k->anaDosya->dosya_no }}</a>
+                            @else — @endif
+                        </td>
+                        <td data-kolon="alt_dosya_sayisi" @class($hucre('alt_dosya_sayisi', ['td-mono' => true, 'is-sag' => true]))>
+                            @if ($k->alt_dosyalar_count)
+                                <a href="{{ route('panel.kira.index', ['dosya_no' => $k->dosya_no]) }}" class="kr-dosya-link">{{ $k->alt_dosyalar_count }}</a>
+                            @else — @endif
+                        </td>
                         <td data-kolon="kiraci" @class($hucre('kiraci'))>{{ $ana?->ad_unvan ?: '—' }}</td>
                         <td data-kolon="alt_kiraci" @class($hucre('alt_kiraci'))>{{ $altlar->pluck('ad_unvan')->implode(', ') ?: '—' }}</td>
                         <td data-kolon="tc_vergi" @class($hucre('tc_vergi', ['td-mono' => true]))>{{ $ana?->tc_vergi_no ?: '—' }}</td>
@@ -280,6 +347,7 @@
                         <td data-kolon="sure" @class($hucre('sure', ['td-mono' => true]))>{{ $s?->sureYil() ? $s->sureYil().' yıl' : '—' }}</td>
                         <td data-kolon="yillik_bedel" @class($hucre('yillik_bedel', ['td-mono' => true, 'is-sag' => true]))>{{ $bedel?->yillik_bedel !== null ? $tl($bedel->yillik_bedel) : '—' }}</td>
                         <td data-kolon="aylik_bedel" @class($hucre('aylik_bedel', ['td-mono' => true, 'is-sag' => true]))>{{ $bedel?->aylik() !== null ? $tl($bedel->aylik()) : '—' }}</td>
+                        <td data-kolon="alt_bedel_toplam" @class($hucre('alt_bedel_toplam', ['td-mono' => true, 'is-sag' => true]))>{{ $k->alt_bedel_toplam !== null ? $tl($k->alt_bedel_toplam) : '—' }}</td>
                         <td data-kolon="taksit" @class($hucre('taksit', ['td-mono' => true, 'is-sag' => true]))>{{ $s?->taksit_sayisi ?: '—' }}</td>
                         <td data-kolon="odeme_sekli" @class($hucre('odeme_sekli'))>{{ $s?->odeme_sekli ?: '—' }}</td>
                         <td data-kolon="sozlesme_no" @class($hucre('sozlesme_no', ['td-mono' => true]))>{{ $s?->sozlesme_no ?: '—' }}</td>
@@ -299,9 +367,6 @@
                             @if ($k->uyari)<span class="kr-etiket is-tehlike">{{ $k->uyari }}</span>@else — @endif
                         </td>
                         <td data-kolon="aciklama" @class($hucre('aciklama', ['kr-td-adres' => true]))>{{ $k->aciklama ?: '—' }}</td>
-                        <td class="tl-th-islem">
-                            <a href="{{ route('panel.kira.detay', $k->id) }}" class="btn-cancel hs-mini-btn">Detay</a>
-                        </td>
                     </tr>
                 @endforeach
             </tbody>
@@ -593,6 +658,70 @@
     }
     window.addEventListener('resize', popTazele);
     window.addEventListener('scroll', popTazele, true);
+})();
+
+/* ---------- Satır işlem menüsü ----------
+   Menü body'ye taşınır: tablo yatay/dikey kaydığı ve İşlem sütunu yapışık
+   olduğu için menü hücrenin içinde kalırsa kırpılıyor. */
+(function () {
+    const menuler = [];
+    document.querySelectorAll('.kr-liste .tl-dd').forEach(function (dd) {
+        const menu = dd.querySelector('.tl-dd-menu');
+        if (!menu) return;
+        document.body.appendChild(menu);
+        dd._menu = menu;
+        menuler.push(dd);
+    });
+    if (!menuler.length) return;
+
+    function hepsiniKapat(haric) {
+        menuler.forEach(function (d) {
+            if (d === haric) return;
+            d.classList.remove('is-acik');
+            d._menu.classList.remove('is-acik');
+        });
+    }
+
+    function konumla(dd) {
+        const btn = dd.querySelector('[data-dd-toggle]');
+        const menu = dd._menu;
+        const r = btn.getBoundingClientRect();
+        menu.style.position = 'fixed';
+        menu.style.top = (r.bottom + 4) + 'px';
+        menu.style.left = r.left + 'px';
+        menu.style.right = 'auto';
+        if (r.left + menu.offsetWidth + 12 > window.innerWidth) {
+            menu.style.left = 'auto';
+            menu.style.right = (window.innerWidth - r.right) + 'px';
+        }
+        if (r.bottom + menu.offsetHeight + 12 > window.innerHeight) {
+            menu.style.top = (r.top - menu.offsetHeight - 4) + 'px';
+        }
+    }
+
+    menuler.forEach(function (dd) {
+        dd.querySelector('[data-dd-toggle]').addEventListener('click', function (e) {
+            e.stopPropagation();
+            const acikti = dd.classList.contains('is-acik');
+            hepsiniKapat(acikti ? null : dd);
+            dd.classList.toggle('is-acik', !acikti);
+            dd._menu.classList.toggle('is-acik', !acikti);
+            if (!acikti) requestAnimationFrame(function () { konumla(dd); });
+        });
+    });
+
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('.tl-dd-menu')) return;
+        hepsiniKapat();
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') hepsiniKapat();
+    });
+    ['scroll', 'resize'].forEach(function (olay) {
+        window.addEventListener(olay, function () {
+            menuler.forEach(function (dd) { if (dd.classList.contains('is-acik')) konumla(dd); });
+        }, { passive: true, capture: olay === 'scroll' });
+    });
 })();
 </script>
 @endsection

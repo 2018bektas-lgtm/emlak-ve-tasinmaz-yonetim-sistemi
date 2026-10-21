@@ -23,6 +23,7 @@ class KiraKolonlari
             'dosya_no' => 'Dosya No',
             'eski_dosya_no' => 'Eski Dosya No',
             'ana_dosya' => 'Ana Dosya',
+            'alt_dosya_sayisi' => 'Alt Dosya Sayısı',
             'kiraci' => 'Ana Kiracı',
             'alt_kiraci' => 'Alt Kiracı',
             'tc_vergi' => 'TC / Vergi No',
@@ -41,6 +42,7 @@ class KiraKolonlari
             'sure' => 'Kira Süresi',
             'yillik_bedel' => 'Yıllık Bedel (₺)',
             'aylik_bedel' => 'Aylık Bedel (₺)',
+            'alt_bedel_toplam' => 'Alt Sözleşme Kira Toplamı (₺)',
             'taksit' => 'Taksit Sayısı',
             'odeme_sekli' => 'Ödeme Şekli',
             'sozlesme_no' => 'Sözleşme No',
@@ -76,7 +78,7 @@ class KiraKolonlari
         return [
             'Dosya' => [
                 'ikon' => 'file',
-                'kolonlar' => $grup(['dosya_no', 'eski_dosya_no', 'ana_dosya', 'isyeri', 'is_kolu']),
+                'kolonlar' => $grup(['dosya_no', 'eski_dosya_no', 'ana_dosya', 'alt_dosya_sayisi', 'isyeri', 'is_kolu']),
             ],
             'Kiracı' => [
                 'ikon' => 'users',
@@ -92,7 +94,7 @@ class KiraKolonlari
             ],
             'Bedel' => [
                 'ikon' => 'coin',
-                'kolonlar' => $grup(['yillik_bedel', 'aylik_bedel', 'muhasebe']),
+                'kolonlar' => $grup(['yillik_bedel', 'aylik_bedel', 'alt_bedel_toplam', 'muhasebe']),
             ],
             'Durum' => [
                 'ikon' => 'flag',

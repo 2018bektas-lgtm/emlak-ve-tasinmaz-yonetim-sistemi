@@ -28,8 +28,9 @@
         'esri/geometry/geometryEngine',
         'esri/geometry/support/webMercatorUtils',
         'esri/core/reactiveUtils',
+        'esri/widgets/Sketch/SketchViewModel',
     ], function (EsriMap, Basemap, MapView, WebTileLayer, BaseTileLayer, BaseDynamicLayer, TileInfo, GraphicsLayer,
-                 Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils, reactiveUtils) {
+                 Graphic, Polygon, Point, Extent, geometryEngine, webMercatorUtils, reactiveUtils, SketchViewModel) {
 
         /* =========================================================
          * 1) ALTLIKLAR — Google mt + OSM
@@ -346,6 +347,10 @@
         const EMSAL = API.emsal || null;
         const IMAR_RENK = DEG.imarRenk || KIRA.imarRenk || {};
         const KIRA_DURUM_RENK = { dolu: '#dc2626', bos: '#16a34a' };
+        // Kira sorgusu: listeyle aynı süzgeç harita katmanına da gider.
+        // kiraTumunuYukle bir kerelik "seçilenlerin tümünü yükle" bayrağıdır.
+        let kiraEkSorgu = '';
+        let kiraTumunuYukle = false;
         const IMAR_YOK_RENK = '#94a3b8';
         const DEG_TUR_RENK = { arsa: '#0d9488', bb: '#7c3aed', ikisi: '#f59e0b' };
 
@@ -790,52 +795,6 @@
             return KIRA_DURUM_RENK[p.dolu_bos] || IMAR_YOK_RENK;
         }
 
-        function kiraPopup(p) {
-            const kap = document.createElement('div');
-            kap.className = 'hrm-pop';
-            kap.innerHTML =
-                popUst('Kira Dosyası', 'is-sistem', [p.ilce, p.mahalle].filter(Boolean).join(' · ')) +
-                popHero(p.ada, p.parsel, sayiBicim(p.alan, ' m²')) +
-                popListe([
-                    ['Dosya No', p.dosya_no],
-                    ['Kiracı', p.kiraci],
-                    ['İşyeri', p.isyeri],
-                    ['İş Kolu', p.is_kolu],
-                    ['Doluluk', p.dolu_bos === 'bos' ? 'Boş' : 'Dolu'],
-                    ['İhale', p.ihale],
-                ]) +
-                '<div id="hrm-kira-detay">' + popYukleniyor('Sözleşme getiriliyor…') + '</div>';
-            if (KIRA.dosya) kiraDetayiDoldur(p.id);
-            return kap;
-        }
-
-        // Popup açıldıktan sonra sözleşme ve bedel kutuya yazılır
-        async function kiraDetayiDoldur(dosyaId) {
-            let v = null;
-            try { v = await jsonGetir(KIRA.dosya + '/' + dosyaId); } catch (e) { v = null; }
-            const kutu = document.getElementById('hrm-kira-detay');
-            if (!kutu) return;
-            if (!v) { kutu.innerHTML = popUyari('Dosya bilgisi alınamadı.'); return; }
-
-            const kalan = v.kalan_gun === null || v.kalan_gun === undefined
-                ? null
-                : (v.kalan_gun < 0 ? Math.abs(v.kalan_gun) + ' gün geçti' : v.kalan_gun + ' gün kaldı');
-
-            kutu.innerHTML = '<div class="hrm-pop-bolum">' +
-                popBolumBaslik('Sözleşme', 'is-eimar') +
-                popListe([
-                    ['Kira Dönemi', v.baslangic ? (new Date(v.baslangic).toLocaleDateString('tr-TR') + ' – ' + new Date(v.bitis).toLocaleDateString('tr-TR')) : null],
-                    ['Durum', kalan],
-                    ['Yıllık Bedel', v.yillik_bedel ? sayiBicim(v.yillik_bedel, ' TL') : null],
-                    ['İmar Durumu', v.imar],
-                    ['Telefon', v.telefon],
-                    ['Adres', v.adres],
-                ]) +
-                (v.detay ? '<a class="hrm-pop-eylem" href="' + kacis(v.detay) + '">Dosya Detayı</a>' : '') +
-                (v.liste ? '<a class="hrm-pop-eylem" href="' + kacis(v.liste) + '">Listede Göster</a>' : '') +
-            '</div>';
-        }
-
         function degerlemePopup(p) {
             const kap = document.createElement('div');
             kap.className = 'hrm-pop';
@@ -979,15 +938,13 @@
                 });
             }
             if (MOD === 'kira') {
+                // Kirada popup yok: tıklanınca sağdaki bilgi paneli açılır,
+                // aynı sınırda birden çok kayıt varsa panelde listeden seçilir.
                 const renk = kiraRenk(p);
                 return new Graphic({
                     geometry: geom,
                     symbol: geom.type === 'point' ? semNokta(renk) : semDoldur(renk),
                     attributes: p,
-                    popupTemplate: {
-                        title: p.dosya_no + ' · ' + (p.ada || '—') + '/' + (p.parsel || '—'),
-                        content: function () { return kiraPopup(p); },
-                    },
                 });
             }
             return new Graphic({
@@ -1003,13 +960,15 @@
 
         async function parselleriYukle() {
             let url = API.geojson;
-            if (!SECILI_MOD) {
+            const tumunu = SECILI_MOD || kiraTumunuYukle;
+            if (!tumunu) {
                 const g = webMercatorUtils.webMercatorToGeographic(view.extent);
                 // Kenardaki parseller kesilmesin diye alan biraz genişletilir
                 const px = (g.xmax - g.xmin) * 0.1, py = (g.ymax - g.ymin) * 0.1;
                 const bbox = [g.xmin - px, g.ymin - py, g.xmax + px, g.ymax + py].map(function (v) { return v.toFixed(6); });
                 url += (url.indexOf('?') === -1 ? '?' : '&') + 'bbox=' + bbox.join(',') + '&zoom=' + Math.round(view.zoom);
             }
+            if (kiraEkSorgu) url += (url.indexOf('?') === -1 ? '?' : '&') + kiraEkSorgu;
             url = imarEkle(url);
 
             if (yuklemeKontrol) yuklemeKontrol.abort();
@@ -1024,6 +983,7 @@
                 return;
             }
             if (kontrol !== yuklemeKontrol) return;
+            if (kiraTumunuYukle) tumExtent = null;
 
             const grafikler = [];
             (fc.features || []).forEach(function (f) {
@@ -1034,7 +994,7 @@
                 const g = parselGrafigi(f);
                 if (!g) return;
                 grafikler.push(g);
-                if (SECILI_MOD) {
+                if (tumunu) {
                     const e = geometriExtent(g.geometry);
                     if (e) tumExtent = tumExtent ? tumExtent.union(e) : e;
                 }
@@ -1043,7 +1003,7 @@
             parselKatman.addMany(grafikler);
 
             sayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
-            if (SECILI_MOD && tumExtent && grafikler.length && parselKatman.visible) {
+            if (tumunu && tumExtent && grafikler.length && parselKatman.visible) {
                 view.goTo(tumExtent.expand(1.25)).catch(function () {});
             }
         }
@@ -1405,6 +1365,794 @@
 
             const renkSecim = document.getElementById('hrm-deg-renk');
             if (renkSecim) renkSecim.addEventListener('change', parselleriYukle);
+            kiraSorgusunuKur();
+        }
+
+        // Kira haritasının arama paneli: listeyle aynı süzgeç, sonuç listesi,
+        // seçilenleri haritada gösterme ve Excel / KML / GeoJSON indirme.
+        function kiraSorgusunuKur() {
+            const form = document.getElementById('hrm-kr-sorgu');
+            if (!form || !KIRA.ara) return;
+
+            const mesaj = document.getElementById('hrm-kr-arama-mesaj');
+            const liste = document.getElementById('hrm-kr-liste');
+            const satirlar = document.getElementById('hrm-kr-satirlar');
+            const sayi = document.getElementById('hrm-kr-sayi');
+            const not = document.getElementById('hrm-kr-liste-not');
+            const indirNot = document.getElementById('hrm-kr-indir-not');
+            const hepsi = document.getElementById('hrm-kr-hepsi');
+            const secilenBtn = document.getElementById('hrm-kr-secilen-goster');
+            const detayBtn = document.getElementById('hrm-kr-detay-ac');
+            const detay = document.getElementById('hrm-kr-detay');
+            const ilce = document.getElementById('hrm-kr-ilce');
+            const mahalle = document.getElementById('hrm-kr-mahalle');
+            const rozet = document.getElementById('hrm-kr-filtre-rozet');
+            const excel = document.getElementById('hrm-kr-excel');
+            const kml = document.getElementById('hrm-kr-kml');
+            const geojson = document.getElementById('hrm-kr-geojson');
+
+            function mesajVer(metin, tur) {
+                if (!mesaj) return;
+                mesaj.hidden = !metin;
+                mesaj.textContent = metin || '';
+                mesaj.className = 'hrm-form-mesaj' + (tur ? ' is-' + tur : '');
+            }
+
+            function sorguMetni(ekIdler) {
+                const veri = new FormData(form);
+                const params = new URLSearchParams();
+                veri.forEach(function (deger, anahtar) {
+                    const metin = String(deger).trim();
+                    if (metin !== '') params.append(anahtar, metin);
+                });
+                if (ekIdler && ekIdler.length) params.set('ids', ekIdler.join(','));
+                return params.toString();
+            }
+
+            function seciliIdler() {
+                return Array.prototype.map.call(satirlar.querySelectorAll('.hrm-kr-sec:checked'), function (k) {
+                    return k.value;
+                });
+            }
+
+            function rozetYaz() {
+                if (rozet) rozet.hidden = !kiraEkSorgu;
+            }
+
+            function indirBaglariniYaz() {
+                const secili = seciliIdler();
+                const sorgu = sorguMetni(secili.length ? secili : null);
+                const ek = sorgu ? '?' + sorgu : '';
+                if (excel && KIRA.excel) excel.href = KIRA.excel + ek;
+                if (kml && KIRA.kml) kml.href = KIRA.kml + ek;
+                if (geojson && KIRA.geojsonIndir) geojson.href = KIRA.geojsonIndir + ek;
+                if (secilenBtn) secilenBtn.disabled = secili.length === 0;
+                if (indirNot) {
+                    indirNot.textContent = secili.length
+                        ? 'Seçilen ' + secili.length + ' dosya iner.'
+                        : 'Satır seçilmezse süzgecin tamamı iner. Seçilirse yalnız o dosyalar.';
+                }
+                const kutular = satirlar.querySelectorAll('.hrm-kr-sec');
+                if (hepsi) {
+                    hepsi.checked = kutular.length > 0 && secili.length === kutular.length;
+                    hepsi.indeterminate = secili.length > 0 && secili.length < kutular.length;
+                }
+            }
+
+            async function kapsamaGit() {
+                try {
+                    const k = await jsonGetir(imarEkle(API.geojson + '?kapsam=1' + (kiraEkSorgu ? '&' + kiraEkSorgu : '')));
+                    if (!k || !k.bbox) return false;
+                    const d = 0.0009;
+                    tumExtent = new Extent({
+                        xmin: k.bbox[0] - d, ymin: k.bbox[1] - d,
+                        xmax: k.bbox[2] + d, ymax: k.bbox[3] + d,
+                        spatialReference: WGS84,
+                    });
+                    await view.goTo(tumExtent.expand(1.25)).catch(function () {});
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            async function haritadaGoster(idler) {
+                if (!idler.length) {
+                    mesajVer('Önce listeden kayıt seçin.', 'error');
+                    return;
+                }
+                kiraEkSorgu = sorguMetni(idler);
+                rozetYaz();
+                indirBaglariniYaz();
+                kiraTumunuYukle = true;
+                try {
+                    await parselleriYukle();
+                } finally {
+                    kiraTumunuYukle = false;
+                }
+                if (!tumExtent) mesajVer('Seçilen kayıtların çizili sınırı yok.', 'error');
+                else mesajVer(idler.length + ' kayıt haritada gösteriliyor.', 'ok');
+            }
+
+            function listeyiYaz(veri) {
+                const kayitlar = veri.kayitlar || [];
+                satirlar.innerHTML = '';
+                sayi.textContent = String(veri.toplam || 0);
+                if (!kayitlar.length) {
+                    satirlar.innerHTML = '<div class="hrm-arama-bos">Sorgunuza uyan kira dosyası yok.</div>';
+                } else {
+                    kayitlar.forEach(function (k) {
+                        const konum = [k.kiraci, k.is_kolu, k.ilce, k.mahalle].filter(Boolean).join(' · ');
+                        const ada = (k.ada || k.parsel) ? ((k.ada || '—') + '/' + (k.parsel || '—')) : '';
+                        const satir = document.createElement('div');
+                        satir.className = 'hrm-arama-satir hrm-kr-satir';
+                        satir.innerHTML =
+                            '<input type="checkbox" class="hrm-kr-sec" value="' + kacis(k.id) + '" aria-label="Seç">' +
+                            '<div>' +
+                                '<div class="hrm-arama-satir-baslik">' +
+                                    '<span class="hrm-kr-nokta" style="background:' + (k.dolu_bos === 'bos' ? '#16a34a' : '#dc2626') + '"></span>' +
+                                    '<span class="hrm-arama-tag">' + kacis(k.dosya_no || '—') + '</span>' +
+                                    kacis(k.isyeri || '') +
+                                '</div>' +
+                                '<div class="hrm-arama-satir-alt">' + kacis([konum, ada, k.dolu_etiket].filter(Boolean).join(' · ')) + '</div>' +
+                                '<div class="hrm-arama-satir-eylem">' +
+                                    '<button type="button" class="hrm-arama-goster"' + (k.haritada ? '' : ' disabled') + '>Haritada göster</button>' +
+                                    '<a class="hrm-arama-duzen" href="' + kacis(k.detay) + '">Dosya</a>' +
+                                '</div>' +
+                            '</div>';
+                        const goster = satir.querySelector('.hrm-arama-goster');
+                        if (k.haritada && goster) {
+                            goster.addEventListener('click', function () { haritadaGoster([String(k.id)]); });
+                        }
+                        satirlar.appendChild(satir);
+                    });
+                }
+                if (not) {
+                    not.textContent = veri.toplam > kayitlar.length
+                        ? 'Listede ilk ' + kayitlar.length + ' / ' + veri.toplam + ' kayıt gösteriliyor.'
+                        : '';
+                }
+                liste.hidden = false;
+                indirBaglariniYaz();
+            }
+
+            if (detayBtn && detay) {
+                detayBtn.addEventListener('click', function () {
+                    const acik = detay.hidden;
+                    detay.hidden = !acik;
+                    detayBtn.setAttribute('aria-expanded', acik ? 'true' : 'false');
+                    detayBtn.textContent = acik ? 'Detaylı sorguyu gizle' : 'Detaylı sorgu';
+                });
+            }
+
+            if (ilce && mahalle) {
+                ilce.addEventListener('change', async function () {
+                    mahalle.innerHTML = '<option value="">' + (ilce.value ? 'Tümü' : 'Önce ilçe seçin') + '</option>';
+                    mahalle.disabled = true;
+                    if (!ilce.value) return;
+                    try {
+                        const kayitlar = await jsonGetir(API.mahalleler + '/' + ilce.value);
+                        kayitlar.forEach(function (m) {
+                            const o = document.createElement('option');
+                            o.value = m.id;
+                            o.textContent = m.ad;
+                            mahalle.appendChild(o);
+                        });
+                        mahalle.disabled = false;
+                    } catch (e) { /* sessiz */ }
+                });
+            }
+
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const btn = document.getElementById('hrm-kr-sorgula');
+                if (btn) btn.disabled = true;
+                mesajVer('Sorgulanıyor…', 'info');
+                kiraEkSorgu = sorguMetni(null);
+                rozetYaz();
+                try {
+                    const veri = await jsonGetir(KIRA.ara + (kiraEkSorgu ? '?' + kiraEkSorgu : ''));
+                    listeyiYaz(veri);
+                    await parselleriYukle();
+                    const gitti = await kapsamaGit();
+                    mesajVer((veri.toplam || 0) + ' dosya bulundu.' + (gitti ? '' : ' Çizili sınırı olan kayıt yok.'), veri.toplam ? 'ok' : 'info');
+                } catch (err) {
+                    mesajVer(err.message || 'Sorgu tamamlanamadı.', 'error');
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            });
+
+            document.getElementById('hrm-kr-temizle').addEventListener('click', async function () {
+                form.reset();
+                if (mahalle) {
+                    mahalle.innerHTML = '<option value="">Önce ilçe seçin</option>';
+                    mahalle.disabled = true;
+                }
+                if (detay && detayBtn) {
+                    detay.hidden = true;
+                    detayBtn.setAttribute('aria-expanded', 'false');
+                    detayBtn.textContent = 'Detaylı sorgu';
+                }
+                kiraEkSorgu = '';
+                rozetYaz();
+                liste.hidden = true;
+                satirlar.innerHTML = '';
+                indirBaglariniYaz();
+                mesajVer('', null);
+                await parselleriYukle();
+                await kapsamaGit();
+            });
+
+            if (hepsi) {
+                hepsi.addEventListener('change', function () {
+                    satirlar.querySelectorAll('.hrm-kr-sec').forEach(function (k) { k.checked = hepsi.checked; });
+                    indirBaglariniYaz();
+                });
+            }
+            satirlar.addEventListener('change', function (e) {
+                if (e.target && e.target.classList.contains('hrm-kr-sec')) indirBaglariniYaz();
+            });
+            if (secilenBtn) {
+                secilenBtn.addEventListener('click', function () { haritadaGoster(seciliIdler()); });
+            }
+            indirBaglariniYaz();
+        }
+
+        /* =========================================================
+         * KİRA — seçim ve kayıt araçları
+         *
+         * Referans sistemin KIRA_PANELI araç çubuğundaki işlemler:
+         *   Seçim : Nokta Bilgisi · Alan İçinde Kalanlar · Çizgiyi Kesenler · Pencere
+         *   Kayıt : Yeni Kayıt · Kayıt Güncelle · Kayıt Sil
+         *
+         * Çizim SketchViewModel ile yapılır, geometri WGS84'e çevrilip
+         * sunucuya gönderilir; kesin kesişim testi sunucuda yapılır (geometri
+         * spatial sütunda değil, GeoJSON olarak saklanıyor).
+         * ========================================================= */
+        if (MOD === 'kira' && KIRA.secim) {
+            const cizimKatman = new GraphicsLayer({ title: 'Seçim', listMode: 'hide' });
+            harita.add(cizimKatman);
+
+            const svm = new SketchViewModel({
+                view: view,
+                layer: cizimKatman,
+                updateOnGraphicClick: false,
+                defaultCreateOptions: { mode: 'click' },
+                polygonSymbol: {
+                    type: 'simple-fill',
+                    color: [14, 165, 233, 0.16],
+                    outline: { color: '#0284c7', width: 2, style: 'short-dash' },
+                },
+                polylineSymbol: { type: 'simple-line', color: '#0284c7', width: 2.5, style: 'short-dash' },
+                pointSymbol: {
+                    type: 'simple-marker', style: 'circle', size: 11,
+                    color: '#0ea5e9', outline: { color: '#fff', width: 2 },
+                },
+            });
+
+            const sonucPanel = document.getElementById('hrm-kr-sonuc');
+            const sonucGovde = document.getElementById('hrm-kr-sonuc-govde');
+            const sonucBaslik = document.getElementById('hrm-kr-sonuc-baslik');
+            const kayitMesaj = document.getElementById('hrm-kr-kayit-mesaj');
+            const kesisenKutu = document.getElementById('hrm-kr-kesisen');
+
+            // Etkin araç: aynı anda tek araç açık kalır
+            let etkinArac = null;
+            let tiklamaBekleyen = null; // 'guncelle' | 'sil' | null
+            let guncellenenPoligon = null;
+            let popupKilidi = null;
+
+            function araclariBirak() {
+                svm.cancel();
+                etkinArac = null;
+                tiklamaBekleyen = null;
+                mapEl.classList.remove('hrm-cursor-help');
+                // Parsel popup'ı yeniden açılabilsin. Esri popup'ı tıklamadan
+                // sonra kendi hitTest'ini asenkron yaptığı için hemen açılmaz:
+                // aracı bitiren tıklamanın popup açmaması için kısa süre beklenir.
+                clearTimeout(popupKilidi);
+                popupKilidi = setTimeout(function () { view.popupEnabled = true; }, 400);
+                document.querySelectorAll('[data-kr-secim], [data-kr-kayit]').forEach(function (b) {
+                    b.classList.remove('is-aktif');
+                });
+            }
+
+            function aracSec(dugme, ad) {
+                const ayni = etkinArac === ad;
+                araclariBirak();
+                if (ayni) return false;
+                etkinArac = ad;
+                dugme.classList.add('is-aktif');
+                // Araç etkinken tıklama aracın işi; parsel popup'ı araya girmesin
+                clearTimeout(popupKilidi);
+                view.popupEnabled = false;
+                if (view.popup) view.popup.close();
+
+                return true;
+            }
+
+            function mesajVer(metin, hataMi) {
+                if (!kayitMesaj) return;
+                kayitMesaj.textContent = metin || '';
+                kayitMesaj.hidden = !metin;
+                kayitMesaj.classList.toggle('is-hata', !!hataMi);
+            }
+
+            /** JSON gövdeli istek — seçim ve poligon uçları FormData beklemiyor. */
+            async function jsonGonder(url, yontem, govde) {
+                const yanit = await fetch(url, {
+                    method: yontem,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-CSRF-TOKEN': API.csrf,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: govde ? JSON.stringify(govde) : null,
+                });
+                let veri = null;
+                try { veri = await yanit.json(); } catch (e) { veri = null; }
+                if (!yanit.ok) {
+                    const hatalar = veri && veri.errors ? Object.values(veri.errors).flat().join(' · ') : null;
+                    const hata = new Error(hatalar || (veri && veri.mesaj) || (veri && veri.message) || ('HTTP ' + yanit.status));
+                    hata.durum = yanit.status;
+                    hata.veri = veri;
+                    throw hata;
+                }
+                return veri;
+            }
+
+            /* ---- Geometri dönüşümleri ---- */
+
+            // Esri geometrisi → GeoJSON ([lng, lat] düzeni)
+            function geoJsonaCevir(geom) {
+                const g = geom.spatialReference && geom.spatialReference.isWGS84
+                    ? geom
+                    : webMercatorUtils.webMercatorToGeographic(geom);
+                if (g.type === 'point') return { type: 'Point', coordinates: [g.longitude, g.latitude] };
+                if (g.type === 'polyline') {
+                    const yollar = (g.paths || []).map(function (y) { return y.map(function (n) { return [n[0], n[1]]; }); });
+                    return yollar.length === 1
+                        ? { type: 'LineString', coordinates: yollar[0] }
+                        : { type: 'MultiLineString', coordinates: yollar };
+                }
+                const halkalar = (g.rings || []).map(function (h) { return h.map(function (n) { return [n[0], n[1]]; }); });
+                return { type: 'Polygon', coordinates: halkalar };
+            }
+
+            function halkaCikar(geom) {
+                const gj = geoJsonaCevir(geom);
+                if (gj.type === 'Polygon') return gj.coordinates[0] || [];
+                if (gj.type === 'LineString') return gj.coordinates;
+                if (gj.type === 'MultiLineString') return gj.coordinates[0] || [];
+                return [];
+            }
+
+            function alanHesapla(geom) {
+                try {
+                    const m2 = Math.abs(geometryEngine.geodesicArea(geom, 'square-meters'));
+                    return m2 > 0 ? Math.round(m2 * 100) / 100 : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            /* ---- Seçim sonucu listesi ---- */
+
+            function kalanRozet(k) {
+                if (k === null || k === undefined) return '';
+                const sinif = k < 0 ? 'is-gecmis' : (k <= 90 ? 'is-yakin' : '');
+                const metin = k < 0 ? (Math.abs(k) + ' gün geçti') : (k + ' gün');
+                return '<span class="hrm-kr-kalan ' + sinif + '">' + kacis(metin) + '</span>';
+            }
+
+            function sonucGoster(baslik, veri, ek) {
+                sonucBaslik.textContent = baslik;
+                const satirlar = (veri.kayitlar || []).map(function (k) {
+                    const renk = k.dolu_bos === 'dolu' ? '#dc2626' : '#16a34a';
+                    return '<div class="hrm-kr-satir" data-lat="' + kacis(k.lat) + '" data-lng="' + kacis(k.lng) + '">' +
+                        '<div class="hrm-kr-satir-ust">' +
+                            '<strong>' + kacis(k.dosya_no || '—') + '</strong>' +
+                            '<span class="hrm-kr-nokta" style="background:' + renk + '"></span>' +
+                            '<span class="hrm-kr-durum">' + kacis(k.dolu_bos_ad) + '</span>' +
+                            kalanRozet(k.kalan_gun) +
+                        '</div>' +
+                        '<div class="hrm-kr-satir-orta">' + kacis(k.ad || '—') +
+                            (k.kiraci ? ' · ' + kacis(k.kiraci) : '') + '</div>' +
+                        '<div class="hrm-kr-satir-alt">' +
+                            (k.ada_parsel ? '<span>' + kacis(k.ada_parsel) + '</span>' : '') +
+                            (k.mahalle ? '<span>' + kacis(k.mahalle) + '</span>' : '') +
+                            (k.alan ? '<span>' + sayiBicim(k.alan, ' m²') + '</span>' : '') +
+                        '</div>' +
+                        '<div class="hrm-kr-satir-eylem">' +
+                            '<a href="' + kacis(k.detay) + '">Bilgi Kartı</a>' +
+                            (KIRA.duzenlenir ? '<a href="' + kacis(k.duzenle) + '">Düzenle</a>' : '') +
+                            '<button type="button" data-kr-git>Haritada Göster</button>' +
+                        '</div>' +
+                    '</div>';
+                });
+
+                sonucGovde.innerHTML =
+                    '<div class="hrm-kr-sonuc-ust">' +
+                        '<span><strong>' + (veri.toplam || 0).toLocaleString('tr-TR') + '</strong> kayıt' +
+                        (veri.poligon_sayisi ? ' · ' + veri.poligon_sayisi + ' sınır' : '') + '</span>' +
+                        (veri.kesilen ? '<em>ilk ' + (veri.kayitlar || []).length + ' gösteriliyor</em>' : '') +
+                    '</div>' +
+                    (ek || '') +
+                    (satirlar.length ? satirlar.join('') : '<p class="hrm-panel-ipucu">Bu seçimde kira kaydı yok.</p>');
+
+                sonucPanel.hidden = false;
+            }
+
+            sonucGovde.addEventListener('click', function (e) {
+                const git = e.target.closest('[data-kr-git]');
+                if (git) {
+                    const satir = git.closest('.hrm-kr-satir');
+                    const lat = parseFloat(satir.dataset.lat);
+                    const lng = parseFloat(satir.dataset.lng);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        view.goTo({ center: [lng, lat], zoom: Math.max(view.zoom, 18) }).catch(function () {});
+                    }
+                }
+            });
+
+            /* ---- Seçim araçları ---- */
+
+            const SECIM_CIZIM = { nokta: 'point', alan: 'polygon', cizgi: 'polyline', pencere: 'rectangle' };
+            const SECIM_AD = {
+                nokta: 'Nokta Bilgisi', alan: 'Alan İçinde Kalanlar',
+                cizgi: 'Çizgiyi Kesenler', pencere: 'Pencere Seçimi',
+            };
+
+            async function secimGonder(tur, geom) {
+                const govde = { tur: tur, kesisen: kesisenKutu && kesisenKutu.checked ? 1 : 0 };
+                if (tur === 'nokta') {
+                    const gj = geoJsonaCevir(geom);
+                    govde.nokta = gj.coordinates;
+                } else if (tur === 'pencere') {
+                    const halka = halkaCikar(geom);
+                    const lng = halka.map(function (n) { return n[0]; });
+                    const lat = halka.map(function (n) { return n[1]; });
+                    govde.pencere = [Math.min.apply(null, lng), Math.min.apply(null, lat), Math.max.apply(null, lng), Math.max.apply(null, lat)];
+                } else if (tur === 'alan') {
+                    govde.halka = halkaCikar(geom);
+                } else {
+                    govde.cizgi = halkaCikar(geom);
+                }
+
+                sonucBaslik.textContent = SECIM_AD[tur];
+                sonucGovde.innerHTML = popYukleniyor('Kayıtlar aranıyor…');
+                sonucPanel.hidden = false;
+
+                try {
+                    const veri = await jsonGonder(KIRA.secim, 'POST', govde);
+                    sonucGoster(SECIM_AD[tur], veri, '');
+                } catch (e) {
+                    sonucGovde.innerHTML = popUyari('Seçim yapılamadı: ' + e.message);
+                }
+            }
+
+            document.querySelectorAll('[data-kr-secim]').forEach(function (dugme) {
+                dugme.addEventListener('click', function () {
+                    const tur = dugme.dataset.krSecim;
+                    if (!aracSec(dugme, 'secim:' + tur)) {
+                        cizimKatman.removeAll();
+                        return;
+                    }
+                    cizimKatman.removeAll();
+                    // Hepsi tıklayarak çizilir: pencerede iki köşeye tıklanır
+                    svm.create(SECIM_CIZIM[tur], { mode: 'click' });
+                });
+            });
+
+            const temizleBtn = document.getElementById('hrm-kr-temizle');
+            if (temizleBtn) {
+                temizleBtn.addEventListener('click', function () {
+                    cizimKatman.removeAll();
+                    araclariBirak();
+                    sonucPanel.hidden = true;
+                });
+            }
+
+            /* ---- Kayıt araçları ---- */
+
+            async function yeniSinirKaydet(geom) {
+                const gj = geoJsonaCevir(geom);
+                mesajVer('Sınır kaydediliyor…', false);
+                try {
+                    const s = await jsonGonder(KIRA.poligon, 'POST', {
+                        koordinat: gj,
+                        kaynak: 'cizim',
+                        alan: alanHesapla(geom),
+                    });
+                    mesajVer(s.mesaj, false);
+                    // Form tam sayfadır: sınır kimliği taşınır, poligon hazır seçili açılır
+                    window.location.href = s.form;
+                } catch (e) {
+                    mesajVer('Sınır kaydedilemedi: ' + e.message, true);
+                }
+            }
+
+            async function sinirGuncelle(poligonId, geom) {
+                mesajVer('Sınır güncelleniyor…', false);
+                try {
+                    const s = await jsonGonder(KIRA.poligon + '/' + poligonId, 'PUT', {
+                        koordinat: geoJsonaCevir(geom),
+                        alan: alanHesapla(geom),
+                    });
+                    mesajVer(s.mesaj + (s.kayit_sayisi > 1 ? ' Bu sınırı ' + s.kayit_sayisi + ' kayıt paylaşıyor.' : ''), false);
+                    cizimKatman.removeAll();
+                    guncellenenPoligon = null;
+                    parselleriYukle();
+                } catch (e) {
+                    mesajVer('Sınır güncellenemedi: ' + e.message, true);
+                }
+            }
+
+            async function sinirSil(poligonId) {
+                try {
+                    const s = await jsonGonder(KIRA.poligon + '/' + poligonId, 'DELETE', null);
+                    mesajVer(s.mesaj, false);
+                    sonucPanel.hidden = true;
+                    parselleriYukle();
+                } catch (e) {
+                    // 409: sınır kullanımda — bağlı kayıtlar listelenir
+                    if (e.durum === 409 && e.veri) {
+                        sonucGoster('Sınır Kullanımda', e.veri,
+                            '<p class="hrm-panel-ipucu is-uyari">' + kacis(e.veri.mesaj) + '</p>' +
+                            (KIRA.duzenlenir
+                                ? '<div class="hrm-kr-sonuc-eylem"><button type="button" data-kr-ayir="' + poligonId + '">Tüm kayıtların sınır bağını kaldır</button></div>'
+                                : ''));
+                        mesajVer('', false);
+                        return;
+                    }
+                    mesajVer('Sınır silinemedi: ' + e.message, true);
+                }
+            }
+
+            // "Sınır bağını kaldır" — poligonu paylaşan kayıtlardan tek tek çözülür
+            sonucGovde.addEventListener('click', async function (e) {
+                const ayir = e.target.closest('[data-kr-ayir]');
+                if (!ayir) return;
+                const poligonId = ayir.dataset.krAyir;
+                ayir.disabled = true;
+                ayir.textContent = 'Kaldırılıyor…';
+                const satirlar = sonucGovde.querySelectorAll('.hrm-kr-satir');
+                try {
+                    for (const satir of satirlar) {
+                        const baglanti = satir.querySelector('a[href*="/alanlar/"]');
+                        const eslesme = baglanti && baglanti.getAttribute('href').match(/alanlar\/(\d+)/);
+                        if (eslesme) {
+                            await jsonGonder(KIRA.sinirAyir + '/' + eslesme[1] + '/sinir', 'DELETE', null);
+                        }
+                    }
+                    await sinirSil(poligonId);
+                } catch (hata) {
+                    mesajVer('Sınır bağı kaldırılamadı: ' + hata.message, true);
+                    ayir.disabled = false;
+                    ayir.textContent = 'Tüm kayıtların sınır bağını kaldır';
+                }
+            });
+
+            document.querySelectorAll('[data-kr-kayit]').forEach(function (dugme) {
+                dugme.addEventListener('click', function () {
+                    const islem = dugme.dataset.krKayit;
+                    if (!aracSec(dugme, 'kayit:' + islem)) {
+                        cizimKatman.removeAll();
+                        mesajVer('', false);
+                        return;
+                    }
+                    cizimKatman.removeAll();
+
+                    if (islem === 'yeni') {
+                        mesajVer('Haritada sınırı çizin; çift tıklayarak bitirin.', false);
+                        svm.create('polygon');
+                        return;
+                    }
+                    tiklamaBekleyen = islem;
+                    mapEl.classList.add('hrm-cursor-help');
+                    mesajVer(islem === 'guncelle'
+                        ? 'Güncellemek istediğiniz sınıra tıklayın.'
+                        : 'Silmek istediğiniz sınıra tıklayın.', false);
+                });
+            });
+
+            /* ---- Çizim bitti ---- */
+            svm.on('create', function (olay) {
+                if (olay.state !== 'complete') return;
+                const geom = olay.graphic.geometry;
+
+                if (etkinArac === 'kayit:yeni') {
+                    araclariBirak();
+                    yeniSinirKaydet(geom);
+                    return;
+                }
+                if (etkinArac && etkinArac.indexOf('secim:') === 0) {
+                    const tur = etkinArac.slice(6);
+                    araclariBirak();
+                    secimGonder(tur, geom);
+                }
+            });
+
+            svm.on('update', function (olay) {
+                if (olay.state !== 'complete' || !guncellenenPoligon) return;
+                const grafik = olay.graphics[0];
+                if (grafik) sinirGuncelle(guncellenenPoligon, grafik.geometry);
+            });
+
+            /* =====================================================
+             * BİLGİ PANELİ — sınıra tıklanınca popup yerine yan panel
+             *
+             * Aynı sınırda birden çok kira kaydı olabiliyor; panelde dosya
+             * numarasına göre açılır liste çıkar, seçilen kaydın bilgileri
+             * altta gösterilir.
+             * ===================================================== */
+            const bilgiPanel = document.getElementById('hrm-kr-bilgi');
+            const bilgiGovde = document.getElementById('hrm-kr-bilgi-govde');
+            const bilgiBaslik = document.getElementById('hrm-kr-bilgi-baslik');
+            let bilgiVeri = null;
+            let bilgiKontrol = null;
+
+            function tarih(d) {
+                return d ? new Date(d).toLocaleDateString('tr-TR') : null;
+            }
+
+            function bilgiSatirlari(ciftler) {
+                return ciftler.filter(function (c) { return c[1] !== null && c[1] !== undefined && c[1] !== ''; })
+                    .map(function (c) {
+                        return '<div class="hrm-kr-bilgi-satir"><dt>' + kacis(c[0]) + '</dt><dd>' + kacis(c[1]) + '</dd></div>';
+                    }).join('');
+            }
+
+            function kaydiBas(sira) {
+                const k = bilgiVeri.kayitlar[sira];
+                const kutu = bilgiGovde.querySelector('[data-kr-bilgi-kayit]');
+                if (!k || !kutu) return;
+
+                const kalan = k.kalan_gun === null || k.kalan_gun === undefined
+                    ? null
+                    : (k.kalan_gun < 0 ? Math.abs(k.kalan_gun) + ' gün geçti' : k.kalan_gun + ' gün kaldı');
+
+                kutu.innerHTML =
+                    '<div class="hrm-kr-bilgi-ust">' +
+                        '<strong>' + kacis(k.ad || 'Adsız alan') + '</strong>' +
+                        '<span class="hrm-kr-rozet" style="--kr-renk:' + (k.dolu_bos === 'dolu' ? '#dc2626' : '#16a34a') + '">' +
+                            kacis(k.dolu_bos_ad) + '</span>' +
+                        (k.sozlesme_aktif ? '' : '<span class="hrm-kr-rozet is-soluk">Yürürlükte değil</span>') +
+                    '</div>' +
+                    (k.uyari ? '<p class="hrm-panel-ipucu is-uyari">' + kacis(k.uyari) + '</p>' : '') +
+                    '<dl class="hrm-kr-bilgi-liste">' +
+                        bilgiSatirlari([
+                            ['Dosya No', k.dosya_no],
+                            ['Eski Dosya No', k.eski_dosya_no],
+                            ['Kiracı', k.kiraci],
+                            ['Alt Kiracı', k.alt_kiraci],
+                            ['Telefon', k.telefon],
+                            ['İş Kolu', k.is_kolu],
+                            ['Faaliyet', k.faaliyet],
+                            ['İhale', k.ihale],
+                            ['Kira Dönemi', k.baslangic ? tarih(k.baslangic) + ' – ' + (tarih(k.bitis) || '—') : null],
+                            ['Kalan Süre', kalan],
+                            ['Yıllık Bedel', k.yillik_bedel ? sayiBicim(k.yillik_bedel, ' TL') : null],
+                            ['Taksit', k.taksit],
+                            ['Kiraya Verilen Alan', k.alan ? sayiBicim(k.alan, ' m²') : null],
+                            ['İlçe / Mahalle', [k.ilce, k.mahalle].filter(Boolean).join(' · ') || null],
+                            ['Ada / Parsel', k.ada_parsel],
+                            ['İmar Durumu', k.imar],
+                            ['Kiracılık Durumu', k.kiracilik_durum],
+                            ['Hukuki Durum', k.hukuki_durum],
+                            ['Adres', k.adres],
+                        ]) +
+                    '</dl>' +
+                    '<div class="hrm-kr-bilgi-eylem">' +
+                        '<a href="' + kacis(k.detay) + '">Alan Bilgi Kartı</a>' +
+                        (k.dosya_detay ? '<a href="' + kacis(k.dosya_detay) + '">Dosya Detayı</a>' : '') +
+                        (KIRA.duzenlenir ? '<a href="' + kacis(k.duzenle) + '">Düzenle</a>' : '') +
+                    '</div>';
+            }
+
+            function bilgiBas(veri) {
+                bilgiVeri = veri;
+                const p = veri.poligon || {};
+                const n = veri.kayitlar.length;
+                bilgiBaslik.textContent = (p.ada_parsel || p.ad || 'Sınır #' + p.id);
+
+                bilgiGovde.innerHTML =
+                    '<div class="hrm-kr-bilgi-sinir">' +
+                        '<span>Sınır #' + kacis(p.id) + (p.kaynak === 'tkgm' ? ' · TKGM parseli' : (p.kaynak === 'cizim' ? ' · haritada çizildi' : '')) + '</span>' +
+                        (p.alan ? '<strong>' + sayiBicim(p.alan, ' m²') + '</strong>' : '') +
+                    '</div>' +
+                    (n === 0
+                        ? '<p class="hrm-panel-ipucu">Bu sınıra bağlı kira kaydı yok.</p>'
+                        : (n > 1
+                            ? '<label class="hrm-kr-bilgi-secim">' +
+                                  '<span>Bu sınırda <strong>' + n + '</strong> kayıt var</span>' +
+                                  '<select data-kr-bilgi-secim>' +
+                                      veri.kayitlar.map(function (k, i) {
+                                          return '<option value="' + i + '">' + kacis(k.dosya_no || '—') +
+                                              ' · ' + kacis(k.ad || 'adsız') + ' · ' + kacis(k.dolu_bos_ad) + '</option>';
+                                      }).join('') +
+                                  '</select>' +
+                              '</label>'
+                            : '')) +
+                    '<div data-kr-bilgi-kayit></div>' +
+                    (KIRA.ekleyebilir && veri.ekle
+                        ? '<a class="hrm-kr-bilgi-ekle" href="' + kacis(veri.ekle) + '">+ Bu Sınıra Kayıt Ekle</a>'
+                        : '');
+
+                if (n) kaydiBas(0);
+
+                const secim = bilgiGovde.querySelector('[data-kr-bilgi-secim]');
+                if (secim) {
+                    secim.addEventListener('change', function () { kaydiBas(parseInt(this.value, 10)); });
+                }
+                bilgiPanel.hidden = false;
+            }
+
+            async function bilgiAc(poligonId) {
+                bilgiBaslik.textContent = 'Kira Bilgi Paneli';
+                bilgiGovde.innerHTML = popYukleniyor('Kayıtlar getiriliyor…');
+                bilgiPanel.hidden = false;
+
+                if (bilgiKontrol) bilgiKontrol.abort();
+                const kontrol = bilgiKontrol = new AbortController();
+                try {
+                    const yanit = await fetch(KIRA.poligonBilgi + '/' + poligonId + '/kayitlar',
+                        { headers: { Accept: 'application/json' }, signal: kontrol.signal });
+                    if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                    const veri = await yanit.json();
+                    if (kontrol !== bilgiKontrol) return;
+                    bilgiBas(veri);
+                } catch (e) {
+                    if (e.name === 'AbortError') return;
+                    bilgiGovde.innerHTML = popUyari('Kayıtlar alınamadı: ' + e.message);
+                }
+            }
+
+            /* ---- Sınıra tıklayarak güncelle / sil / bilgi ---- */
+            view.on('click', async function (evt) {
+                if (!tiklamaBekleyen) {
+                    // Araç yoksa ve bilgi sorgu kipi kapalıysa: bilgi paneli
+                    // Bilgi Sorgu açıksa tıklama TKGM/e-İmar sorgusunun işi
+                    const sorguBtn = document.getElementById('hrm-bilgi-btn');
+                    if (etkinArac || (sorguBtn && sorguBtn.classList.contains('is-aktif')) || !KIRA.poligonBilgi) return;
+                    const sonuc = await view.hitTest(evt, { include: [parselKatman] });
+                    const vurus = sonuc.results.find(function (r) {
+                        return r.graphic && r.graphic.attributes && r.graphic.attributes.poligon_id;
+                    });
+                    if (vurus) bilgiAc(vurus.graphic.attributes.poligon_id);
+
+                    return;
+                }
+                const islem = tiklamaBekleyen;
+                const sonuc = await view.hitTest(evt, { include: [parselKatman] });
+                const isabet = sonuc.results.find(function (r) {
+                    return r.graphic && r.graphic.attributes && r.graphic.attributes.poligon_id;
+                });
+                if (!isabet) {
+                    mesajVer('Bu noktada kira sınırı yok; sınırın üstüne tıklayın.', true);
+                    return;
+                }
+                const poligonId = isabet.graphic.attributes.poligon_id;
+                araclariBirak();
+
+                if (islem === 'sil') {
+                    sinirSil(poligonId);
+                    return;
+                }
+
+                // Güncelleme: sınırın bir kopyası çizim katmanına alınır, köşeleri taşınır
+                guncellenenPoligon = poligonId;
+                cizimKatman.removeAll();
+                const kopya = new Graphic({
+                    geometry: isabet.graphic.geometry,
+                    symbol: svm.polygonSymbol,
+                });
+                cizimKatman.add(kopya);
+                mesajVer('Köşeleri sürükleyip bitirince kaydedilir.', false);
+                svm.update([kopya], { tool: 'reshape' });
+            });
         }
 
         /* ---- Değerleme kipi anahtarları ---- */
@@ -1438,7 +2186,7 @@
 
         async function kapsamYukle() {
             try {
-                const k = await jsonGetir(imarEkle(API.geojson + '?kapsam=1'));
+                const k = await jsonGetir(imarEkle(API.geojson + '?kapsam=1' + (kiraEkSorgu ? '&' + kiraEkSorgu : '')));
                 if (k && k.birim_aralik) birimAralik = k.birim_aralik;
                 if (k && k.bbox) {
                     const d = 0.0009; // tek nokta / küçük parsel: ~100 m pay
@@ -1488,6 +2236,9 @@
             ['hrm-katman-btn', 'hrm-panel'],
             ['hrm-adaparsel-btn', 'hrm-adaparsel-panel'],
             ['hrm-arama-btn', 'hrm-arama-panel'],
+            // Kira haritasındakiler; başka kiplerde bu kimlikler yok, panelKur geçer
+            ['hrm-kr-secim-btn', 'hrm-kr-secim-panel'],
+            ['hrm-kr-kayit-btn', 'hrm-kr-kayit-panel'],
         ];
         function panelKur(btnId, panelId) {
             const btn = document.getElementById(btnId);
@@ -1519,7 +2270,8 @@
 
         document.querySelectorAll('[data-kapat]').forEach(function (b) {
             const hedef = b.dataset.kapat;
-            const btnId = hedef === 'hrm-adaparsel-panel' ? 'hrm-adaparsel-btn' : 'hrm-arama-btn';
+            // data-kapat-btn verilmişse o düğme pasifleşir; verilmezse eski eşleme
+            const btnId = b.dataset.kapatBtn || (hedef === 'hrm-adaparsel-panel' ? 'hrm-adaparsel-btn' : 'hrm-arama-btn');
             b.addEventListener('click', function () { panelKapat(hedef, btnId); });
         });
 
@@ -1916,6 +2668,8 @@
         const arSayi = document.getElementById('hrm-arama-sayi');
         const arSatirlar = document.getElementById('hrm-arama-satirlar');
 
+        // Kira haritası kendi sorgu panelini kullanır; bu blok taşınmaz aramasıdır.
+        if (arIl && arIlce && arMahalle && arBtn) {
         kademeliKur(arIl, arIlce, arMahalle, '— Tümü —', null);
 
         function arMesajVer(metin, tur) {
@@ -1998,11 +2752,12 @@
                 arBtn.disabled = false;
             }
         });
+        }
 
         /* =========================================================
          * 13) KLAVYE KISAYOLLARI
          * ========================================================= */
-        arQ.addEventListener('keydown', function (e) { if (e.key === 'Enter') arBtn.click(); });
+        if (arQ && arBtn) arQ.addEventListener('keydown', function (e) { if (e.key === 'Enter') arBtn.click(); });
         apParsel.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !apBtn.disabled) apBtn.click();
         });

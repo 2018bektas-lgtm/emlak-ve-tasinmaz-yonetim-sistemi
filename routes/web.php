@@ -5,7 +5,11 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DegerlemeController;
 use App\Http\Controllers\EmsalController;
+use App\Http\Controllers\KiraAlanController;
+use App\Http\Controllers\KiraBelgeController;
 use App\Http\Controllers\KiraController;
+use App\Http\Controllers\KiraDonemController;
+use App\Http\Controllers\KiraHaritaController;
 use App\Http\Controllers\EcrimisilController;
 use App\Http\Controllers\EimarController;
 use App\Http\Controllers\HisseSatisController;
@@ -432,13 +436,65 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
 
         Route::get('harita', [KiraController::class, 'harita'])->name('harita');
         Route::get('harita/geojson', [KiraController::class, 'haritaGeojson'])->name('harita.geojson');
+        Route::get('harita/ara', [KiraController::class, 'haritaAra'])->name('harita.ara');
+        Route::get('harita/kml', [KiraController::class, 'haritaKmlIndir'])->name('harita.kml');
+        Route::get('harita/geojson-indir', [KiraController::class, 'haritaGeojsonIndir'])->name('harita.geojson-indir');
         Route::get('harita/dosya/{dosyaId}', [KiraController::class, 'haritaDosya'])
             ->whereNumber('dosyaId')->name('harita.dosya');
+
+        // Harita seçim araçları: nokta bilgisi, alan içinde kalanlar, çizgiyi
+        // kesenler, pencere
+        Route::post('harita/secim', [KiraHaritaController::class, 'secim'])->name('harita.secim');
+
+        // Sınıra tıklanınca yan panele basılan kayıtlar (aynı sınırda birden çok olabilir)
+        Route::get('harita/poligon/{id}/kayitlar', [KiraHaritaController::class, 'poligonKayitlari'])
+            ->whereNumber('id')->name('harita.poligon.kayitlar');
+
+        // Haritadan kayıt: yeni sınır, sınır güncelle, sınır sil
+        Route::post('harita/poligon', [KiraHaritaController::class, 'poligonKaydet'])
+            ->middleware('izin:kira.olustur')->name('harita.poligon.kaydet');
+        Route::put('harita/poligon/{id}', [KiraHaritaController::class, 'poligonGuncelle'])
+            ->middleware('izin:kira.duzenle')->whereNumber('id')->name('harita.poligon.guncelle');
+        Route::delete('harita/poligon/{id}', [KiraHaritaController::class, 'poligonSil'])
+            ->middleware('izin:kira.sil')->whereNumber('id')->name('harita.poligon.sil');
+        Route::delete('harita/alan/{alanId}/sinir', [KiraHaritaController::class, 'alanSinirAyir'])
+            ->middleware('izin:kira.duzenle')->whereNumber('alanId')->name('harita.alan.sinir-ayir');
 
         Route::get('yeni', [KiraController::class, 'olustur'])
             ->middleware('izin:kira.olustur')->name('olustur');
         Route::post('yeni', [KiraController::class, 'kaydet'])
             ->middleware('izin:kira.olustur')->name('kaydet');
+
+        // Kira alanları — bir dosyada kiraya verilen tek tek yerler
+        Route::prefix('alanlar')->name('alanlar.')->group(function () {
+            Route::get('/', [KiraAlanController::class, 'index'])->name('index');
+            Route::get('excel', [KiraAlanController::class, 'excelIndir'])->name('excel');
+            Route::get('yeni', [KiraAlanController::class, 'olustur'])
+                ->middleware('izin:kira.olustur')->name('olustur');
+            Route::post('yeni', [KiraAlanController::class, 'kaydet'])
+                ->middleware('izin:kira.olustur')->name('kaydet');
+            Route::get('{id}', [KiraAlanController::class, 'detay'])->whereNumber('id')->name('detay');
+            Route::get('{id}/duzenle', [KiraAlanController::class, 'duzenle'])
+                ->middleware('izin:kira.duzenle')->whereNumber('id')->name('duzenle');
+            Route::put('{id}', [KiraAlanController::class, 'guncelle'])
+                ->middleware('izin:kira.duzenle')->whereNumber('id')->name('guncelle');
+            Route::delete('{id}', [KiraAlanController::class, 'sil'])
+                ->middleware('izin:kira.sil')->whereNumber('id')->name('sil');
+        });
+
+        // Belgeler — hem dosya hem alan düzeyinde
+        Route::post('belge', [KiraBelgeController::class, 'yukle'])
+            ->middleware('izin:kira.duzenle')->name('belge.yukle');
+        Route::delete('belge/{id}', [KiraBelgeController::class, 'sil'])
+            ->middleware('izin:kira.sil')->whereNumber('id')->name('belge.sil');
+
+        // Kiracılık dönemleri: aynı dosya numarasında birbiri ardına gelen kiracılar
+        Route::get('{dosya}/donem/yeni', [KiraDonemController::class, 'olustur'])
+            ->middleware('izin:kira.olustur')->whereNumber('dosya')->name('donem.olustur');
+        Route::post('{dosya}/donem', [KiraDonemController::class, 'kaydet'])
+            ->middleware('izin:kira.olustur')->whereNumber('dosya')->name('donem.kaydet');
+        Route::get('{dosya}/donem/{donem}', [KiraDonemController::class, 'detay'])
+            ->whereNumber('dosya')->whereNumber('donem')->name('donem.detay');
 
         Route::get('{id}', [KiraController::class, 'detay'])->whereNumber('id')->name('detay');
         Route::get('{id}/duzenle', [KiraController::class, 'duzenle'])

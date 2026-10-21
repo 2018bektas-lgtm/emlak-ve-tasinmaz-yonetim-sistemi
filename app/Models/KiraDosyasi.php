@@ -89,9 +89,16 @@ class KiraDosyasi extends Model
         return $this->hasMany(KiraKiraci::class, 'kira_dosya_id');
     }
 
+    /**
+     * Dosyanın güncel ana kiracısı.
+     *
+     * Bir dosyada yıllar içinde birbiri ardına kiracılar olur; her biri kendi
+     * sözleşme dönemine bağlıdır. En son eklenen satır güncel kiracıdır.
+     */
     public function anaKiraci(): HasOne
     {
-        return $this->hasOne(KiraKiraci::class, 'kira_dosya_id')->where('tip', 'ana');
+        return $this->hasOne(KiraKiraci::class, 'kira_dosya_id')
+            ->where('tip', 'ana')->latestOfMany('id');
     }
 
     public function tasinmaz(): HasOne

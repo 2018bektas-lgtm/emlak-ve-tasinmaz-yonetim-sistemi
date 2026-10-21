@@ -7,12 +7,41 @@
 @push('head')
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=3">
+    <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=10">
+@endpush
+
+@push('scripts')
+    <script src="https://js.arcgis.com/4.30/"></script>
+    <script src="{{ asset('js/kira-harita-kutu.js') }}?v=2"></script>
 @endpush
 
 @php
     // Bedel satırları: doğrulama hatasında kullanıcının girdiği satırlar korunur
     $bedeller = old('bedeller', $v['bedeller'] ?? [['yillik_bedel' => '', 'donem_baslangic' => '', 'donem_bitis' => '', 'tufe_orani' => '']]);
+
+    // Haritaya basılacak sınır: önce formdan dönen değer (doğrulama hatası),
+    // sonra dosyanın birincil alanının poligonu.
+    $hamKoordinat = old('koordinat', $v['koordinat'] ?? '');
+    $formGeometri = $hamKoordinat ? json_decode($hamKoordinat, true) : ($birincilPoligon?->geoJson());
+
+    // Aynı sınırı paylaşan ya da aynı parselde duran diğer poligonlar soluk çizilir
+    $komsuGeometriler = $komsuPoligonlar->map(fn ($p) => [
+        'geometri' => $p->geoJson(),
+        'renk' => '#f59e0b',
+        'ad' => $p->ad,
+    ])->filter(fn ($e) => $e['geometri'] !== null)->values();
+
+    $kmhAyar = [
+        'duzenlenir' => true,
+        'hedef' => '#kiraKoordinat',
+        'geometri' => $formGeometri,
+        'ekler' => $komsuGeometriler,
+        'tkgm' => url('/panel/ajax/tkgm-parsel-adaparsel'),
+        'tkgmNokta' => url('/panel/ajax/tkgm-parsel'),
+        'alanlar' => ['mahalle' => '#mahalle_id', 'ada' => '#ada', 'parsel' => '#parsel', 'yuzolcum' => '#yuzolcum'],
+        'buyukHarita' => route('panel.kira.harita'),
+    ];
 @endphp
 
 @section('content')
@@ -23,7 +52,13 @@
         <small>{{ $dosya ? 'Dosya, kiracı, taşınmaz ve yürürlükteki sözleşme birlikte güncellenir.' : 'Dosya, kiracı, taşınmaz ve sözleşme tek adımda açılır; bedeller yıl yıl kaydedilir.' }}</small>
     </div>
     <div class="page-hero-actions">
-        @if ($dosya)<a href="{{ route('panel.kira.detay', $dosya->id) }}" class="btn-cancel">Detaya dön</a>@endif
+        @if ($dosya)
+            {{-- Kiracı değiştiyse bu formda değil, yeni dönem açarak kaydedilir --}}
+            @can('kira.olustur')
+                <a href="{{ route('panel.kira.donem.olustur', $dosya->id) }}" class="btn-cancel">Kiracı Değişti</a>
+            @endcan
+            <a href="{{ route('panel.kira.detay', $dosya->id) }}" class="btn-cancel">Detaya dön</a>
+        @endif
         <a href="{{ route('panel.kira.index') }}" class="btn-cancel">Listeye dön</a>
     </div>
 </section>
@@ -51,7 +86,7 @@
     @csrf
     @if ($dosya)@method('PUT')@endif
     {{-- Haritadan gelen parsel geometrisi; kaydederken kira_koordinatlari'na yazılır --}}
-    <input type="hidden" name="koordinat" value="{{ old('koordinat', $v['koordinat'] ?? '') }}">
+    <input type="hidden" id="kiraKoordinat" name="koordinat" value="{{ old('koordinat', $v['koordinat'] ?? '') }}">
 
     {{-- 1 · Dosya --}}
     <section class="form-section">
@@ -221,7 +256,8 @@
                 <select id="mahalle_id" name="mahalle_id" class="form-select">
                     <option value="">Önce ilçe seçin</option>
                     @foreach ($mahalleler as $m)
-                        <option value="{{ $m->id }}" @selected((string) old('mahalle_id', $v['mahalle_id'] ?? null) === (string) $m->id)>{{ $m->ad }}</option>
+                        {{-- data-tkgm: haritadaki "Ada/Parselden Getir" TKGM mahalle kimliğini buradan okur --}}
+                        <option value="{{ $m->id }}" data-tkgm="{{ $m->tkgm_id }}" @selected((string) old('mahalle_id', $v['mahalle_id'] ?? null) === (string) $m->id)>{{ $m->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -260,6 +296,19 @@
             <div class="form-field">
                 <label for="adres">Kiralanan Yerin Adresi</label>
                 <textarea id="adres" name="adres" class="form-textarea" rows="2" maxlength="1000">{{ old('adres', $v['adres'] ?? null) }}</textarea>
+            </div>
+        </div>
+
+        {{-- Sınır: çizilir, ada/parselden getirilir ya da haritadan seçilir.
+             Çıktı yukarıdaki gizli "koordinat" alanına GeoJSON olarak yazılır. --}}
+        <div class="form-row">
+            <div class="form-field">
+                <label>Kiralanan Yerin Sınırı</label>
+                <div class="kmh" data-kmh="{{ json_encode($kmhAyar) }}"></div>
+                <span class="hint">
+                    Aynı parselde çizilmiş bir sınır varsa soluk gösterilir — mevcut sınırı paylaşmak için
+                    kira alanı formundaki poligon seçicisini kullanın.
+                </span>
             </div>
         </div>
     </section>
@@ -666,6 +715,8 @@
                 const o = document.createElement('option');
                 o.value = s.id;
                 o.textContent = s.ad;
+                // Mahalle listesinde TKGM kimliği de gelir; harita kutusu kullanır
+                if (s.tkgm_id) o.dataset.tkgm = s.tkgm_id;
                 secim.appendChild(o);
             });
         } catch (e) {
