@@ -441,6 +441,10 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
             ->middleware('izin:kira.olustur')->name('kaydet');
 
         Route::get('{id}', [KiraController::class, 'detay'])->whereNumber('id')->name('detay');
+        Route::get('{id}/duzenle', [KiraController::class, 'duzenle'])
+            ->middleware('izin:kira.duzenle')->whereNumber('id')->name('duzenle');
+        Route::put('{id}', [KiraController::class, 'guncelle'])
+            ->middleware('izin:kira.duzenle')->whereNumber('id')->name('guncelle');
     });
 
     Route::prefix('sayistay-rapor')->name('sayistay-rapor.')->middleware('izin:rapor.goruntule')->group(function () {

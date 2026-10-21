@@ -1,6 +1,6 @@
 @extends('layouts.panel')
 
-@section('title', 'Yeni Kira Dosyası')
+@section('title', $dosya ? 'Kira Dosyası Düzenle' : 'Yeni Kira Dosyası')
 
 @section('shellClass', 'is-cam')
 
@@ -12,17 +12,18 @@
 
 @php
     // Bedel satırları: doğrulama hatasında kullanıcının girdiği satırlar korunur
-    $bedeller = old('bedeller', [['yillik_bedel' => '', 'donem_baslangic' => '', 'donem_bitis' => '', 'tufe_orani' => '']]);
+    $bedeller = old('bedeller', $v['bedeller'] ?? [['yillik_bedel' => '', 'donem_baslangic' => '', 'donem_bitis' => '', 'tufe_orani' => '']]);
 @endphp
 
 @section('content')
 <section class="page-hero">
     <div class="page-hero-text">
         <p class="hs-eyebrow">Kira İşlemleri</p>
-        <h2>Yeni Kira Dosyası</h2>
-        <small>Dosya, kiracı, taşınmaz ve sözleşme tek adımda açılır; bedeller yıl yıl kaydedilir.</small>
+        <h2>{{ $dosya ? 'Kira Dosyası Düzenle' : 'Yeni Kira Dosyası' }}@if ($dosya) <span class="kr-hero-alt">{{ $dosya->dosya_no }}</span>@endif</h2>
+        <small>{{ $dosya ? 'Dosya, kiracı, taşınmaz ve yürürlükteki sözleşme birlikte güncellenir.' : 'Dosya, kiracı, taşınmaz ve sözleşme tek adımda açılır; bedeller yıl yıl kaydedilir.' }}</small>
     </div>
     <div class="page-hero-actions">
+        @if ($dosya)<a href="{{ route('panel.kira.detay', $dosya->id) }}" class="btn-cancel">Detaya dön</a>@endif
         <a href="{{ route('panel.kira.index') }}" class="btn-cancel">Listeye dön</a>
     </div>
 </section>
@@ -46,10 +47,11 @@
     </div>
 @endif
 
-<form method="POST" action="{{ route('panel.kira.kaydet') }}" class="form-shell" id="kiraForm">
+<form method="POST" action="{{ $dosya ? route('panel.kira.guncelle', $dosya->id) : route('panel.kira.kaydet') }}" class="form-shell" id="kiraForm">
     @csrf
+    @if ($dosya)@method('PUT')@endif
     {{-- Haritadan gelen parsel geometrisi; kaydederken kira_koordinatlari'na yazılır --}}
-    <input type="hidden" name="koordinat" value="{{ old('koordinat', $onDolgu['koordinat'] ?? '') }}">
+    <input type="hidden" name="koordinat" value="{{ old('koordinat', $v['koordinat'] ?? '') }}">
 
     {{-- 1 · Dosya --}}
     <section class="form-section">
@@ -63,19 +65,19 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="dosya_no">Dosya No <span class="required">*</span></label>
-                <input id="dosya_no" name="dosya_no" class="form-input td-mono" value="{{ old('dosya_no') }}" maxlength="50" required>
+                <input id="dosya_no" name="dosya_no" class="form-input td-mono" value="{{ old('dosya_no', $v['dosya_no'] ?? null) }}" maxlength="50" required>
                 @error('dosya_no')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="eski_dosya_no">Eski Dosya No</label>
-                <input id="eski_dosya_no" name="eski_dosya_no" class="form-input td-mono" value="{{ old('eski_dosya_no') }}" maxlength="50">
+                <input id="eski_dosya_no" name="eski_dosya_no" class="form-input td-mono" value="{{ old('eski_dosya_no', $v['eski_dosya_no'] ?? null) }}" maxlength="50">
             </div>
             <div class="form-field">
                 <label for="ana_dosya_id">Ana Dosya</label>
                 <select id="ana_dosya_id" name="ana_dosya_id" class="form-select">
                     <option value="">Yok (bağımsız dosya)</option>
                     @foreach ($anaDosyalar as $a)
-                        <option value="{{ $a->id }}" @selected((string) old('ana_dosya_id') === (string) $a->id)>{{ $a->dosya_no }}@if ($a->isyeri_adi) — {{ $a->isyeri_adi }}@endif</option>
+                        <option value="{{ $a->id }}" @selected((string) old('ana_dosya_id', $v['ana_dosya_id'] ?? null) === (string) $a->id)>{{ $a->dosya_no }}@if ($a->isyeri_adi) — {{ $a->isyeri_adi }}@endif</option>
                     @endforeach
                 </select>
             </div>
@@ -83,20 +85,20 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="isyeri_adi">İşyeri Adı</label>
-                <input id="isyeri_adi" name="isyeri_adi" class="form-input" value="{{ old('isyeri_adi') }}" maxlength="200">
+                <input id="isyeri_adi" name="isyeri_adi" class="form-input" value="{{ old('isyeri_adi', $v['isyeri_adi'] ?? null) }}" maxlength="200">
             </div>
             <div class="form-field">
                 <label for="is_kolu_id">İş Kolu</label>
                 <select id="is_kolu_id" name="is_kolu_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($isKollari as $i)
-                        <option value="{{ $i->id }}" @selected((string) old('is_kolu_id') === (string) $i->id)>{{ $i->ad }}</option>
+                        <option value="{{ $i->id }}" @selected((string) old('is_kolu_id', $v['is_kolu_id'] ?? null) === (string) $i->id)>{{ $i->ad }}</option>
                     @endforeach
                 </select>
             </div>
             <div class="form-field">
                 <label for="arac_kapasitesi">Araç Kapasitesi</label>
-                <input id="arac_kapasitesi" name="arac_kapasitesi" type="number" class="form-input td-mono" value="{{ old('arac_kapasitesi') }}" min="0">
+                <input id="arac_kapasitesi" name="arac_kapasitesi" type="number" class="form-input td-mono" value="{{ old('arac_kapasitesi', $v['arac_kapasitesi'] ?? null) }}" min="0">
                 <span class="hint">Otopark ve durak dosyalarında.</span>
             </div>
         </div>
@@ -105,11 +107,11 @@
                 <label>Doluluk <span class="required">*</span></label>
                 <div class="kr-secim">
                     <label class="kr-secim-kart" style="--kr-renk:#dc2626">
-                        <input type="radio" name="dolu_bos" value="dolu" @checked(old('dolu_bos', 'dolu') === 'dolu')>
+                        <input type="radio" name="dolu_bos" value="dolu" @checked(old('dolu_bos', $v['dolu_bos'] ?? 'dolu') === 'dolu')>
                         <span>Dolu</span>
                     </label>
                     <label class="kr-secim-kart" style="--kr-renk:#16a34a">
-                        <input type="radio" name="dolu_bos" value="bos" @checked(old('dolu_bos') === 'bos')>
+                        <input type="radio" name="dolu_bos" value="bos" @checked(old('dolu_bos', $v['dolu_bos'] ?? null) === 'bos')>
                         <span>Boş</span>
                     </label>
                 </div>
@@ -118,11 +120,11 @@
                 <label>İhale Durumu <span class="required">*</span></label>
                 <div class="kr-secim">
                     <label class="kr-secim-kart" style="--kr-renk:#6366f1">
-                        <input type="radio" name="ihale_turu" value="ihaleli" @checked(old('ihale_turu') === 'ihaleli')>
+                        <input type="radio" name="ihale_turu" value="ihaleli" @checked(old('ihale_turu', $v['ihale_turu'] ?? null) === 'ihaleli')>
                         <span>İhaleli</span>
                     </label>
                     <label class="kr-secim-kart" style="--kr-renk:#64748b">
-                        <input type="radio" name="ihale_turu" value="ihalesiz" @checked(old('ihale_turu', 'ihalesiz') === 'ihalesiz')>
+                        <input type="radio" name="ihale_turu" value="ihalesiz" @checked(old('ihale_turu', $v['ihale_turu'] ?? 'ihalesiz') === 'ihalesiz')>
                         <span>İhalesiz</span>
                     </label>
                 </div>
@@ -132,7 +134,7 @@
                 <select id="muhasebe_niteligi_id" name="muhasebe_niteligi_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($muhasebeNitelikleri as $m)
-                        <option value="{{ $m->id }}" @selected((string) old('muhasebe_niteligi_id') === (string) $m->id)>{{ $m->ad }}</option>
+                        <option value="{{ $m->id }}" @selected((string) old('muhasebe_niteligi_id', $v['muhasebe_niteligi_id'] ?? null) === (string) $m->id)>{{ $m->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -151,37 +153,37 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="kiraci_ad_unvan">Ad / Unvan</label>
-                <input id="kiraci_ad_unvan" name="kiraci_ad_unvan" class="form-input" value="{{ old('kiraci_ad_unvan') }}" maxlength="250">
+                <input id="kiraci_ad_unvan" name="kiraci_ad_unvan" class="form-input" value="{{ old('kiraci_ad_unvan', $v['kiraci_ad_unvan'] ?? null) }}" maxlength="250">
                 @error('kiraci_ad_unvan')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="kiraci_tc_vergi_no">TC / Vergi No</label>
-                <input id="kiraci_tc_vergi_no" name="kiraci_tc_vergi_no" class="form-input td-mono" value="{{ old('kiraci_tc_vergi_no') }}" maxlength="20">
+                <input id="kiraci_tc_vergi_no" name="kiraci_tc_vergi_no" class="form-input td-mono" value="{{ old('kiraci_tc_vergi_no', $v['kiraci_tc_vergi_no'] ?? null) }}" maxlength="20">
             </div>
             <div class="form-field">
                 <label for="kiraci_telefon">Telefon</label>
-                <input id="kiraci_telefon" name="kiraci_telefon" class="form-input td-mono" value="{{ old('kiraci_telefon') }}" maxlength="30">
+                <input id="kiraci_telefon" name="kiraci_telefon" class="form-input td-mono" value="{{ old('kiraci_telefon', $v['kiraci_telefon'] ?? null) }}" maxlength="30">
             </div>
         </div>
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="kiraci_eposta">E-posta</label>
-                <input id="kiraci_eposta" name="kiraci_eposta" type="email" class="form-input" value="{{ old('kiraci_eposta') }}" maxlength="150">
+                <input id="kiraci_eposta" name="kiraci_eposta" type="email" class="form-input" value="{{ old('kiraci_eposta', $v['kiraci_eposta'] ?? null) }}" maxlength="150">
                 @error('kiraci_eposta')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="kiraci_iban">IBAN</label>
-                <input id="kiraci_iban" name="kiraci_iban" class="form-input td-mono" value="{{ old('kiraci_iban') }}" maxlength="34">
+                <input id="kiraci_iban" name="kiraci_iban" class="form-input td-mono" value="{{ old('kiraci_iban', $v['kiraci_iban'] ?? null) }}" maxlength="34">
             </div>
             <div class="form-field">
                 <label for="kiraci_avukat">Kiracının Avukatı</label>
-                <input id="kiraci_avukat" name="kiraci_avukat" class="form-input" value="{{ old('kiraci_avukat') }}" maxlength="200">
+                <input id="kiraci_avukat" name="kiraci_avukat" class="form-input" value="{{ old('kiraci_avukat', $v['kiraci_avukat'] ?? null) }}" maxlength="200">
             </div>
         </div>
         <div class="form-row">
             <div class="form-field">
                 <label for="kiraci_adres">Kiracı Adresi</label>
-                <textarea id="kiraci_adres" name="kiraci_adres" class="form-textarea" rows="2" maxlength="1000">{{ old('kiraci_adres') }}</textarea>
+                <textarea id="kiraci_adres" name="kiraci_adres" class="form-textarea" rows="2" maxlength="1000">{{ old('kiraci_adres', $v['kiraci_adres'] ?? null) }}</textarea>
             </div>
         </div>
     </section>
@@ -201,7 +203,7 @@
                 <select id="il_id" name="il_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($iller as $i)
-                        <option value="{{ $i->id }}" @selected((string) old('il_id', $onDolgu['il_id'] ?? null) === (string) $i->id)>{{ $i->ad }}</option>
+                        <option value="{{ $i->id }}" @selected((string) old('il_id', $v['il_id'] ?? null) === (string) $i->id)>{{ $i->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -210,7 +212,7 @@
                 <select id="ilce_id" name="ilce_id" class="form-select">
                     <option value="">Önce il seçin</option>
                     @foreach ($ilceler as $i)
-                        <option value="{{ $i->id }}" @selected((string) old('ilce_id', $onDolgu['ilce_id'] ?? null) === (string) $i->id)>{{ $i->ad }}</option>
+                        <option value="{{ $i->id }}" @selected((string) old('ilce_id', $v['ilce_id'] ?? null) === (string) $i->id)>{{ $i->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -219,7 +221,7 @@
                 <select id="mahalle_id" name="mahalle_id" class="form-select">
                     <option value="">Önce ilçe seçin</option>
                     @foreach ($mahalleler as $m)
-                        <option value="{{ $m->id }}" @selected((string) old('mahalle_id', $onDolgu['mahalle_id'] ?? null) === (string) $m->id)>{{ $m->ad }}</option>
+                        <option value="{{ $m->id }}" @selected((string) old('mahalle_id', $v['mahalle_id'] ?? null) === (string) $m->id)>{{ $m->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -227,15 +229,15 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="ada">Ada</label>
-                <input id="ada" name="ada" class="form-input td-mono" value="{{ old('ada', $onDolgu['ada'] ?? null) }}" maxlength="20" inputmode="numeric">
+                <input id="ada" name="ada" class="form-input td-mono" value="{{ old('ada', $v['ada'] ?? null) }}" maxlength="20" inputmode="numeric">
             </div>
             <div class="form-field">
                 <label for="parsel">Parsel</label>
-                <input id="parsel" name="parsel" class="form-input td-mono" value="{{ old('parsel', $onDolgu['parsel'] ?? null) }}" maxlength="20" inputmode="numeric">
+                <input id="parsel" name="parsel" class="form-input td-mono" value="{{ old('parsel', $v['parsel'] ?? null) }}" maxlength="20" inputmode="numeric">
             </div>
             <div class="form-field">
                 <label for="yuzolcum">Yüzölçüm (m²)</label>
-                <input id="yuzolcum" name="yuzolcum" type="number" class="form-input td-mono" value="{{ old('yuzolcum', $onDolgu['yuzolcum'] ?? null) }}" step="0.01" min="0">
+                <input id="yuzolcum" name="yuzolcum" type="number" class="form-input td-mono" value="{{ old('yuzolcum', $v['yuzolcum'] ?? null) }}" step="0.01" min="0">
             </div>
         </div>
         <div class="form-row form-row-2">
@@ -244,20 +246,20 @@
                 <select id="imar_durumu_id" name="imar_durumu_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($imarDurumlari as $id)
-                        <option value="{{ $id->id }}" @selected((string) old('imar_durumu_id') === (string) $id->id)>{{ $id->ad }}</option>
+                        <option value="{{ $id->id }}" @selected((string) old('imar_durumu_id', $v['imar_durumu_id'] ?? null) === (string) $id->id)>{{ $id->ad }}</option>
                     @endforeach
                 </select>
             </div>
             <div class="form-field">
                 <label for="tasinmaz_id">Envanter Kaydı</label>
-                <input id="tasinmaz_id" name="tasinmaz_id" type="number" class="form-input td-mono" value="{{ old('tasinmaz_id') }}" min="1" placeholder="Taşınmaz kayıt no (varsa)">
+                <input id="tasinmaz_id" name="tasinmaz_id" type="number" class="form-input td-mono" value="{{ old('tasinmaz_id', $v['tasinmaz_id'] ?? null) }}" min="1" placeholder="Taşınmaz kayıt no (varsa)">
                 <span class="hint">Envanterdeki taşınmaza bağlamak için.</span>
             </div>
         </div>
         <div class="form-row">
             <div class="form-field">
                 <label for="adres">Kiralanan Yerin Adresi</label>
-                <textarea id="adres" name="adres" class="form-textarea" rows="2" maxlength="1000">{{ old('adres') }}</textarea>
+                <textarea id="adres" name="adres" class="form-textarea" rows="2" maxlength="1000">{{ old('adres', $v['adres'] ?? null) }}</textarea>
             </div>
         </div>
     </section>
@@ -274,38 +276,38 @@
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="baslangic_tarihi">Kira Başlangıç <span class="required">*</span></label>
-                <input id="baslangic_tarihi" name="baslangic_tarihi" type="date" class="form-input" value="{{ old('baslangic_tarihi') }}" required>
+                <input id="baslangic_tarihi" name="baslangic_tarihi" type="date" class="form-input" value="{{ old('baslangic_tarihi', $v['baslangic_tarihi'] ?? null) }}" required>
                 @error('baslangic_tarihi')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="bitis_tarihi">Kira Bitiş <span class="required">*</span></label>
-                <input id="bitis_tarihi" name="bitis_tarihi" type="date" class="form-input" value="{{ old('bitis_tarihi') }}" required>
+                <input id="bitis_tarihi" name="bitis_tarihi" type="date" class="form-input" value="{{ old('bitis_tarihi', $v['bitis_tarihi'] ?? null) }}" required>
                 @error('bitis_tarihi')<span class="error">{{ $message }}</span>@enderror
             </div>
             <div class="form-field">
                 <label for="sure_ay">Süre (ay)</label>
-                <input id="sure_ay" name="sure_ay" type="number" class="form-input td-mono" value="{{ old('sure_ay') }}" min="1" max="1200">
+                <input id="sure_ay" name="sure_ay" type="number" class="form-input td-mono" value="{{ old('sure_ay', $v['sure_ay'] ?? null) }}" min="1" max="1200">
                 <span class="hint" id="sureIpucu"></span>
             </div>
         </div>
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="sozlesme_no">Sözleşme No</label>
-                <input id="sozlesme_no" name="sozlesme_no" class="form-input td-mono" value="{{ old('sozlesme_no') }}" maxlength="60">
+                <input id="sozlesme_no" name="sozlesme_no" class="form-input td-mono" value="{{ old('sozlesme_no', $v['sozlesme_no'] ?? null) }}" maxlength="60">
             </div>
             <div class="form-field">
                 <label for="sozlesme_tarihi">Sözleşme Tarihi</label>
-                <input id="sozlesme_tarihi" name="sozlesme_tarihi" type="date" class="form-input" value="{{ old('sozlesme_tarihi') }}">
+                <input id="sozlesme_tarihi" name="sozlesme_tarihi" type="date" class="form-input" value="{{ old('sozlesme_tarihi', $v['sozlesme_tarihi'] ?? null) }}">
             </div>
             <div class="form-field">
                 <label for="taksit_sayisi">Taksit Sayısı</label>
-                <input id="taksit_sayisi" name="taksit_sayisi" type="number" class="form-input td-mono" value="{{ old('taksit_sayisi', 12) }}" min="1" max="255">
+                <input id="taksit_sayisi" name="taksit_sayisi" type="number" class="form-input td-mono" value="{{ old('taksit_sayisi', $v['taksit_sayisi'] ?? 12) }}" min="1" max="255">
             </div>
         </div>
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="odeme_sekli">Ödeme Şekli</label>
-                <input id="odeme_sekli" name="odeme_sekli" class="form-input" value="{{ old('odeme_sekli') }}" maxlength="80" placeholder="Örn. Aylık peşin">
+                <input id="odeme_sekli" name="odeme_sekli" class="form-input" value="{{ old('odeme_sekli', $v['odeme_sekli'] ?? null) }}" maxlength="80" placeholder="Örn. Aylık peşin">
             </div>
             <div class="form-field">
                 <label for="artirma_yontemi">Artırma Yöntemi</label>
@@ -313,18 +315,18 @@
             </div>
             <div class="form-field">
                 <label for="kdv_orani">KDV Oranı (%)</label>
-                <input id="kdv_orani" name="kdv_orani" type="number" class="form-input td-mono" value="{{ old('kdv_orani') }}" step="0.01" min="0" max="100">
-                <label class="kr-satir-onay"><input type="checkbox" name="kdv_dahil_mi" value="1" @checked(old('kdv_dahil_mi'))> KDV bedele dahil</label>
+                <input id="kdv_orani" name="kdv_orani" type="number" class="form-input td-mono" value="{{ old('kdv_orani', $v['kdv_orani'] ?? null) }}" step="0.01" min="0" max="100">
+                <label class="kr-satir-onay"><input type="checkbox" name="kdv_dahil_mi" value="1" @checked(old('kdv_dahil_mi', $v['kdv_dahil_mi'] ?? null))> KDV bedele dahil</label>
             </div>
         </div>
         <div class="form-row form-row-3">
             <div class="form-field">
                 <label for="noter_tarihi">Noter Tarihi</label>
-                <input id="noter_tarihi" name="noter_tarihi" type="date" class="form-input" value="{{ old('noter_tarihi') }}">
+                <input id="noter_tarihi" name="noter_tarihi" type="date" class="form-input" value="{{ old('noter_tarihi', $v['noter_tarihi'] ?? null) }}">
             </div>
             <div class="form-field">
                 <label for="yevmiye_no">Yevmiye No</label>
-                <input id="yevmiye_no" name="yevmiye_no" class="form-input td-mono" value="{{ old('yevmiye_no') }}" maxlength="60">
+                <input id="yevmiye_no" name="yevmiye_no" class="form-input td-mono" value="{{ old('yevmiye_no', $v['yevmiye_no'] ?? null) }}" maxlength="60">
             </div>
         </div>
     </section>
@@ -419,7 +421,7 @@
                 <select id="hukuki_durum_id" name="hukuki_durum_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($hukukiDurumlar as $h)
-                        <option value="{{ $h->id }}" @selected((string) old('hukuki_durum_id') === (string) $h->id)>{{ $h->ad }}</option>
+                        <option value="{{ $h->id }}" @selected((string) old('hukuki_durum_id', $v['hukuki_durum_id'] ?? null) === (string) $h->id)>{{ $h->ad }}</option>
                     @endforeach
                 </select>
             </div>
@@ -428,33 +430,33 @@
                 <select id="kiracilik_durum_id" name="kiracilik_durum_id" class="form-select">
                     <option value="">Seçin</option>
                     @foreach ($kiracilikDurumlar as $k)
-                        <option value="{{ $k->id }}" @selected((string) old('kiracilik_durum_id') === (string) $k->id)>{{ $k->ad }}</option>
+                        <option value="{{ $k->id }}" @selected((string) old('kiracilik_durum_id', $v['kiracilik_durum_id'] ?? null) === (string) $k->id)>{{ $k->ad }}</option>
                     @endforeach
                 </select>
             </div>
             <div class="form-field">
                 <label for="uyari">Uyarı</label>
-                <input id="uyari" name="uyari" class="form-input" value="{{ old('uyari') }}" maxlength="300">
+                <input id="uyari" name="uyari" class="form-input" value="{{ old('uyari', $v['uyari'] ?? null) }}" maxlength="300">
                 <span class="hint">Listede kırmızı etiket olarak görünür.</span>
             </div>
         </div>
         <div class="form-row form-row-2">
             <div class="form-field kr-onaylar">
-                <label class="kr-satir-onay"><input type="checkbox" name="sozlesme_aktif_mi" value="1" @checked(old('sozlesme_aktif_mi', true))> Sözleşme yürürlükte</label>
-                <label class="kr-satir-onay"><input type="checkbox" name="tahliye_ihbarnamesi_mi" value="1" @checked(old('tahliye_ihbarnamesi_mi'))> Tahliye ihbarnamesi çekildi</label>
+                <label class="kr-satir-onay"><input type="checkbox" name="sozlesme_aktif_mi" value="1" @checked(old('sozlesme_aktif_mi', $v['sozlesme_aktif_mi'] ?? true))> Sözleşme yürürlükte</label>
+                <label class="kr-satir-onay"><input type="checkbox" name="tahliye_ihbarnamesi_mi" value="1" @checked(old('tahliye_ihbarnamesi_mi', $v['tahliye_ihbarnamesi_mi'] ?? null))> Tahliye ihbarnamesi çekildi</label>
             </div>
         </div>
         <div class="form-row">
             <div class="form-field">
                 <label for="aciklama">Açıklama / Not</label>
-                <textarea id="aciklama" name="aciklama" class="form-textarea" rows="3" maxlength="5000">{{ old('aciklama') }}</textarea>
+                <textarea id="aciklama" name="aciklama" class="form-textarea" rows="3" maxlength="5000">{{ old('aciklama', $v['aciklama'] ?? null) }}</textarea>
             </div>
         </div>
     </section>
 
     <div class="form-actions">
         <a href="{{ route('panel.kira.index') }}" class="btn-cancel">Vazgeç</a>
-        <button type="submit" class="btn-submit">Dosyayı Oluştur</button>
+        <button type="submit" class="btn-submit">{{ $dosya ? 'Değişiklikleri Kaydet' : 'Dosyayı Oluştur' }}</button>
     </div>
 </form>
 

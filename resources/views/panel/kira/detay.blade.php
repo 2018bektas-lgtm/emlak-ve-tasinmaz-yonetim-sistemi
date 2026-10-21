@@ -21,6 +21,13 @@
     $bedel = $s?->guncelBedel();
 @endphp
 
+@php
+    // Bölümler koşullu gizlenebildiği için numara sırayla üretilir;
+    // sabit yazıldığında 4'ten 10'a atlıyordu.
+    $bolumNo = 0;
+    $no = function () use (&$bolumNo) { return ++$bolumNo; };
+@endphp
+
 @section('content')
 @if (session('basari'))<div class="flash-success" role="status">{{ session('basari') }}</div>@endif
 
@@ -37,6 +44,9 @@
     </div>
     <div class="page-hero-actions">
         <a href="{{ route('panel.kira.index') }}" class="btn-cancel">Listeye dön</a>
+        @can('kira.duzenle')
+            <a href="{{ route('panel.kira.duzenle', $dosya->id) }}" class="btn-submit">Düzenle</a>
+        @endcan
         @if ($dosya->koordinat)
             <a href="{{ route('panel.kira.harita', ['merkez' => $dosya->koordinat->merkez_lat.','.$dosya->koordinat->merkez_lng, 'zoom' => 17]) }}" class="btn-cancel">Haritada Göster</a>
         @endif
@@ -62,7 +72,7 @@
     {{-- Sözleşmesel bilgiler --}}
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">1</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Sözleşmesel Bilgiler</h3></div>
         </div>
         <dl class="dg-bilgi">
@@ -87,7 +97,7 @@
     {{-- Adres / tapu --}}
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">2</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Adres / Tapu Bilgileri</h3></div>
         </div>
         <dl class="dg-bilgi">
@@ -108,7 +118,7 @@
     {{-- Hukuki --}}
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">3</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Hukuki Bilgiler</h3></div>
         </div>
         <dl class="dg-bilgi">
@@ -125,7 +135,7 @@
 @if ($s && $s->bedeller->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">4</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text">
                 <h3>Kira Bedelleri</h3>
                 <small>{{ $s->baslangic_tarihi?->format('d.m.Y') }} – {{ $s->bitis_tarihi?->format('d.m.Y') }} sözleşmesi</small>
@@ -154,7 +164,7 @@
 @if ($dosya->alanlar->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">5</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Kiralanan Alanlar</h3><small>{{ $dosya->alanlar->count() }} alan</small></div>
         </div>
         <div class="tl-tablo-wrap">
@@ -181,7 +191,7 @@
 @if ($dosya->ihaleler->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">6</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>İhale</h3></div>
         </div>
         @foreach ($dosya->ihaleler as $ih)
@@ -208,7 +218,7 @@
 @if ($dosya->kararlar->isNotEmpty() || $dosya->surecOlaylari->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">7</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Kararlar ve Süreç</h3></div>
         </div>
         @if ($dosya->kararlar->isNotEmpty())
@@ -253,7 +263,7 @@
 @if ($eskiSozlesmeler->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">8</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text">
                 <h3>Süresi Dolmuş Sözleşmeler</h3>
                 <small>{{ $eskiSozlesmeler->count() }} dönem</small>
@@ -284,7 +294,7 @@
     @php $isletme = $dosya->isletmeBilgisi; @endphp
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">9</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>İşletme Bilgileri</h3><small>Abonelik, demirbaş, denetim</small></div>
         </div>
         <dl class="dg-bilgi">
@@ -309,7 +319,7 @@
 {{-- Belgeler --}}
 <section class="form-section">
     <div class="form-section-head">
-        <span class="form-section-num">10</span>
+        <span class="form-section-num">{{ $no() }}</span>
         <div class="form-section-head-text">
             <h3>Belgeler</h3>
             <small>Encümen kararı, sözleşme, yazışmalar</small>
@@ -341,7 +351,7 @@
 @if ($dosya->altDosyalar->isNotEmpty())
     <section class="form-section">
         <div class="form-section-head">
-            <span class="form-section-num">11</span>
+            <span class="form-section-num">{{ $no() }}</span>
             <div class="form-section-head-text"><h3>Alt Dosyalar</h3><small>{{ $dosya->altDosyalar->count() }} dosya</small></div>
         </div>
         <ul class="kr-alt-dosyalar">

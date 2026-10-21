@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use AppEnumsKiraciTipi;
+use App\Enums\KiraciTipi;
 use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\ImarDurumu;
@@ -423,16 +425,195 @@ class KiraController extends Controller
         return is_numeric($sayi) ? (float) $sayi : null;
     }
 
+    public function duzenle(int $id): View
+    {
+        $dosya = KiraDosyasi::with(['kiracilar', 'tasinmaz', 'koordinat', 'sozlesmeler.bedeller'])->findOrFail($id);
+
+        return view('panel.kira.form', $this->formVerisi($dosya, request()));
+    }
+
+    /**
+     * Düzenleme. Dosyanın parçaları ayrı tablolarda olduğu için hepsi tek
+     * işlemde güncellenir; bedeller yeniden yazılır (kullanıcı aradan satır
+     * silmiş ya da yıl eklemiş olabilir).
+     */
+    public function guncelle(Request $request, int $id): RedirectResponse
+    {
+        $dosya = KiraDosyasi::with(['anaKiraci', 'tasinmaz', 'koordinat', 'sozlesmeler'])->findOrFail($id);
+        $veri = $this->dogrula($request, $dosya);
+
+        DB::transaction(function () use ($dosya, $veri, $request) {
+            $dosya->update([
+                'dosya_no' => $veri['dosya_no'],
+                'eski_dosya_no' => $veri['eski_dosya_no'] ?? null,
+                'ana_dosya_id' => $veri['ana_dosya_id'] ?? null,
+                'isyeri_adi' => $veri['isyeri_adi'] ?? null,
+                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
+                'dolu_bos' => $veri['dolu_bos'],
+                'ihale_turu' => $veri['ihale_turu'],
+                'hukuki_durum_id' => $veri['hukuki_durum_id'] ?? null,
+                'kiracilik_durum_id' => $veri['kiracilik_durum_id'] ?? null,
+                'muhasebe_niteligi_id' => $veri['muhasebe_niteligi_id'] ?? null,
+                'sozlesme_aktif_mi' => $request->boolean('sozlesme_aktif_mi'),
+                'tahliye_ihbarnamesi_mi' => $request->boolean('tahliye_ihbarnamesi_mi'),
+                'arac_kapasitesi' => $veri['arac_kapasitesi'] ?? null,
+                'uyari' => $veri['uyari'] ?? null,
+                'aciklama' => $veri['aciklama'] ?? null,
+                'sorumlu_personel_id' => $veri['sorumlu_personel_id'] ?? null,
+            ]);
+
+            $kiraciAlanlari = [
+                'ad_unvan' => $veri['kiraci_ad_unvan'] ?? null,
+                'tc_vergi_no' => $veri['kiraci_tc_vergi_no'] ?? null,
+                'telefon' => $veri['kiraci_telefon'] ?? null,
+                'eposta' => $veri['kiraci_eposta'] ?? null,
+                'adres' => $veri['kiraci_adres'] ?? null,
+                'iban' => $veri['kiraci_iban'] ?? null,
+                'avukat' => $veri['kiraci_avukat'] ?? null,
+            ];
+            if (filled($kiraciAlanlari['ad_unvan'])) {
+                $dosya->kiracilar()->updateOrCreate(['tip' => 'ana'], $kiraciAlanlari);
+            } else {
+                // Boş yere düşen dosyada ana kiracı satırı kalmasın
+                $dosya->kiracilar()->where('tip', 'ana')->delete();
+            }
+
+            $dosya->tasinmaz()->updateOrCreate(['kira_dosya_id' => $dosya->id], [
+                'tasinmaz_id' => $veri['tasinmaz_id'] ?? null,
+                'il_id' => $veri['il_id'] ?? null,
+                'ilce_id' => $veri['ilce_id'] ?? null,
+                'mahalle_id' => $veri['mahalle_id'] ?? null,
+                'ada' => $veri['ada'] ?? null,
+                'parsel' => $veri['parsel'] ?? null,
+                'adres' => $veri['adres'] ?? null,
+                'yuzolcum' => $veri['yuzolcum'] ?? null,
+                'imar_durumu_id' => $veri['imar_durumu_id'] ?? null,
+            ]);
+
+            $sozlesmeAlanlari = [
+                'sozlesme_no' => $veri['sozlesme_no'] ?? null,
+                'baslangic_tarihi' => $veri['baslangic_tarihi'],
+                'bitis_tarihi' => $veri['bitis_tarihi'],
+                'sure_ay' => $veri['sure_ay'] ?? null,
+                'taksit_sayisi' => $veri['taksit_sayisi'] ?? null,
+                'odeme_sekli' => $veri['odeme_sekli'] ?? null,
+                'sozlesme_tarihi' => $veri['sozlesme_tarihi'] ?? null,
+                'noter_tarihi' => $veri['noter_tarihi'] ?? null,
+                'yevmiye_no' => $veri['yevmiye_no'] ?? null,
+                'kdv_orani' => $veri['kdv_orani'] ?? null,
+                'kdv_dahil_mi' => $request->boolean('kdv_dahil_mi'),
+                'artirma_yontemi' => $veri['artirma_yontemi'] ?? null,
+                'aktif_mi' => true,
+            ];
+            $sozlesme = $dosya->sozlesmeler()->where('aktif_mi', true)->latest('bitis_tarihi')->first();
+            if ($sozlesme) {
+                $sozlesme->update($sozlesmeAlanlari);
+            } else {
+                $sozlesme = $dosya->sozlesmeler()->create($sozlesmeAlanlari);
+            }
+
+            $sozlesme->bedeller()->delete();
+            foreach ($this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi']) as $satir) {
+                $sozlesme->bedeller()->create($satir);
+            }
+
+            $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
+            if (is_array($geometri) && isset($geometri['type'])) {
+                $dosya->koordinat()->updateOrCreate(['kira_dosya_id' => $dosya->id], ['koordinat' => $geometri]);
+            }
+        });
+
+        return redirect()->route('panel.kira.detay', $dosya->id)
+            ->with('basari', $dosya->dosya_no.' numaralı dosya güncellendi.');
+    }
+
+    /**
+     * Form alanlarının başlangıç değerleri. Sırayla: düzenlenen kaydın kendi
+     * değeri → haritadan gelen ön dolgu → sabit varsayılan. Görünüm yalnızca
+     * `old(...)` ile bu diziyi okur, kayıt/ekleme ayrımını bilmez.
+     *
+     * @param  array<string, mixed>  $onDolgu
+     * @return array<string, mixed>
+     */
+    private function formVarsayilanlari(?KiraDosyasi $dosya, array $onDolgu): array
+    {
+        $t = $dosya?->tasinmaz;
+        $kiraci = $dosya?->kiracilar->firstWhere('tip', KiraciTipi::Ana);
+        $s = $dosya?->sozlesmeler->firstWhere('aktif_mi', true) ?? $dosya?->sozlesmeler->last();
+
+        $bedeller = $s?->bedeller->map(fn ($b) => [
+            'yillik_bedel' => $b->yillik_bedel,
+            'donem_baslangic' => $b->donem_baslangic?->format('Y-m-d'),
+            'donem_bitis' => $b->donem_bitis?->format('Y-m-d'),
+            'tufe_orani' => $b->tufe_orani,
+        ])->all();
+
+        return [
+            'dosya_no' => $dosya?->dosya_no,
+            'eski_dosya_no' => $dosya?->eski_dosya_no,
+            'ana_dosya_id' => $dosya?->ana_dosya_id,
+            'isyeri_adi' => $dosya?->isyeri_adi,
+            'is_kolu_id' => $dosya?->is_kolu_id,
+            'arac_kapasitesi' => $dosya?->arac_kapasitesi,
+            'dolu_bos' => $dosya?->dolu_bos?->value ?? 'dolu',
+            'ihale_turu' => $dosya?->ihale_turu?->value ?? 'ihalesiz',
+            'hukuki_durum_id' => $dosya?->hukuki_durum_id,
+            'kiracilik_durum_id' => $dosya?->kiracilik_durum_id,
+            'muhasebe_niteligi_id' => $dosya?->muhasebe_niteligi_id,
+            'sozlesme_aktif_mi' => $dosya ? $dosya->sozlesme_aktif_mi : true,
+            'tahliye_ihbarnamesi_mi' => $dosya?->tahliye_ihbarnamesi_mi ?? false,
+            'uyari' => $dosya?->uyari,
+            'aciklama' => $dosya?->aciklama,
+            'sorumlu_personel_id' => $dosya?->sorumlu_personel_id,
+
+            'kiraci_ad_unvan' => $kiraci?->ad_unvan,
+            'kiraci_tc_vergi_no' => $kiraci?->tc_vergi_no,
+            'kiraci_telefon' => $kiraci?->telefon,
+            'kiraci_eposta' => $kiraci?->eposta,
+            'kiraci_adres' => $kiraci?->adres,
+            'kiraci_iban' => $kiraci?->iban,
+            'kiraci_avukat' => $kiraci?->avukat,
+
+            'tasinmaz_id' => $t?->tasinmaz_id,
+            'il_id' => $t?->il_id ?? ($onDolgu['il_id'] ?? null),
+            'ilce_id' => $t?->ilce_id ?? ($onDolgu['ilce_id'] ?? null),
+            'mahalle_id' => $t?->mahalle_id ?? ($onDolgu['mahalle_id'] ?? null),
+            'ada' => $t?->ada ?? ($onDolgu['ada'] ?? null),
+            'parsel' => $t?->parsel ?? ($onDolgu['parsel'] ?? null),
+            'adres' => $t?->adres,
+            'yuzolcum' => $t?->yuzolcum ?? ($onDolgu['yuzolcum'] ?? null),
+            'imar_durumu_id' => $t?->imar_durumu_id,
+            'koordinat' => $onDolgu['koordinat'] ?? '',
+
+            'sozlesme_no' => $s?->sozlesme_no,
+            'baslangic_tarihi' => $s?->baslangic_tarihi?->format('Y-m-d'),
+            'bitis_tarihi' => $s?->bitis_tarihi?->format('Y-m-d'),
+            'sure_ay' => $s?->sure_ay,
+            'taksit_sayisi' => $s?->taksit_sayisi ?? 12,
+            'odeme_sekli' => $s?->odeme_sekli,
+            'sozlesme_tarihi' => $s?->sozlesme_tarihi?->format('Y-m-d'),
+            'noter_tarihi' => $s?->noter_tarihi?->format('Y-m-d'),
+            'yevmiye_no' => $s?->yevmiye_no,
+            'kdv_orani' => $s?->kdv_orani,
+            'kdv_dahil_mi' => $s?->kdv_dahil_mi ?? false,
+            'artirma_yontemi' => $s?->artirma_yontemi ?? 'TÜFE',
+
+            'bedeller' => $bedeller ?: [['yillik_bedel' => '', 'donem_baslangic' => '', 'donem_bitis' => '', 'tufe_orani' => '']],
+        ];
+    }
+
     /** @return array<string, mixed> */
     private function formVerisi(?KiraDosyasi $dosya, Request $request): array
     {
         $onDolgu = $dosya ? [] : $this->onDolgu($request);
-        $ilId = old('il_id', $onDolgu['il_id'] ?? $request->query('il_id'));
-        $ilceId = old('ilce_id', $onDolgu['ilce_id'] ?? $request->query('ilce_id'));
+        $v = $this->formVarsayilanlari($dosya, $onDolgu);
+        $ilId = old('il_id', $v['il_id'] ?? $request->query('il_id'));
+        $ilceId = old('ilce_id', $v['ilce_id'] ?? $request->query('ilce_id'));
 
         return [
             'dosya' => $dosya,
             'onDolgu' => $onDolgu,
+            'v' => $v,
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             'ilceler' => $ilId ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad']) : collect(),
             'mahalleler' => $ilceId ? Mahalle::where('ilce_id', $ilceId)->orderBy('ad')->get(['id', 'ad']) : collect(),
@@ -446,7 +627,7 @@ class KiraController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function dogrula(Request $request): array
+    private function dogrula(Request $request, ?KiraDosyasi $dosya = null): array
     {
         // İlçe seçilen ile, mahalle seçilen ilçeye ait olmalı
         $ilceKurali = Rule::exists('ilceler', 'id');
@@ -460,7 +641,7 @@ class KiraController extends Controller
 
         return $request->validate([
             // Dosya
-            'dosya_no' => ['required', 'string', 'max:50', 'unique:kira_dosyalari,dosya_no'],
+            'dosya_no' => ['required', 'string', 'max:50', Rule::unique('kira_dosyalari', 'dosya_no')->ignore($dosya?->id)],
             'eski_dosya_no' => ['nullable', 'string', 'max:50'],
             'ana_dosya_id' => ['nullable', 'exists:kira_dosyalari,id'],
             'isyeri_adi' => ['nullable', 'string', 'max:200'],
