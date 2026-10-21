@@ -187,16 +187,19 @@ class KiraDosyasi extends Model
      */
     public function scopeBitisiYaklasan(Builder $q, int $gun): Builder
     {
-        return $q->whereIn('id', KiraSozlesme::query()->select('kira_dosya_id')
-            ->where('aktif_mi', true)
-            ->whereBetween('bitis_tarihi', [now()->toDateString(), now()->addDays($gun)->toDateString()]));
+        // Yürürlükte olmayan dosya süre uyarısına girmez
+        return $q->where('sozlesme_aktif_mi', true)
+            ->whereIn('id', KiraSozlesme::query()->select('kira_dosya_id')
+                ->where('aktif_mi', true)
+                ->whereBetween('bitis_tarihi', [now()->toDateString(), now()->addDays($gun)->toDateString()]));
     }
 
-    /** Sözleşmesi dolmuş dosyalar. */
+    /** Süresi dolduğu hâlde hâlâ yürürlükte işaretli dosyalar. */
     public function scopeSuresiDolmus(Builder $q): Builder
     {
-        return $q->whereIn('id', KiraSozlesme::query()->select('kira_dosya_id')
-            ->where('aktif_mi', true)->where('bitis_tarihi', '<', now()->toDateString()));
+        return $q->where('sozlesme_aktif_mi', true)
+            ->whereIn('id', KiraSozlesme::query()->select('kira_dosya_id')
+                ->where('aktif_mi', true)->where('bitis_tarihi', '<', now()->toDateString()));
     }
 
     public function altDosyaMi(): bool

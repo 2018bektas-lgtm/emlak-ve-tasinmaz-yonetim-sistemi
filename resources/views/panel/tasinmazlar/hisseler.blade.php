@@ -3,7 +3,7 @@
 @section('title', 'Hisse Listesi')
 
 @push('head')
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=6">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=7">
 @endpush
 
 @section('content')

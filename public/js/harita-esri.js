@@ -1641,15 +1641,6 @@
                     }).join('') + '</div>'
                 : '';
 
-            const yazilar = Array.isArray(d.plan_yazilari)
-                ? d.plan_yazilari.filter(function (t) { return t !== null && String(t).trim() !== ''; })
-                : [];
-            const yaziBlok = yazilar.length
-                ? '<div class="hrm-pop-not-baslik">Plan Yazıları</div><div class="hrm-pop-notlar">' +
-                    yazilar.map(function (t) { return '<p>' + kacis(t) + '</p>'; }).join('') +
-                  '</div>'
-                : '';
-
             return '<div class="hrm-pop-bolum">' +
                 popBolumBaslik('e-İmar · Plan Adası', 'is-eimar') +
                 olcuBlok +
@@ -1662,7 +1653,6 @@
                     ['Daire Sayısı', d.daire_sayisi],
                     ['Plan Adası', d.plan_adasi],
                 ]) +
-                yaziBlok +
             '</div>';
         }
 

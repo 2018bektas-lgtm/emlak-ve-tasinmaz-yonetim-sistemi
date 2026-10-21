@@ -7,7 +7,7 @@
 @push('head')
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=3">
-    <link rel="stylesheet" href="{{ asset('css/emsal.css') }}?v=1">
+    <link rel="stylesheet" href="{{ asset('css/emsal.css') }}?v=4">
 @endpush
 
 @php

@@ -17,6 +17,7 @@ use App\Models\KiraTasinmaz;
 use App\Models\Mahalle;
 use App\Support\HaritaGorunum;
 use App\Support\KiraKolonlari;
+use Carbon\Carbon;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -70,7 +71,8 @@ class KiraController extends Controller
             ->orderByDesc('id');
 
         if ($request->boolean('excel')) {
-            return $this->excelYaz($sorgu->get());
+            // Excel ana kiracıyı satır satır okuyor; toplu yüklenmezse her satır ayrı sorgu
+            return $this->excelYaz($sorgu->with('anaKiraci:id,kira_dosya_id,ad_unvan')->get());
         }
 
         $gorunurKolonlar = KiraKolonlari::kullaniciIcin($request->user());
@@ -182,7 +184,7 @@ class KiraController extends Controller
 
         $gorunen = (clone $koordinatlar)
             ->when($bbox, fn ($s) => $s->alanda($bbox))
-            ->with(['dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,is_kolu_id', 'dosya.isKolu:id,ad',
+            ->with(['dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,is_kolu_id,sozlesme_aktif_mi', 'dosya.isKolu:id,ad',
                 'dosya.aktifSozlesme',
                 'dosya.anaKiraci:id,kira_dosya_id,ad_unvan',
                 'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,yuzolcum,imar_durumu_id',
@@ -215,8 +217,9 @@ class KiraController extends Controller
                     'kiraci' => $d->anaKiraci?->ad_unvan,
                     'dolu_bos' => $d->dolu_bos->value,
                     'ihale' => $d->ihale_turu->etiket(),
-                    // Sözleşme bitişine göre renklendirme istemcide yapılır
-                    'kalan_gun' => $d->aktifSozlesme?->kalanGun(),
+                    // Sözleşme bitişine göre renklendirme istemcide yapılır.
+                    // Yürürlükte olmayan dosya süre uyarısı almaz.
+                    'kalan_gun' => $d->sozlesme_aktif_mi ? $d->aktifSozlesme?->kalanGun() : null,
                 ],
             ];
         }
@@ -250,20 +253,11 @@ class KiraController extends Controller
             'adres' => $t?->adres,
             'baslangic' => $s?->baslangic_tarihi?->toDateString(),
             'bitis' => $s?->bitis_tarihi?->toDateString(),
-            'kalan_gun' => $s?->kalanGun(),
+            'kalan_gun' => $d->sozlesme_aktif_mi ? $s?->kalanGun() : null,
             'yillik_bedel' => $bedel?->yillik_bedel !== null ? (float) $bedel->yillik_bedel : null,
             'detay' => route('panel.kira.detay', $d->id),
             'liste' => route('panel.kira.index', ['q' => $d->dosya_no]),
         ]);
-    }
-
-    /**
-     * Haritadan "Kira Dosyası Aç" ile gelindiğinde formun ön dolgusu.
-     * Konum TKGM mahalle kimliğiyle gelir; yerel il/ilçe/mahalle ondan çözülür.
-     */
-    public function haritaOnDolgu(Request $request): JsonResponse
-    {
-        return response()->json($this->onDolgu($request));
     }
 
     public function olustur(Request $request): View
@@ -342,7 +336,7 @@ class KiraController extends Controller
                 'aktif_mi' => true,
             ]);
 
-            foreach ($this->bedelSatirlari($veri['bedeller'] ?? []) as $satir) {
+            foreach ($this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi']) as $satir) {
                 $sozlesme->bedeller()->create($satir);
             }
 
@@ -454,6 +448,16 @@ class KiraController extends Controller
     /** @return array<string, mixed> */
     private function dogrula(Request $request): array
     {
+        // İlçe seçilen ile, mahalle seçilen ilçeye ait olmalı
+        $ilceKurali = Rule::exists('ilceler', 'id');
+        if ($request->filled('il_id')) {
+            $ilceKurali->where('il_id', $request->integer('il_id'));
+        }
+        $mahalleKurali = Rule::exists('mahalleler', 'id');
+        if ($request->filled('ilce_id')) {
+            $mahalleKurali->where('ilce_id', $request->integer('ilce_id'));
+        }
+
         return $request->validate([
             // Dosya
             'dosya_no' => ['required', 'string', 'max:50', 'unique:kira_dosyalari,dosya_no'],
@@ -483,8 +487,8 @@ class KiraController extends Controller
             // Taşınmaz
             'tasinmaz_id' => ['nullable', 'exists:tasinmazlar,id'],
             'il_id' => ['nullable', 'exists:iller,id'],
-            'ilce_id' => ['nullable', 'exists:ilceler,id'],
-            'mahalle_id' => ['nullable', 'exists:mahalleler,id'],
+            'ilce_id' => ['nullable', $ilceKurali],
+            'mahalle_id' => ['nullable', $mahalleKurali],
             'ada' => ['nullable', 'string', 'max:20'],
             'parsel' => ['nullable', 'string', 'max:20'],
             'adres' => ['nullable', 'string', 'max:1000'],
@@ -508,13 +512,19 @@ class KiraController extends Controller
             // Bedeller
             'bedeller' => ['required', 'array', 'min:1', 'max:30'],
             'bedeller.*.yillik_bedel' => ['required', 'numeric', 'min:0', 'max:9999999999999'],
-            'bedeller.*.donem_baslangic' => ['nullable', 'date'],
-            'bedeller.*.donem_bitis' => ['nullable', 'date'],
+            // Dönem ya iki tarihiyle girilir ya hiç girilmez; boşsa sözleşmeden hesaplanır
+            'bedeller.*.donem_baslangic' => ['nullable', 'date', 'required_with:bedeller.*.donem_bitis'],
+            'bedeller.*.donem_bitis' => ['nullable', 'date', 'required_with:bedeller.*.donem_baslangic', 'after_or_equal:bedeller.*.donem_baslangic'],
             'bedeller.*.tufe_orani' => ['nullable', 'numeric', 'min:-100', 'max:999'],
         ], [
             'bitis_tarihi.after' => 'Kira bitiş tarihi başlangıçtan sonra olmalı.',
             'kiraci_ad_unvan.required_if' => 'Dolu bir yerde kiracı adı/unvanı girilmeli.',
             'bedeller.required' => 'En az bir yıl için kira bedeli girilmeli.',
+            'ilce_id.exists' => 'Seçilen ilçe bu ile ait değil.',
+            'mahalle_id.exists' => 'Seçilen mahalle bu ilçeye ait değil.',
+            'bedeller.*.donem_baslangic.required_with' => 'Bedel döneminin başlangıcı da girilmeli.',
+            'bedeller.*.donem_bitis.required_with' => 'Bedel döneminin bitişi de girilmeli.',
+            'bedeller.*.donem_bitis.after_or_equal' => 'Bedel döneminin bitişi başlangıçtan önce olamaz.',
         ]);
     }
 
@@ -522,20 +532,39 @@ class KiraController extends Controller
      * Form satırlarını bedel kayıtlarına çevirir. Boş satırlar atılır, yıl
      * sırası baştan numaralanır — kullanıcı aradan satır silmiş olabilir.
      *
+     * Dönemi girilmemiş satır sözleşmenin N. yılı sayılır. Dönemsiz bedel
+     * yıllık toplama ve "güncel bedel"e hiç girmiyordu; sözleşme süresini
+     * aşan satır dönemsiz kalır.
+     *
      * @param  array<int, array<string, mixed>>  $satirlar
      * @return array<int, array<string, mixed>>
      */
-    private function bedelSatirlari(array $satirlar): array
+    private function bedelSatirlari(array $satirlar, string $sozlesmeBaslangic, string $sozlesmeBitis): array
     {
         $dolu = array_values(array_filter($satirlar, fn ($s) => filled($s['yillik_bedel'] ?? null)));
+        $ilk = Carbon::parse($sozlesmeBaslangic)->startOfDay();
+        $son = Carbon::parse($sozlesmeBitis)->startOfDay();
 
-        return array_map(fn ($s, $i) => [
-            'yil_sirasi' => $i + 1,
-            'donem_baslangic' => $s['donem_baslangic'] ?? null,
-            'donem_bitis' => $s['donem_bitis'] ?? null,
-            'yillik_bedel' => $s['yillik_bedel'],
-            'tufe_orani' => $s['tufe_orani'] ?? null,
-        ], $dolu, array_keys($dolu));
+        return array_map(function ($s, $i) use ($ilk, $son) {
+            $baslangic = $s['donem_baslangic'] ?? null;
+            $bitis = $s['donem_bitis'] ?? null;
+
+            if (blank($baslangic) && blank($bitis)) {
+                $yilBasi = $ilk->copy()->addYearsNoOverflow($i);
+                if ($yilBasi->lte($son)) {
+                    $baslangic = $yilBasi->toDateString();
+                    $bitis = $yilBasi->copy()->addYearNoOverflow()->subDay()->min($son)->toDateString();
+                }
+            }
+
+            return [
+                'yil_sirasi' => $i + 1,
+                'donem_baslangic' => $baslangic ?: null,
+                'donem_bitis' => $bitis ?: null,
+                'yillik_bedel' => $s['yillik_bedel'],
+                'tufe_orani' => $s['tufe_orani'] ?? null,
+            ];
+        }, $dolu, array_keys($dolu));
     }
 
     /** Tabloda görünen kayıt sayısı. 10–200 arası; boş veya geçersiz değer 50. */
@@ -644,7 +673,8 @@ class KiraController extends Controller
      */
     private function ozet(Builder $taban): array
     {
-        $idler = (clone $taban)->select('id');
+        // Yürürlükte olmayan dosyanın bedeli tahsil edilmez, toplama girmez
+        $idler = (clone $taban)->where('sozlesme_aktif_mi', true)->select('id');
 
         $bedel = KiraSozlesme::query()
             ->whereIn('kira_dosya_id', $idler)->where('aktif_mi', true)
@@ -667,9 +697,9 @@ class KiraController extends Controller
         $ss = new Spreadsheet;
         $sh = $ss->getActiveSheet();
         $sh->setTitle('Kira Dosyaları');
-        $basliklar = ['Dosya No', 'Eski Dosya No', 'İşyeri Adı', 'Ana Kiracı', 'İş Kolu', 'İlçe', 'Mahalle', 'Ada', 'Parsel', 'Yüzölçüm (m²)', 'Durum', 'İhale', 'Kira Başlangıç', 'Kira Bitiş', 'Adres'];
+        $basliklar = ['Dosya No', 'Eski Dosya No', 'İşyeri Adı', 'Ana Kiracı', 'İş Kolu', 'İlçe', 'Mahalle', 'Ada', 'Parsel', 'Yüzölçüm (m²)', 'Durum', 'İhale', 'Sözleşme', 'Kira Başlangıç', 'Kira Bitiş', 'Güncel Yıllık Bedel (₺)', 'Adres'];
         $sh->fromArray($basliklar, null, 'A1');
-        $son = 'O';
+        $son = 'Q';
         $sh->getStyle("A1:{$son}1")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0D9488']],
@@ -680,18 +710,23 @@ class KiraController extends Controller
         foreach ($kayitlar as $k) {
             $t = $k->tasinmaz;
             $s = $k->aktifSozlesme;
+            $bedel = $s?->guncelBedel()?->yillik_bedel;
             $sh->fromArray([
                 $k->dosya_no, $k->eski_dosya_no, $k->isyeri_adi,
                 $k->anaKiraci?->ad_unvan, $k->isKolu?->ad,
                 $t?->ilce?->ad, $t?->mahalle?->ad, $t?->ada, $t?->parsel,
                 $t?->yuzolcum !== null ? (float) $t->yuzolcum : null,
                 $k->dolu_bos->etiket(), $k->ihale_turu->etiket(),
+                $k->sozlesme_aktif_mi ? 'Yürürlükte' : 'Yürürlükte değil',
                 $s?->baslangic_tarihi?->format('d.m.Y'), $s?->bitis_tarihi?->format('d.m.Y'),
+                $bedel !== null ? (float) $bedel : null,
                 $t?->adres,
             ], null, 'A'.$r);
             $r++;
         }
-        $sh->getStyle('J2:J'.max(2, $r - 1))->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (['J', 'P'] as $sayiKolonu) {
+            $sh->getStyle($sayiKolonu.'2:'.$sayiKolonu.max(2, $r - 1))->getNumberFormat()->setFormatCode('#,##0.00');
+        }
         foreach (range('A', $son) as $c) {
             $sh->getColumnDimension($c)->setAutoSize(true);
         }

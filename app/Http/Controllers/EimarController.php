@@ -22,10 +22,6 @@ class EimarController extends Controller
     private const PLAN_ADASI = 'https://baskentcbs.ankara.bel.tr/server/rest/services'
         .'/plan/uipfiltreicinMekansal/MapServer/19';
 
-    /** Haritaya basılan plan notları (annotation). Metin `textstring` alanındadır. */
-    private const PLAN_YAZILARI = 'https://baskentcbs.ankara.bel.tr/server/rest/services'
-        .'/plan/uipfiltreicinMekansal/MapServer/1';
-
     /**
      * `etkinmi` alanının domaini ters kodlanmış: 0 = Etkin, 1 = Edilgin.
      * Yürürlükteki planı istediğimiz için 0 ile filtreliyoruz — 1 verilirse
@@ -112,72 +108,8 @@ class EimarController extends Controller
             'yapi_duzeni' => $yapiDuzeniKodu === null ? null : ($sozluk['yapiduzeni'][$yapiDuzeniKodu] ?? null),
             'cekme' => $this->cekmeMesafeleri($a),
             'plan_adasi' => $this->metin($a['adinumarasi'] ?? null),
-            'plan_yazilari' => $this->planYazilari($lng, $lat),
             'geometry' => $this->esriPolygonGeoJson($ozellik['geometry'] ?? null),
         ]);
-    }
-
-    /**
-     * Tıklanan noktanın yakınındaki etkin plan yazıları.
-     * Yazılar çoğu zaman plan adası poligonunun üstüne değil, kenarına
-     * basıldığı için nokta kesişimi boş dönüyordu; 120 m çevre bakılır.
-     * Sorgu başarısız olursa imar özeti yine döner, not listesi boş kalır.
-     *
-     * @return list<string>
-     */
-    private function planYazilari(float $lng, float $lat): array
-    {
-        try {
-            $yanit = Http::timeout(15)
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                    'User-Agent' => 'EmlakYonetim/1.0',
-                ])
-                ->get(self::PLAN_YAZILARI.'/query', [
-                    'geometry' => $lng.','.$lat,
-                    'geometryType' => 'esriGeometryPoint',
-                    'inSR' => 4326,
-                    'spatialRel' => 'esriSpatialRelIntersects',
-                    'distance' => 120,
-                    'units' => 'esriSRUnit_Meter',
-                    'where' => 'etkinmi = '.self::ETKIN,
-                    'outFields' => 'textstring,aciklama',
-                    'returnGeometry' => 'false',
-                    'resultRecordCount' => 50,
-                    'f' => 'json',
-                ]);
-        } catch (\Throwable) {
-            return [];
-        }
-
-        if (! $yanit->successful() || $yanit->json('error') !== null) {
-            return [];
-        }
-
-        $gorulen = [];
-        $liste = [];
-        foreach ((array) $yanit->json('features') as $kayit) {
-            if (! is_array($kayit)) {
-                continue;
-            }
-            $alanlar = is_array($kayit['attributes'] ?? null) ? $kayit['attributes'] : [];
-            foreach (['textstring', 'aciklama'] as $alan) {
-                $metin = $this->metin($alanlar[$alan] ?? null);
-                if ($metin === null || mb_strlen($metin) < 2) {
-                    continue;
-                }
-                $anahtar = mb_strtolower($metin);
-                if (isset($gorulen[$anahtar])) {
-                    continue;
-                }
-                $gorulen[$anahtar] = true;
-                $liste[] = $metin;
-            }
-        }
-
-        usort($liste, static fn (string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
-
-        return array_slice($liste, 0, 20);
     }
 
     /**

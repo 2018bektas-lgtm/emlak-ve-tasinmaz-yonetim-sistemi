@@ -408,32 +408,187 @@
 
 .kr-onaylar { flex-direction: row; flex-wrap: wrap; gap: 20px; align-items: center; }
 
-/* Bedel üreteci */
-.kr-uretec {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 12px;
-    padding: 14px 16px;
-    margin-bottom: 14px;
-    border: 1px dashed #cbd5e1;
-    border-radius: 12px;
-    background: #f8fafc;
+/* ---------- Kira bedelleri (form) ---------- */
+
+/* Girdinin sağına sabit birim: ₺, %, yıl */
+.kr-ek { position: relative; min-width: 0; }
+.kr-ek > .form-input { width: 100%; padding-right: 40px; text-align: right; }
+.kr-ek > span {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #8a91a1;
+    pointer-events: none;
 }
-.kr-uretec .kr-alan { flex: 0 0 160px; }
-.kr-uretec input {
-    width: 100%;
-    padding: 9px 11px;
-    border: 1.5px solid #dbe0e8;
-    border-radius: 10px;
-    background: #fff;
-    font: inherit;
-    font-size: 0.84rem;
+/* Sayı alanlarının ok düğmeleri birimin üstüne biniyordu */
+.kr-ek > input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+.kr-ek > input[type="number"]::-webkit-outer-spin-button,
+.kr-ek > input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Hızlı doldur */
+.kr-uretec {
+    display: grid;
+    grid-template-columns: auto repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: 14px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    border: 1px solid #ece3cf;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #fffdf8 0%, #fbf6ea 100%);
+}
+.kr-uretec-baslik {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+    padding-right: 6px;
+    color: #8b5e1a;
+    font-size: 0.82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.kr-uretec-btn { white-space: nowrap; }
+.kr-uretec-mesaj {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #8b5e1a;
 }
 
-.kr-bedel-tablo td { padding: 6px 8px; vertical-align: middle; }
-.kr-bedel-tablo .form-input { min-width: 0; width: 100%; min-height: 38px; }
-.kr-yil-no { font-weight: 700; color: #64748b; text-align: center; }
+/* Yıl satırları */
+.kr-bedeller {
+    --kr-bedel-kolon: 74px minmax(260px, 2.2fr) minmax(150px, 1.2fr) minmax(100px, 0.8fr) minmax(110px, 0.9fr) 44px;
+    border: 1px solid #e3e7ee;
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden;
+}
+.kr-bedel-baslik,
+.kr-bedel-satir {
+    display: grid;
+    grid-template-columns: var(--kr-bedel-kolon);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+}
+.kr-bedel-baslik {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    background: #f7f9fb;
+    border-bottom: 1px solid #e3e7ee;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #8a91a1;
+}
+.kr-bedel-baslik .is-sag { text-align: right; }
+.kr-bedel-satir + .kr-bedel-satir { border-top: 1px solid #eef1f5; }
+.kr-bedel-satir:hover { background: #fcfcfd; }
+
+.kr-yil-no {
+    justify-self: start;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f3f7;
+    color: #445067;
+    font-size: 0.74rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.kr-donem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.kr-donem .form-input { min-width: 0; width: 100%; }
+.kr-donem-ayrac { color: #a3aab8; font-weight: 700; }
+.kr-aylik {
+    text-align: right;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #0e1726;
+    white-space: nowrap;
+}
+.kr-satir-sil {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    color: #97a0af;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.kr-satir-sil:hover { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+
+/* Alt: yıl ekle + toplamlar */
+.kr-bedel-alt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+.kr-yil-ekle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 18px;
+    border: 1.5px dashed #c9cfd9;
+    border-radius: 10px;
+    background: #fff;
+    color: #445067;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color .12s ease, color .12s ease, background .12s ease;
+}
+.kr-yil-ekle:hover { border-color: #0e1726; color: #0e1726; background: #fafbfc; }
+.kr-bedel-toplam { display: flex; gap: 28px; margin: 0; }
+.kr-bedel-toplam div { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.kr-bedel-toplam dt { font-size: 0.7rem; font-weight: 700; color: #8a91a1; }
+.kr-bedel-toplam dd { margin: 0; font-size: 1.05rem; font-weight: 800; color: #0e1726; }
+
+@media (max-width: 1100px) {
+    .kr-uretec { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .kr-uretec-baslik { grid-column: 1 / -1; }
+    .kr-uretec-btn { grid-column: 1 / -1; }
+}
+/* Dar ekranda her yıl bir kart */
+@media (max-width: 900px) {
+    .kr-bedel-baslik { display: none; }
+    .kr-bedel-satir {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+        grid-template-areas:
+            "yil   aylik sil"
+            "donem donem donem"
+            "bedel oran  oran";
+        row-gap: 10px;
+    }
+    .kr-bedel-satir > .kr-yil-no { grid-area: yil; }
+    .kr-bedel-satir > .kr-donem { grid-area: donem; }
+    .kr-bedel-satir > .kr-ek:nth-of-type(1) { grid-area: bedel; }
+    .kr-bedel-satir > .kr-ek:nth-of-type(2) { grid-area: oran; }
+    .kr-bedel-satir > .kr-aylik { grid-area: aylik; }
+    .kr-bedel-satir > .kr-satir-sil { grid-area: sil; }
+    .kr-bedel-toplam { width: 100%; justify-content: space-between; }
+}
+@media (max-width: 560px) {
+    .kr-uretec { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* Boş yerde kiracı bölümü soluklaşır */
 .form-section.is-pasif { opacity: 0.5; }

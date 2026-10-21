@@ -8,8 +8,8 @@
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
     {{-- Kolon seçim paneli ve kolon filtresi stilleri burada --}}
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=6">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=6">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=7">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=3">
 @endpush
 
 @php

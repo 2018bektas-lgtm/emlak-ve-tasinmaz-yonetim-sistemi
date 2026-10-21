@@ -1897,6 +1897,181 @@ input[type="password"] {
     border-color: #e6e8ec;
 }
 
+/* =========================================================
+ * ozel-tarih.js — panelin ortak tarih seçicisi
+ * Görünen alan native input'un sınıflarını taşır; sarıcı kutu
+ * üretmez (display: contents) ki her sayfanın düzeni aynı kalsın.
+ * ========================================================= */
+.oz-tarih { display: contents; }
+.oz-tarih-gizli {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    clip-path: inset(50%) !important;
+}
+input.oz-tarih-metin {
+    padding-right: 34px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+input.oz-tarih-metin:focus { cursor: text; }
+.oz-tarih.is-acik input.oz-tarih-metin {
+    outline: none;
+    border-color: #0e1726;
+    box-shadow: 0 0 0 3px rgba(14, 23, 38, 0.10), 0 2px 8px rgba(14, 23, 38, 0.06);
+}
+.oz-tarih.is-hata input.oz-tarih-metin,
+.form-field.has-error input.oz-tarih-metin {
+    border-color: #c93030;
+    box-shadow: 0 0 0 3px rgba(201, 48, 48, 0.12);
+}
+.oz-tarih.is-kilitli input.oz-tarih-metin { cursor: not-allowed; }
+
+.oz-takvim[hidden] { display: none !important; }
+.oz-takvim {
+    position: absolute;
+    z-index: 10050; /* modallar (9999) üstünde */
+    width: 280px;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #dbe0e8;
+    border-radius: 12px;
+    box-shadow: 0 14px 36px rgba(14, 23, 38, 0.18), 0 2px 6px rgba(14, 23, 38, 0.06);
+    font-family: inherit;
+    color: #0e1726;
+    user-select: none;
+    animation: oz-in .14s ease;
+}
+.oz-takvim.is-ust { animation: oz-in-ust .14s ease; }
+.oz-takvim button {
+    font: inherit;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+.oz-takvim button:disabled { cursor: not-allowed; }
+
+.oz-takvim-ust {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.oz-takvim-ok {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: #6c7484;
+    transition: background .12s ease, color .12s ease;
+}
+.oz-takvim-ok:hover { background: #f4f6f9; color: #0e1726; }
+.oz-takvim-baslik { display: flex; gap: 2px; }
+.oz-takvim-baslik-btn {
+    padding: 5px 9px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    transition: background .12s ease;
+}
+.oz-takvim-baslik-btn:hover { background: #f4f6f9; }
+.oz-takvim-baslik-btn.is-acik { background: #0e1726; color: #fff; }
+
+.oz-takvim-hafta,
+.oz-takvim-gunler {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.oz-takvim-hafta span {
+    padding: 4px 0 6px;
+    text-align: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #8a91a1;
+}
+.oz-takvim-gun {
+    height: 34px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: background .1s ease, color .1s ease;
+}
+.oz-takvim-gun.is-haftasonu { color: #8b5e1a; }
+.oz-takvim-gun.is-diger { color: #c3c8d2; font-weight: 500; }
+.oz-takvim-gun:hover:not(:disabled),
+.oz-takvim-gun.is-odak { background: #f4f6f9; }
+.oz-takvim-gun.is-bugun { box-shadow: inset 0 0 0 1.5px #d8bc8c; }
+.oz-takvim-gun.is-secili,
+.oz-takvim-gun.is-secili:hover {
+    background: #0e1726;
+    color: #fff;
+    box-shadow: none;
+}
+.oz-takvim-gun:disabled {
+    color: #d5d9e0;
+    text-decoration: line-through;
+    background: none;
+}
+
+.oz-takvim-izgara {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding: 2px 0 4px;
+}
+.oz-takvim-hucre {
+    height: 44px;
+    border-radius: 9px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: background .1s ease;
+}
+.oz-takvim-hucre:hover:not(:disabled),
+.oz-takvim-hucre.is-odak { background: #f4f6f9; }
+.oz-takvim-hucre.is-bugun { box-shadow: inset 0 0 0 1.5px #d8bc8c; }
+.oz-takvim-hucre.is-secili { background: #0e1726; color: #fff; }
+.oz-takvim-hucre:disabled { color: #d5d9e0; }
+
+.oz-takvim-alt {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #eef1f5;
+}
+.oz-takvim-alt-btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #6c7484;
+    transition: background .12s ease, color .12s ease;
+}
+.oz-takvim-alt-btn:hover:not(:disabled) { background: #f4f6f9; color: #0e1726; }
+.oz-takvim-alt-btn.is-ana { margin-left: auto; color: #8b5e1a; }
+.oz-takvim-alt-btn.is-ana:hover:not(:disabled) { background: #fdf6e5; color: #6b4610; }
+.oz-takvim-alt-btn:disabled { opacity: .4; }
+
+@media (max-width: 480px) {
+    .oz-takvim { width: calc(100vw - 16px); }
+    .oz-takvim-gun { height: 40px; }
+}
+
 .form-input[type="file"] {
     padding: 8px 10px;
     font-size: 0.82rem;
@@ -5321,20 +5496,6 @@ input[type="password"] {
     font-weight: 600;
     color: #6f7889;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-.hrm-pop-not-baslik {
-    margin-top: 8px;
-    font-size: 0.66rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #9aa3b5;
-}
-.hrm-pop-notlar p {
-    margin: 4px 0 0;
-    font-size: 0.78rem;
-    line-height: 1.35;
-    color: #dfe3ea;
 }
 .hrm-pop-bos {
     margin: 0;

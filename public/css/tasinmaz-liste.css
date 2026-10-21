@@ -279,7 +279,8 @@
 }
 .hl-aralik { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .hl-aralik-ad { grid-column: 1 / -1; font-size: 0.78rem; font-weight: 800; color: var(--tl-ink); }
-.hl-aralik input[type="date"] { font-variant-numeric: tabular-nums; }
+.hl-aralik input[type="date"],
+.hl-aralik input.oz-tarih-metin { font-variant-numeric: tabular-nums; }
 .hl-ozet {
     display: flex;
     flex-wrap: wrap;

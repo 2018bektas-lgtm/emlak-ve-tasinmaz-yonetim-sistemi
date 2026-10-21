@@ -27,7 +27,8 @@
 .em-filtre { display: flex; flex-direction: column; gap: 4px; }
 .em-filtre > span { font-size: 0.72rem; font-weight: 700; color: var(--hs-muted); }
 .em-filtre select,
-.em-filtre input[type="date"] {
+.em-filtre input[type="date"],
+.em-filtre input.oz-tarih-metin {
     min-width: 140px;
     padding: 8px 10px;
     border: 1px solid rgba(15, 23, 42, 0.12);
@@ -84,7 +85,7 @@
 @media (max-width: 900px) {
     .dg-ozet:has(> .dg-ozet-kutu:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .em-filtre select,
-    .em-filtre input[type="date"] { min-width: 0; width: 100%; }
+    .em-filtre input[type="date"], .em-filtre input.oz-tarih-metin { min-width: 0; width: 100%; }
     .em-filtre.is-tarih { width: 100%; }
 }
 

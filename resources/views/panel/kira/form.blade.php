@@ -7,7 +7,7 @@
 @push('head')
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=2">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=3">
 @endpush
 
 @php
@@ -335,46 +335,73 @@
             <span class="form-section-num">5</span>
             <div class="form-section-head-text">
                 <h3>Kira Bedelleri</h3>
-                <small>Her sözleşme yılı bir satır. İlk yılı girip artış oranıyla kalan yılları üretebilirsiniz.</small>
+                <small>Her sözleşme yılı bir satır. İlk yılı girip artış oranıyla kalan yılları üretebilirsiniz. Dönem tarihleri boş bırakılırsa sözleşme başlangıcından yıl yıl hesaplanır.</small>
             </div>
         </div>
 
+        {{-- Hızlı doldurma: ilk yıl + artış oranından bütün yıllar --}}
         <div class="kr-uretec">
-            <label class="kr-alan"><span>İlk yıl bedeli (₺)</span><input type="number" id="uretIlkBedel" step="0.01" min="0"></label>
-            <label class="kr-alan"><span>Yıl sayısı</span><input type="number" id="uretYilSayisi" min="1" max="30" value="3"></label>
-            <label class="kr-alan"><span>Yıllık artış (%)</span><input type="number" id="uretArtis" step="0.01" value="25"></label>
-            <button type="button" class="btn-cancel hs-mini-btn" id="uretBtn">Satırları Üret</button>
+            <div class="kr-uretec-baslik">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                <span>Hızlı doldur</span>
+            </div>
+            <div class="form-field">
+                <label for="uretIlkBedel">İlk yıl bedeli</label>
+                <div class="kr-ek"><input type="number" id="uretIlkBedel" class="form-input td-mono" step="0.01" min="0" placeholder="0,00"><span>₺</span></div>
+            </div>
+            <div class="form-field">
+                <label for="uretYilSayisi">Yıl sayısı</label>
+                <div class="kr-ek"><input type="number" id="uretYilSayisi" class="form-input td-mono" min="1" max="30" value="3"><span>yıl</span></div>
+            </div>
+            <div class="form-field">
+                <label for="uretArtis">Yıllık artış</label>
+                <div class="kr-ek"><input type="number" id="uretArtis" class="form-input td-mono" step="0.01" value="25"><span>%</span></div>
+            </div>
+            <button type="button" class="btn-cancel kr-uretec-btn" id="uretBtn">Yılları oluştur</button>
+            <p class="kr-uretec-mesaj" id="uretMesaj" hidden></p>
         </div>
 
-        <div class="tl-tablo-wrap">
-            <table class="tl-tablo kr-bedel-tablo" id="bedelTablo">
-                <thead>
-                    <tr>
-                        <th style="width:70px">Yıl</th>
-                        <th>Dönem Başlangıç</th>
-                        <th>Dönem Bitiş</th>
-                        <th class="is-sag">Yıllık Bedel (₺)</th>
-                        <th class="is-sag">Artış / TÜFE (%)</th>
-                        <th style="width:60px"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($bedeller as $i => $b)
-                        <tr>
-                            <td class="kr-yil-no">{{ $i + 1 }}</td>
-                            <td><input type="date" name="bedeller[{{ $i }}][donem_baslangic]" class="form-input" value="{{ $b['donem_baslangic'] ?? '' }}"></td>
-                            <td><input type="date" name="bedeller[{{ $i }}][donem_bitis]" class="form-input" value="{{ $b['donem_bitis'] ?? '' }}"></td>
-                            <td><input type="number" name="bedeller[{{ $i }}][yillik_bedel]" class="form-input td-mono" value="{{ $b['yillik_bedel'] ?? '' }}" step="0.01" min="0"></td>
-                            <td><input type="number" name="bedeller[{{ $i }}][tufe_orani]" class="form-input td-mono" value="{{ $b['tufe_orani'] ?? '' }}" step="0.01"></td>
-                            <td><button type="button" class="dg-kaldir" data-bedel-sil>Sil</button></td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+        <div class="kr-bedeller" id="bedelListe">
+            <div class="kr-bedel-baslik" aria-hidden="true">
+                <span>Yıl</span>
+                <span>Dönem</span>
+                <span class="is-sag">Yıllık bedel</span>
+                <span class="is-sag">Artış</span>
+                <span class="is-sag">Aylık</span>
+                <span></span>
+            </div>
+            @foreach ($bedeller as $i => $b)
+                <div class="kr-bedel-satir">
+                    <span class="kr-yil-no">{{ $i + 1 }}. yıl</span>
+                    <div class="kr-donem">
+                        <input type="date" name="bedeller[{{ $i }}][donem_baslangic]" class="form-input" value="{{ $b['donem_baslangic'] ?? '' }}" aria-label="Dönem başlangıcı">
+                        <span class="kr-donem-ayrac">–</span>
+                        <input type="date" name="bedeller[{{ $i }}][donem_bitis]" class="form-input" value="{{ $b['donem_bitis'] ?? '' }}" aria-label="Dönem bitişi">
+                    </div>
+                    <div class="kr-ek"><input type="number" name="bedeller[{{ $i }}][yillik_bedel]" class="form-input td-mono" value="{{ $b['yillik_bedel'] ?? '' }}" step="0.01" min="0" placeholder="0,00" aria-label="Yıllık bedel" data-bedel><span>₺</span></div>
+                    <div class="kr-ek"><input type="number" name="bedeller[{{ $i }}][tufe_orani]" class="form-input td-mono" value="{{ $b['tufe_orani'] ?? '' }}" step="0.01" placeholder="—" aria-label="Artış oranı" data-oran><span>%</span></div>
+                    <span class="kr-aylik td-mono" data-aylik>—</span>
+                    <button type="button" class="kr-satir-sil" data-bedel-sil aria-label="Bu yılı kaldır" title="Bu yılı kaldır">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>
+                    </button>
+                </div>
+            @endforeach
         </div>
-        <button type="button" class="btn-cancel hs-mini-btn" id="bedelEkle">+ Yıl ekle</button>
+
+        <div class="kr-bedel-alt">
+            <button type="button" class="kr-yil-ekle" id="bedelEkle">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Yıl ekle
+            </button>
+            <dl class="kr-bedel-toplam">
+                <div><dt>Yıllık bedeller toplamı</dt><dd class="td-mono" id="bedelToplam">—</dd></div>
+                <div><dt>Ortalama aylık</dt><dd class="td-mono" id="bedelOrtalama">—</dd></div>
+            </dl>
+        </div>
         @error('bedeller')<span class="error">{{ $message }}</span>@enderror
         @error('bedeller.*.yillik_bedel')<span class="error">{{ $message }}</span>@enderror
+        @error('bedeller.*.donem_baslangic')<span class="error">{{ $message }}</span>@enderror
+        @error('bedeller.*.donem_bitis')<span class="error">{{ $message }}</span>@enderror
     </section>
 
     {{-- 6 · Durum --}}
@@ -434,7 +461,7 @@
 <script>
 (function () {
     const form = document.getElementById('kiraForm');
-    const govde = document.querySelector('#bedelTablo tbody');
+    const liste = document.getElementById('bedelListe');
     const bas = document.getElementById('baslangic_tarihi');
     const bit = document.getElementById('bitis_tarihi');
 
@@ -449,66 +476,177 @@
     [bas, bit].forEach(function (a) { a.addEventListener('change', sureyiGoster); });
     sureyiGoster();
 
+    // ---- Kira bedelleri ----
+    const TL = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' });
+    const SIL_IKON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+    const satirlar = function () { return Array.from(liste.querySelectorAll('.kr-bedel-satir')); };
+    const sayi = function (girdi) { const n = parseFloat(girdi.value); return Number.isFinite(n) ? n : null; };
+    const yuvarla = function (n) { return (Math.round(n * 100) / 100).toFixed(2); };
+
+    // Yerel gün; toISOString saat dilimi yüzünden bir gün kaydırabiliyor
+    function isoGun(d) {
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    function gunOku(s) {
+        const p = (s || '').split('-').map(Number);
+        return p.length === 3 && p[0] ? new Date(p[0], p[1] - 1, p[2]) : null;
+    }
+
     function yenidenNumarala() {
-        Array.from(govde.rows).forEach(function (tr, i) {
-            tr.querySelector('.kr-yil-no').textContent = i + 1;
-            tr.querySelectorAll('input').forEach(function (g) {
+        satirlar().forEach(function (satir, i) {
+            satir.querySelector('.kr-yil-no').textContent = (i + 1) + '. yıl';
+            satir.querySelectorAll('input[name]').forEach(function (g) {
                 g.name = g.name.replace(/bedeller\[\d+\]/, 'bedeller[' + i + ']');
             });
+            // İlk yılın artışı olmaz
+            const oran = satir.querySelector('[data-oran]');
+            oran.placeholder = i === 0 ? 'İlk yıl' : '—';
         });
+        hesapla();
+    }
+
+    /** Satırların aylık tutarı ve alttaki toplamlar. */
+    function hesapla() {
+        let toplam = 0;
+        let adet = 0;
+        satirlar().forEach(function (satir) {
+            const b = sayi(satir.querySelector('[data-bedel]'));
+            satir.querySelector('[data-aylik]').textContent = b !== null ? TL.format(b / 12) : '—';
+            if (b !== null) { toplam += b; adet++; }
+        });
+        document.getElementById('bedelToplam').textContent = adet ? TL.format(toplam) : '—';
+        document.getElementById('bedelOrtalama').textContent = adet ? TL.format(toplam / (adet * 12)) : '—';
+    }
+
+    /** Oranı girilmiş yılların bedelini önceki yıldan yeniden hesaplar (sıradan sonrası). */
+    function zincir(baslangic) {
+        const s = satirlar();
+        for (let i = Math.max(1, baslangic); i < s.length; i++) {
+            const onceki = sayi(s[i - 1].querySelector('[data-bedel]'));
+            const oran = sayi(s[i].querySelector('[data-oran]'));
+            if (onceki === null || oran === null) continue;
+            s[i].querySelector('[data-bedel]').value = yuvarla(onceki * (1 + oran / 100));
+        }
     }
 
     function satirKur(deger) {
         deger = deger || {};
-        const tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td class="kr-yil-no"></td>' +
-            '<td><input type="date" name="x[donem_baslangic]" class="form-input" value="' + (deger.bas || '') + '"></td>' +
-            '<td><input type="date" name="x[donem_bitis]" class="form-input" value="' + (deger.bit || '') + '"></td>' +
-            '<td><input type="number" name="x[yillik_bedel]" class="form-input td-mono" step="0.01" min="0" value="' + (deger.bedel || '') + '"></td>' +
-            '<td><input type="number" name="x[tufe_orani]" class="form-input td-mono" step="0.01" value="' + (deger.oran || '') + '"></td>' +
-            '<td><button type="button" class="dg-kaldir" data-bedel-sil>Sil</button></td>';
-        // Şablondaki 'x[alan]' adından 'x' atılır: 'bedeller[0][alan]'
-        tr.querySelectorAll('input').forEach(function (g) {
-            g.name = 'bedeller[0]' + g.name.slice(1);
-        });
-        govde.appendChild(tr);
-        yenidenNumarala();
+        const satir = document.createElement('div');
+        satir.className = 'kr-bedel-satir';
+        satir.innerHTML =
+            '<span class="kr-yil-no"></span>' +
+            '<div class="kr-donem">' +
+                '<input type="date" name="bedeller[0][donem_baslangic]" class="form-input" aria-label="Dönem başlangıcı">' +
+                '<span class="kr-donem-ayrac">–</span>' +
+                '<input type="date" name="bedeller[0][donem_bitis]" class="form-input" aria-label="Dönem bitişi">' +
+            '</div>' +
+            '<div class="kr-ek"><input type="number" name="bedeller[0][yillik_bedel]" class="form-input td-mono" step="0.01" min="0" placeholder="0,00" aria-label="Yıllık bedel" data-bedel><span>₺</span></div>' +
+            '<div class="kr-ek"><input type="number" name="bedeller[0][tufe_orani]" class="form-input td-mono" step="0.01" placeholder="—" aria-label="Artış oranı" data-oran><span>%</span></div>' +
+            '<span class="kr-aylik td-mono" data-aylik>—</span>' +
+            '<button type="button" class="kr-satir-sil" data-bedel-sil aria-label="Bu yılı kaldır" title="Bu yılı kaldır">' + SIL_IKON + '</button>';
+        // Değerler özellik olarak atanır; HTML'e gömülmez
+        satir.querySelector('[name$="[donem_baslangic]"]').value = deger.bas || '';
+        satir.querySelector('[name$="[donem_bitis]"]').value = deger.bit || '';
+        satir.querySelector('[data-bedel]').value = deger.bedel || '';
+        satir.querySelector('[data-oran]').value = deger.oran !== undefined ? deger.oran : '';
+        liste.appendChild(satir);
+        return satir;
     }
 
-    document.getElementById('bedelEkle').addEventListener('click', function () { satirKur(); });
-
-    govde.addEventListener('click', function (e) {
-        if (e.target.matches('[data-bedel-sil]')) {
-            e.target.closest('tr').remove();
-            yenidenNumarala();
+    document.getElementById('bedelEkle').addEventListener('click', function () {
+        // Yeni yıl, öncekinin dönemini bir yıl ileri taşır
+        const s = satirlar();
+        const son = s[s.length - 1];
+        const deger = {};
+        const sonBit = son && gunOku(son.querySelector('[name$="[donem_bitis]"]').value);
+        if (sonBit) {
+            const yeniBas = new Date(sonBit.getFullYear(), sonBit.getMonth(), sonBit.getDate() + 1);
+            const yeniBit = new Date(yeniBas.getFullYear() + 1, yeniBas.getMonth(), yeniBas.getDate() - 1);
+            const sozBit = gunOku(bit.value);
+            deger.bas = isoGun(yeniBas);
+            // Sözleşme içinde kalan son dönem sözleşme bitişinde kesilir; sözleşme
+            // dışına taşan yıl (uzatma) tam yıl olarak açılır, ters dönem oluşmaz
+            deger.bit = isoGun(sozBit && yeniBas <= sozBit && yeniBit > sozBit ? sozBit : yeniBit);
         }
+        const yeni = satirKur(deger);
+        yenidenNumarala();
+        yeni.querySelector('[data-bedel]').focus();
     });
+
+    liste.addEventListener('click', function (e) {
+        const sil = e.target.closest('[data-bedel-sil]');
+        if (!sil) return;
+        const satir = sil.closest('.kr-bedel-satir');
+        if (satirlar().length === 1) {
+            // En az bir yıl kalmalı; son satır silinmez, temizlenir
+            satir.querySelectorAll('input').forEach(function (g) { g.value = ''; });
+        } else {
+            satir.remove();
+        }
+        yenidenNumarala();
+    });
+
+    liste.addEventListener('input', function (e) {
+        const satir = e.target.closest('.kr-bedel-satir');
+        if (!satir) return;
+        const s = satirlar();
+        const i = s.indexOf(satir);
+        if (e.target.matches('[data-oran]')) {
+            zincir(i);
+        } else if (e.target.matches('[data-bedel]')) {
+            // Bedel elle değişti: bu yılın oranı güncellenir, sonraki yıllar kendi oranıyla kayar
+            const onceki = i > 0 ? sayi(s[i - 1].querySelector('[data-bedel]')) : null;
+            const b = sayi(e.target);
+            if (onceki && b !== null) s[i].querySelector('[data-oran]').value = yuvarla((b / onceki - 1) * 100);
+            zincir(i + 1);
+        }
+        hesapla();
+    });
+
+    // Yıl sayısı sözleşme süresinden önerilir (kullanıcı elle değiştirmediyse)
+    const uretYil = document.getElementById('uretYilSayisi');
+    let uretYilElle = false;
+    uretYil.addEventListener('input', function () { uretYilElle = true; });
+    function yilSayisiOner() {
+        const b1 = gunOku(bas.value), b2 = gunOku(bit.value);
+        if (uretYilElle || !b1 || !b2 || b2 <= b1) return;
+        uretYil.value = Math.min(30, Math.max(1, Math.ceil(((b2 - b1) / 86400000 + 1) / 365.25 - 0.01)));
+    }
+    [bas, bit].forEach(function (a) { a.addEventListener('change', yilSayisiOner); });
+    yilSayisiOner();
+
+    function uretMesaj(metin) {
+        const m = document.getElementById('uretMesaj');
+        m.textContent = metin || '';
+        m.hidden = !metin;
+    }
 
     // İlk yıl + artış oranından tüm yılları üret; dönemler kira başlangıcından yürür
     document.getElementById('uretBtn').addEventListener('click', function () {
         const ilk = parseFloat(document.getElementById('uretIlkBedel').value);
-        const yil = parseInt(document.getElementById('uretYilSayisi').value, 10);
+        const yil = parseInt(uretYil.value, 10);
         const artis = parseFloat(document.getElementById('uretArtis').value) || 0;
-        if (!ilk || !yil) { alert('İlk yıl bedeli ve yıl sayısı girin.'); return; }
+        if (!(ilk > 0) || !(yil > 0)) { uretMesaj('İlk yıl bedelini ve yıl sayısını girin.'); return; }
+        uretMesaj(bas.value ? '' : 'Kira başlangıcı girilmediği için dönem tarihleri boş bırakıldı; kayıtta sözleşmeden hesaplanır.');
 
-        govde.innerHTML = '';
+        const b1 = gunOku(bas.value), b2 = gunOku(bit.value);
+        satirlar().forEach(function (s) { s.remove(); });
         let bedel = ilk;
         for (let y = 0; y < yil; y++) {
-            let donemBas = '', donemBit = '';
-            if (bas.value) {
-                const d = new Date(bas.value);
-                d.setFullYear(d.getFullYear() + y);
-                donemBas = d.toISOString().slice(0, 10);
-                const s = new Date(d);
-                s.setFullYear(s.getFullYear() + 1);
-                s.setDate(s.getDate() - 1);
-                donemBit = s.toISOString().slice(0, 10);
+            const deger = { bedel: yuvarla(bedel), oran: y > 0 ? String(artis) : '' };
+            if (b1) {
+                const d = new Date(b1.getFullYear() + y, b1.getMonth(), b1.getDate());
+                const s = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate() - 1);
+                deger.bas = isoGun(d);
+                deger.bit = isoGun(b2 && s > b2 ? b2 : s);
             }
-            satirKur({ bas: donemBas, bit: donemBit, bedel: bedel.toFixed(2), oran: y > 0 ? artis : '' });
+            satirKur(deger);
             bedel = bedel * (1 + artis / 100);
         }
+        yenidenNumarala();
     });
+
+    yenidenNumarala();
 
     // İl → ilçe → mahalle
     const ilSecim = document.getElementById('il_id');
