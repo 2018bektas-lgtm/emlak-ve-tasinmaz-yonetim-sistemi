@@ -7,7 +7,7 @@
 @push('head')
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=6">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=12">
 @endpush
 
 @php
@@ -194,8 +194,13 @@
                             @endif
                         </td>
                         <td>
-                            <a href="{{ route('panel.kira.detay', $a->kira_dosya_id) }}" class="td-mono kr-dosya-link">{{ $a->dosya?->dosya_no }}</a>
-                            <small class="dg-alt">{{ $a->dosya?->isyeri_adi }}</small>
+                            @if ($a->dosya)
+                                <a href="{{ route('panel.kira.detay', $a->kira_dosya_id) }}" class="td-mono kr-dosya-link">{{ $a->dosya->dosya_no }}</a>
+                                <small class="dg-alt">{{ $a->dosya->isyeri_adi }}</small>
+                            @else
+                                {{-- Boş alan: henüz kiraya verilmedi --}}
+                                <small class="dg-alt">Dosya yok</small>
+                            @endif
                         </td>
                         <td>
                             {{ $a->kiraci_ad_unvan ?: ($a->dosya?->anaKiraci?->ad_unvan ?: '—') }}
@@ -207,8 +212,14 @@
                             @if ($a->faaliyet_konusu)<small class="dg-alt">{{ $a->faaliyet_konusu }}</small>@endif
                         </td>
                         <td>
-                            {{ $t?->ilce?->ad ?: '—' }}@if ($t?->mahalle) · {{ $t->mahalle->ad }}@endif
-                            @if ($t?->adaParsel())<small class="dg-alt td-mono">{{ $t->adaParsel() }}</small>@endif
+                            @php
+                                // Dosyası olmayan alanın konumu sınırının parselinden
+                                $ilceAd = $t?->ilce?->ad ?? $a->poligon?->mahalle?->ilce?->ad;
+                                $mahalleAd = $t?->mahalle?->ad ?? $a->poligon?->mahalle?->ad;
+                                $adaParsel = $t?->adaParsel() ?? $a->poligon?->adaParsel();
+                            @endphp
+                            {{ $ilceAd ?: '—' }}@if ($mahalleAd) · {{ $mahalleAd }}@endif
+                            @if ($adaParsel)<small class="dg-alt td-mono">{{ $adaParsel }}</small>@endif
                         </td>
                         <td class="td-mono is-sag">{{ $tl($a->alan) }}</td>
                         <td class="td-mono is-sag">{{ $tl($a->yillik_bedel) }}</td>

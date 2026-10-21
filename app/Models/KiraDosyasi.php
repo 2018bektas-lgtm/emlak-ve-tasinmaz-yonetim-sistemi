@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\KiraciTipi;
 use App\Enums\KiraDoluBos;
 use App\Enums\KiraIhaleTuru;
 use Illuminate\Database\Eloquent\Builder;
@@ -99,6 +100,32 @@ class KiraDosyasi extends Model
     {
         return $this->hasOne(KiraKiraci::class, 'kira_dosya_id')
             ->where('tip', 'ana')->latestOfMany('id');
+    }
+
+    /**
+     * Yürürlükteki dönemin ana kiracısı — dosya formu bunu gösterir ve günceller.
+     *
+     * Dönemsiz satır (veri aktarımından kalan genel kiracı) dönemin kiracısı
+     * yoksa onun yerine geçer. Yürürlükte dönem yoksa en son eklenen kiracı.
+     * Eski dönemlerin kiracıları geçmiştir; buradan dönmez.
+     */
+    public function guncelKiraci(): ?KiraKiraci
+    {
+        $ana = $this->kiracilar->filter(fn (KiraKiraci $k) => $k->tip === KiraciTipi::Ana);
+        $donem = $this->aktifSozlesme;
+
+        if ($donem) {
+            return $ana->firstWhere('kira_sozlesme_id', $donem->id)
+                ?? $ana->whereNull('kira_sozlesme_id')->sortByDesc('id')->first();
+        }
+
+        return $ana->sortByDesc('id')->first();
+    }
+
+    /** Dosyaya bağlı bütün kira alanlarını yürürlükteki dönemle eşitler. */
+    public function alanlariEsitle(): void
+    {
+        KiraAlan::where('kira_dosya_id', $this->id)->get()->each->dosyadanEsitle();
     }
 
     public function tasinmaz(): HasOne

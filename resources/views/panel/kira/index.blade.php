@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
     {{-- Kolon seçim paneli ve kolon filtresi stilleri burada --}}
     <link rel="stylesheet" href="{{ asset('css/tasinmaz-liste.css') }}?v=7">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=6">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=12">
 @endpush
 
 @php
@@ -47,9 +47,9 @@
             Excel
         </a>
         @can('kira.olustur')
-            <a href="{{ route('panel.kira.olustur') }}" class="btn-submit">
+            <a href="{{ route('panel.kira.alanlar.olustur') }}" class="btn-submit">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Yeni Dosya
+                Yeni Kira Alanı
             </a>
         @endcan
     </div>

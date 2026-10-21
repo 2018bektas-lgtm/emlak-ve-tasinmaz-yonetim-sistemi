@@ -10,18 +10,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Dosyada kiraya verilen tek bir alan.
+ * Kira taşınmazı: kiraya verilen (ya da verilecek) tek bir yer.
  *
- * Referans sistemde alan, dosyanın içinde kendi kiracısı, tarihi, bedeli ve
- * doluluk durumu olan bağımsız bir kiralama birimi (5.693 alan / 4.353 dosya).
- * Geometri alanın kendisinde değil, paylaşılabilir `kira_poligonlari`nda.
+ * Kayıt akışının merkezi budur. Önce alan eklenir; kiraya verildiğinde dosya
+ * numarası bağlanır. Boş bir alanın henüz dosyası olmayabilir. Geometri
+ * alanın kendisinde değil, paylaşılabilir `kira_poligonlari`nda; poligonun
+ * içine düşen envanter taşınmazı `tasinmaz_id` ile bağlanır.
+ *
+ * Kiracı, bedel ve tarih sütunları dosyanın yürürlükteki döneminden
+ * doldurulur (dosyadanEsitle); formda ayrıca girilmez.
  */
 class KiraAlan extends Model
 {
     protected $table = 'kira_alanlari';
 
     protected $fillable = [
-        'kira_dosya_id', 'poligon_id', 'ad', 'adres', 'alan',
+        'kira_dosya_id', 'poligon_id', 'tasinmaz_id', 'ad', 'adres', 'alan',
         'faaliyet_konusu', 'kiralama_amaci', 'is_kolu_id',
         'yillik_bedel', 'taksit_sayisi', 'tahliye_ihbarnamesi_mi',
         'baslangic_tarihi', 'bitis_tarihi', 'aktif_mi',
@@ -50,6 +54,45 @@ class KiraAlan extends Model
     public function poligon(): BelongsTo
     {
         return $this->belongsTo(KiraPoligon::class, 'poligon_id');
+    }
+
+    /** Poligonun içine düşen envanter taşınmazı. */
+    public function tasinmaz(): BelongsTo
+    {
+        return $this->belongsTo(Tasinmaz::class, 'tasinmaz_id');
+    }
+
+    /**
+     * Kiracı, bedel, süre ve hukuki durum dosyanın yürürlükteki döneminden
+     * alınır. Dosya, dönem ya da alan kaydedildiğinde çağrılır; böylece
+     * listede, haritada ve raporda alan ile dosya aynı şeyi söyler.
+     */
+    public function dosyadanEsitle(): void
+    {
+        $dosya = $this->kira_dosya_id
+            ? KiraDosyasi::with(['kiracilar', 'aktifSozlesme.bedeller'])->find($this->kira_dosya_id)
+            : null;
+
+        if (! $dosya) {
+            $this->update([
+                'kiraci_ad_unvan' => null, 'yillik_bedel' => null, 'taksit_sayisi' => null,
+                'baslangic_tarihi' => null, 'bitis_tarihi' => null,
+            ]);
+
+            return;
+        }
+
+        $donem = $dosya->aktifSozlesme;
+        $this->update([
+            'kiraci_ad_unvan' => $dosya->guncelKiraci()?->ad_unvan,
+            'yillik_bedel' => $donem?->guncelBedel()?->yillik_bedel,
+            'taksit_sayisi' => $donem?->taksit_sayisi,
+            'baslangic_tarihi' => $donem?->baslangic_tarihi,
+            'bitis_tarihi' => $donem?->bitis_tarihi,
+            'hukuki_durum_id' => $dosya->hukuki_durum_id,
+            'kiracilik_durum_id' => $dosya->kiracilik_durum_id,
+            'tahliye_ihbarnamesi_mi' => $dosya->tahliye_ihbarnamesi_mi,
+        ]);
     }
 
     public function isKolu(): BelongsTo

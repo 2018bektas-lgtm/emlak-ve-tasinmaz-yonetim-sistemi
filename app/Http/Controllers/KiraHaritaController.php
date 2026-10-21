@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\KiraciTipi;
 use App\Models\KiraAlan;
 use App\Models\KiraPoligon;
 use App\Support\Geometri;
@@ -165,7 +164,7 @@ class KiraHaritaController extends Controller
             ->where('poligon_id', $poligon->id)
             ->with([
                 'dosya:id,dosya_no,eski_dosya_no,isyeri_adi,ihale_turu,sozlesme_aktif_mi,uyari',
-                'dosya.kiracilar:id,kira_dosya_id,tip,ad_unvan,telefon',
+                'dosya.kiracilar:id,kira_dosya_id,kira_sozlesme_id,tip,ad_unvan,telefon',
                 'dosya.aktifSozlesme',
                 'dosya.aktifSozlesme.bedeller',
                 'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,adres,yuzolcum,imar_durumu_id',
@@ -196,7 +195,7 @@ class KiraHaritaController extends Controller
                 $t = $d?->tasinmaz;
                 $s = $d?->aktifSozlesme;
                 $bedel = $s?->guncelBedel();
-                $kiraci = $d?->kiracilar->firstWhere('tip', KiraciTipi::Ana);
+                $kiraci = $d?->guncelKiraci();
 
                 return [
                     'alan_id' => $a->id,

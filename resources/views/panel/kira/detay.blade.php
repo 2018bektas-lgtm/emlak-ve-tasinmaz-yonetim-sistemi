@@ -8,14 +8,14 @@
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
     <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=10">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=12">
     {{-- Dosya kartının kendi düzeni: sol künye rayı + sekmeler --}}
     <link rel="stylesheet" href="{{ asset('css/kira-detay.css') }}?v=1">
 @endpush
 
 @push('scripts')
     <script src="https://js.arcgis.com/4.30/"></script>
-    <script src="{{ asset('js/kira-harita-kutu.js') }}?v=2"></script>
+    <script src="{{ asset('js/kira-harita-kutu.js') }}?v=3"></script>
 @endpush
 
 @php

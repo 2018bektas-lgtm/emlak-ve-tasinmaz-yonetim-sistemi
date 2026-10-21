@@ -8,12 +8,12 @@
     <link rel="stylesheet" href="{{ asset('css/hisse-satis.css') }}?v=2">
     <link rel="stylesheet" href="{{ asset('css/degerleme.css') }}?v=5">
     <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
-    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=10">
+    <link rel="stylesheet" href="{{ asset('css/kira.css') }}?v=12">
 @endpush
 
 @push('scripts')
     <script src="https://js.arcgis.com/4.30/"></script>
-    <script src="{{ asset('js/kira-harita-kutu.js') }}?v=2"></script>
+    <script src="{{ asset('js/kira-harita-kutu.js') }}?v=3"></script>
 @endpush
 
 @php
@@ -25,23 +25,18 @@
     $bolumNo = 0;
     $no = function () use (&$bolumNo) { return ++$bolumNo; };
 
-    // Alanın kendi kiracısı / dönemi / bedeli olabilir; yoksa dosyanın
-    // yürürlükteki sözleşmesi geçerlidir. Hangisinin geçerli olduğu ekranda
-    // açıkça yazılır — iki sayfanın farkı burada görünür olmalı.
+    // Kiracı, dönem ve bedel dosyanın yürürlükteki döneminden gelir
+    // (alan kaydedilirken eşitlenir). Dosyası olmayan alan henüz kirada değil.
     $s = $d?->aktifSozlesme;
-    $dosyaBedel = $s?->guncelBedel();
+    $baslangic = $s?->baslangic_tarihi;
+    $bitis = $s?->bitis_tarihi;
+    $bedel = $s?->guncelBedel()?->yillik_bedel;
+    $kalan = $d?->sozlesme_aktif_mi ? $s?->kalanGun() : null;
 
-    $kendiDonemi = $alan->baslangic_tarihi !== null || $alan->bitis_tarihi !== null;
-    $kendiKiracisi = filled($alan->kiraci_ad_unvan);
-    $kendiBedeli = $alan->yillik_bedel !== null;
-    $kendiSartlari = $kendiDonemi || $kendiKiracisi || $kendiBedeli;
-
-    $baslangic = $kendiDonemi ? $alan->baslangic_tarihi : $s?->baslangic_tarihi;
-    $bitis = $kendiDonemi ? $alan->bitis_tarihi : $s?->bitis_tarihi;
-    $bedel = $kendiBedeli ? $alan->yillik_bedel : $dosyaBedel?->yillik_bedel;
-    $kalan = $kendiDonemi
-        ? $alan->kalanGun()
-        : ($d?->sozlesme_aktif_mi ? $s?->kalanGun() : null);
+    // Konum: dosyanın tapu bilgisi, dosya yoksa sınırın parseli
+    $ilce = $t?->ilce?->ad ?? $p?->mahalle?->ilce?->ad;
+    $mahalle = $t?->mahalle?->ad ?? $p?->mahalle?->ad;
+    $adaParsel = $t?->adaParsel() ?? $p?->adaParsel();
 @endphp
 
 @section('content')
@@ -51,8 +46,10 @@
     <div class="page-hero-text">
         <p class="hs-eyebrow">Kira İşlemleri · Kira Alanı</p>
         <h2>
-            <a href="{{ route('panel.kira.detay', $alan->kira_dosya_id) }}" class="kr-ust-dosya">{{ $d?->dosya_no }}</a>
-            <span class="kr-ust-ayrac">›</span>
+            @if ($d)
+                <a href="{{ route('panel.kira.detay', $d->id) }}" class="kr-ust-dosya">{{ $d->dosya_no }}</a>
+                <span class="kr-ust-ayrac">›</span>
+            @endif
             {{ $alan->ad ?: 'Adsız alan' }}
         </h2>
         <small>
@@ -67,7 +64,11 @@
             <a href="{{ route('panel.kira.harita', ['merkez' => $p->merkez_lat.','.$p->merkez_lng, 'zoom' => 18]) }}" class="btn-cancel">Haritada Göster</a>
         @endif
         @can('kira.duzenle')
-            <a href="{{ route('panel.kira.alanlar.duzenle', $alan->id) }}" class="btn-submit">Düzenle</a>
+            <a href="{{ route('panel.kira.alanlar.duzenle', $alan->id) }}" class="{{ $d ? 'btn-submit' : 'btn-cancel' }}">Düzenle</a>
+            @unless ($d)
+                {{-- Boş alan: dosya numarası bağlanınca kiraya verilmiş olur --}}
+                <a href="{{ route('panel.kira.alanlar.duzenle', ['id' => $alan->id, 'kirala' => 1]) }}" class="btn-submit">Kiraya Ver</a>
+            @endunless
         @endcan
     </div>
 </section>
@@ -78,10 +79,14 @@
     <div>
         <strong>Bu sayfa kiraya verilen <em>yeri</em> anlatır:</strong> sınırı, kaç m² olduğu, hangi iş kolunda kullanıldığı ve dolu mu boş mu olduğu.
         <br>
-        Sözleşme numarası, yıl yıl kira bedelleri, ihale ve encümen kararları
-        <a href="{{ route('panel.kira.detay', $alan->kira_dosya_id) }}">{{ $d?->dosya_no }} numaralı kira dosyasında</a>.
-        @if ($dosyaAlanSayisi > 1)
-            Bu dosyada <strong>{{ $dosyaAlanSayisi }} ayrı yer</strong> kiraya verilmiş.
+        @if ($d)
+            Sözleşme numarası, yıl yıl kira bedelleri, ihale ve encümen kararları
+            <a href="{{ route('panel.kira.detay', $d->id) }}">{{ $d->dosya_no }} numaralı kira dosyasında</a>.
+            @if ($dosyaAlanSayisi > 1)
+                Bu dosyada <strong>{{ $dosyaAlanSayisi }} ayrı yer</strong> kiraya verilmiş.
+            @endif
+        @else
+            Bu alan henüz bir kira dosyasına bağlı değil. <strong>Kiraya Ver</strong> ile dosya numarası bağlandığında kiracı ve sözleşme bilgileri buraya gelir.
         @endif
     </div>
 </div>
@@ -131,9 +136,19 @@
         </div>
     </div>
     <dl class="dg-bilgi">
-        <div><dt>İlçe</dt><dd>{{ $t?->ilce?->ad ?: '—' }}</dd></div>
-        <div><dt>Mahalle</dt><dd>{{ $t?->mahalle?->ad ?: '—' }}</dd></div>
-        <div><dt>Ada / Parsel</dt><dd class="td-mono">{{ $t?->adaParsel() ?: '—' }}</dd></div>
+        <div><dt>İlçe</dt><dd>{{ $ilce ?: '—' }}</dd></div>
+        <div><dt>Mahalle</dt><dd>{{ $mahalle ?: '—' }}</dd></div>
+        <div><dt>Ada / Parsel</dt><dd class="td-mono">{{ $adaParsel ?: '—' }}</dd></div>
+        <div>
+            <dt>Envanter Kaydı</dt>
+            <dd>
+                @if ($alan->tasinmaz)
+                    <span class="td-mono">#{{ $alan->tasinmaz->id }}</span>@if ($alan->tasinmaz->ada) · {{ $alan->tasinmaz->ada }}/{{ $alan->tasinmaz->parsel }}@endif
+                @else
+                    Sınırın içinde envanter taşınmazı yok
+                @endif
+            </dd>
+        </div>
         <div><dt>Poligon</dt><dd>{{ $p ? '#'.$p->id.' · '.($p->ad ?: 'adsız') : 'Bağlı değil' }}</dd></div>
         <div><dt>Poligon Kaynağı</dt><dd>{{ $p ? ($p->kaynak === 'tkgm' ? 'TKGM parseli' : ($p->kaynak === 'cizim' ? 'Haritada çizim' : 'İçe aktarım')) : '—' }}</dd></div>
         <div><dt>Bu sınırı kullanan kayıt</dt><dd>{{ $p ? $p->alanlar->count() : '—' }}</dd></div>
@@ -174,42 +189,36 @@
     @endif
 </section>
 
-{{-- 3 · Kiracı ve dönem: alana özel mi, dosyadan mı geliyor --}}
+{{-- Kiracı ve dönem: dosyanın yürürlükteki döneminden --}}
 <section class="form-section">
     <div class="form-section-head">
         <span class="form-section-num">{{ $no() }}</span>
         <div class="form-section-head-text">
             <h3>Kiracı ve Dönem</h3>
-            <small>
-                @if ($kendiSartlari)
-                    Bu alanın dosyadan ayrı kendi şartları var
-                @else
-                    Bu alan için ayrı şart girilmemiş; dosyanın sözleşmesi geçerli
-                @endif
-            </small>
+            <small>{{ $d ? 'Dosyanın yürürlükteki sözleşme döneminden' : 'Alan boş — kiraya verilmedi' }}</small>
         </div>
-        <a href="{{ route('panel.kira.detay', $alan->kira_dosya_id) }}" class="btn-cancel hs-mini-btn dg-sag">Sözleşmeye git</a>
+        @if ($d)
+            <a href="{{ route('panel.kira.detay', $d->id) }}" class="btn-cancel hs-mini-btn dg-sag">Sözleşmeye git</a>
+        @endif
     </div>
-    <dl class="dg-bilgi">
-        <div>
-            <dt>Kiracı</dt>
-            <dd>{{ $alan->kiraci() ?: '—' }} @unless ($kendiKiracisi)<span class="kr-kaynak">dosyadan</span>@endunless</dd>
-        </div>
-        <div><dt>Alt Kiracı</dt><dd>{{ $alan->alt_kiraci ?: '—' }}</dd></div>
-        <div>
-            <dt>Kira Dönemi</dt>
-            <dd class="td-mono">{{ $gun($baslangic) }} – {{ $gun($bitis) }} @unless ($kendiDonemi)<span class="kr-kaynak">dosyadan</span>@endunless</dd>
-        </div>
-        <div>
-            <dt>Yıllık Bedel</dt>
-            <dd class="td-mono">{{ $tl($bedel) }} TL @unless ($kendiBedeli)<span class="kr-kaynak">dosyadan</span>@endunless</dd>
-        </div>
-        <div><dt>Taksit Sayısı</dt><dd class="td-mono">{{ $alan->taksit_sayisi ?: ($s?->taksit_sayisi ?: '—') }}</dd></div>
-        <div><dt>İhale</dt><dd>{{ $d?->ihale_turu?->etiket() ?: '—' }} <span class="kr-kaynak">dosyadan</span></dd></div>
-    </dl>
-    @unless ($kendiSartlari)
-        <p class="hint">Yıl yıl bedel geçmişi, sözleşme no, noter ve yevmiye bilgileri dosya kartında.</p>
-    @endunless
+    @if ($d)
+        <dl class="dg-bilgi">
+            <div><dt>Kiracı</dt><dd>{{ $alan->kiraci() ?: '—' }}</dd></div>
+            <div><dt>Alt Kiracı</dt><dd>{{ $alan->alt_kiraci ?: '—' }}</dd></div>
+            <div><dt>Kira Dönemi</dt><dd class="td-mono">{{ $gun($baslangic) }} – {{ $gun($bitis) }}</dd></div>
+            <div><dt>Yıllık Bedel</dt><dd class="td-mono">{{ $tl($bedel) }} TL</dd></div>
+            <div><dt>Taksit Sayısı</dt><dd class="td-mono">{{ $s?->taksit_sayisi ?: '—' }}</dd></div>
+            <div><dt>İhale</dt><dd>{{ $d->ihale_turu?->etiket() ?: '—' }}</dd></div>
+        </dl>
+        <p class="hint">Yıl yıl bedel geçmişi, sözleşme no, noter ve yevmiye bilgileri dosya kartında. Kiracı değiştiyse dosyadan "Kiracı Değişti" ile yeni dönem açın.</p>
+    @else
+        <p class="hrm-panel-ipucu">
+            Bu yer şu an kirada değil.
+            @can('kira.duzenle')
+                <a href="{{ route('panel.kira.alanlar.duzenle', ['id' => $alan->id, 'kirala' => 1]) }}">Kiraya Ver</a> ile dosya numarası, kiracı ve sözleşme bilgilerini girin.
+            @endcan
+        </p>
+    @endif
 </section>
 
 {{-- Belgeler --}}
@@ -220,11 +229,14 @@
             <h3>Alan Belgeleri</h3>
             <small>Yalnızca bu yere eklenenler · dosyanın genel belgeleri dosya kartında</small>
         </div>
-        @can('kira.duzenle')
-            <button type="button" class="btn-cancel hs-mini-btn dg-sag" data-belge-ac>+ Belge Yükle</button>
-        @endcan
+        @if ($d)
+            @can('kira.duzenle')
+                <button type="button" class="btn-cancel hs-mini-btn dg-sag" data-belge-ac>+ Belge Yükle</button>
+            @endcan
+        @endif
     </div>
 
+    @if ($d)
     @can('kira.duzenle')
         <form method="POST" action="{{ route('panel.kira.belge.yukle') }}" enctype="multipart/form-data" class="kr-belge-form" id="belgeForm" hidden>
             @csrf
@@ -254,6 +266,7 @@
             </div>
         </form>
     @endcan
+    @endif
 
     @if ($alan->belgeler->isEmpty())
         <p class="hint">Bu alana henüz belge eklenmemiş.</p>

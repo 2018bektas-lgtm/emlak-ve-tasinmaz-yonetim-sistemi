@@ -241,9 +241,14 @@
                 return anaKatman.graphics.length ? anaKatman.graphics.getItemAt(0).geometry : null;
             }
 
+            // Açılıştaki kayıtlı sınır kullanıcının çizimi sayılmaz
+            let acilisCizimi = false;
+
             function hedefeYaz(geom) {
                 if (!hedef) return;
                 hedef.value = geom ? JSON.stringify(geoJson(geom)) : '';
+                // Form yeni çizimi duyar (ör. seçili poligonu bırakıp yeni sınır açmak için)
+                if (!acilisCizimi) hedef.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             function alaniYaz(geom) {
@@ -284,7 +289,9 @@
 
             const baslangic = esriGeometri(ayar.geometri);
             if (baslangic) {
+                acilisCizimi = true;
                 ciz(baslangic, false);
+                acilisCizimi = false;
                 view.when(function () { sigdir(); });
             } else if (ayar.ekler && ayar.ekler.length) {
                 view.when(function () { sigdir(); });

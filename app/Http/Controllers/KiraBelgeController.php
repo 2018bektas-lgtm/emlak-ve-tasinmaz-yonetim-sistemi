@@ -50,7 +50,8 @@ class KiraBelgeController extends Controller
             'kira_dosya_id' => $veri['kira_dosya_id'],
             'kira_alan_id' => $veri['kira_alan_id'] ?? null,
             'tur' => $veri['tur'],
-            'ad' => $veri['ad'] ?: pathinfo($yuklenen->getClientOriginalName(), PATHINFO_FILENAME),
+            // 'ad' boş gönderilince doğrulanmış veride anahtar hiç olmuyor
+            'ad' => ($veri['ad'] ?? null) ?: pathinfo($yuklenen->getClientOriginalName(), PATHINFO_FILENAME),
             'dosya_yolu' => $yol,
             'boyut' => $yuklenen->getSize(),
             'aciklama' => $veri['aciklama'] ?? null,

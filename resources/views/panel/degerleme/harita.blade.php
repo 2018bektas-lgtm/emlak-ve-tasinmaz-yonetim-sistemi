@@ -842,5 +842,5 @@
 @endif
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=51"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=54"></script>
 @endpush

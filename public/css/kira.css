@@ -976,3 +976,81 @@
 
 .form-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 @media (max-width: 900px) { .form-row-4 { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- Kira alanı formu: dosya numarası akışı ---------- */
+.kr-dosya-durum-alan { justify-content: flex-end; }
+.kr-dosya-durum {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 14px;
+    border: 1px solid #e3e7ee;
+    border-left: 4px solid #94a3b8;
+    border-radius: 10px;
+    background: #f8fafc;
+    font-size: 0.8rem;
+    color: #445067;
+}
+.kr-dosya-durum strong { font-size: 0.86rem; color: #0e1726; }
+.kr-dosya-durum a { align-self: flex-start; font-weight: 700; color: #0369a1; }
+.kr-dosya-durum.is-yeni { border-left-color: #16a34a; background: #f0fdf4; }
+.kr-dosya-durum.is-ayni_yer { border-left-color: #d97706; background: #fffbeb; }
+.kr-dosya-durum.is-baska_yer { border-left-color: #0284c7; background: #f0f9ff; }
+.form-row-3 > .kr-dosya-durum-alan { grid-column: span 2; }
+
+.kr-uyari-onay {
+    padding: 10px 14px;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    background: #fffbeb;
+    color: #92400e;
+    font-weight: 600;
+}
+
+/* Dosyası olan alanda kiralama özeti */
+.kr-dosya-ozet {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid #e3e7ee;
+    border-radius: 12px;
+    background: #fff;
+}
+.kr-dosya-ozet > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kr-dosya-ozet span { font-size: 0.7rem; font-weight: 700; color: #8a91a1; }
+.kr-dosya-ozet strong { font-size: 0.9rem; color: #0e1726; overflow-wrap: anywhere; }
+.kr-dosya-ozet-eylem { flex-direction: row !important; gap: 8px !important; }
+@media (max-width: 900px) {
+    .kr-dosya-ozet { grid-template-columns: 1fr 1fr; }
+    .kr-dosya-ozet-eylem { grid-column: 1 / -1; }
+}
+
+/* Aynı sınırdaki diğer kayıtlar */
+.kr-komsu-serit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: -6px 0 18px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #fffbeb;
+    font-size: 0.8rem;
+    color: #92400e;
+}
+.kr-komsu-serit a {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+/* display: grid/flex verilen öğelerde hidden niteliği etkisiz kalıyordu */
+.form-row[hidden],
+.kr-dosya-durum[hidden] { display: none !important; }

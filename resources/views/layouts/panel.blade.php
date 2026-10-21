@@ -93,7 +93,6 @@
                 ['label' => 'Kira', 'icon' => 'key', 'children' => [
                     ['label' => 'Kira İşleri Sorgulama', 'route' => 'panel.kira.index', 'izin' => 'kira.goruntule'],
                     ['label' => 'Kira Alanları', 'route' => 'panel.kira.alanlar.index', 'izin' => 'kira.goruntule'],
-                    ['label' => 'Yeni Kira Dosyası', 'route' => 'panel.kira.olustur', 'izin' => 'kira.olustur'],
                     ['label' => 'Yeni Kira Alanı', 'route' => 'panel.kira.alanlar.olustur', 'izin' => 'kira.olustur'],
                     ['label' => 'Kira Haritası', 'route' => 'panel.kira.harita', 'izin' => 'kira.goruntule'],
                     ['label' => 'Standart Sorgular', 'children' => [

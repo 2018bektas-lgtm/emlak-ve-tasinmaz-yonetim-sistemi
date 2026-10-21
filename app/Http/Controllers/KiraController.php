@@ -19,15 +19,14 @@ use App\Models\KiraSozlesme;
 use App\Models\KiraTasinmaz;
 use App\Models\Mahalle;
 use App\Support\HaritaGorunum;
+use App\Support\KiraKayit;
 use App\Support\KiraKolonlari;
-use Carbon\Carbon;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -261,9 +260,11 @@ class KiraController extends Controller
         $dosyaIdleri = $this->sorgu($f)->select('id');
 
         // Harita artık alanları çizer: bir dosyanın birden çok kira alanı,
-        // her alanın da paylaşılabilir bir poligonu olabiliyor.
+        // her alanın da paylaşılabilir bir poligonu olabiliyor. Dosyası
+        // olmayan boş alanlar da (kiraya verilecek yerler) çizilir.
+        $alanKosulu = $this->haritaAlanKosulu($f, $dosyaIdleri);
         $alanIdleri = KiraAlan::query()
-            ->whereIn('kira_dosya_id', $dosyaIdleri)
+            ->where($alanKosulu)
             ->whereNotNull('poligon_id')
             ->select('poligon_id');
 
@@ -296,7 +297,7 @@ class KiraController extends Controller
 
         $gorunen = (clone $poligonlar)
             ->when($bbox, fn ($s) => $s->alanda($bbox))
-            ->with(['alanlar' => fn ($s) => $s->whereIn('kira_dosya_id', $dosyaIdleri)->with([
+            ->with(['alanlar' => fn ($s) => $s->where($alanKosulu)->with([
                 'isKolu:id,ad',
                 'dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,sozlesme_aktif_mi',
                 'dosya.aktifSozlesme',
@@ -521,6 +522,48 @@ class KiraController extends Controller
     }
 
     /**
+     * Haritada çizilecek kira alanları: süzgece uyan dosyaların alanları +
+     * dosyası olmayan boş alanlar. Dosyaya özgü bir süzgeç (dosya no, kiracı,
+     * ihale, süre…) varsa dosyasız alan zaten eşleşemez, dahil edilmez.
+     *
+     * @param  array<string, mixed>  $f
+     */
+    private function haritaAlanKosulu(array $f, Builder $dosyaIdleri): \Closure
+    {
+        $dosyasizlar = $this->dosyasizlarDahil($f);
+
+        return function ($q) use ($f, $dosyaIdleri, $dosyasizlar) {
+            $q->whereIn('kira_dosya_id', $dosyaIdleri);
+            if (! $dosyasizlar) {
+                return;
+            }
+            $q->orWhere(fn ($x) => $x->whereNull('kira_dosya_id')
+                ->when($f['is_kolu_id'], fn ($y, $v) => $y->where('is_kolu_id', $v))
+                ->when($f['dolu_bos'], fn ($y, $v) => $y->where('dolu_bos', $v))
+                // Dosyasız alanın konumu sınırının parselinden
+                ->when($f['ilce_id'] || $f['mahalle_id'] || $f['ada'] !== '' || $f['parsel'] !== '',
+                    fn ($y) => $y->whereIn('poligon_id', KiraPoligon::query()->select('id')
+                        ->when($f['ilce_id'], fn ($t, $v) => $t->whereIn('mahalle_id', Mahalle::query()->select('id')->where('ilce_id', $v)))
+                        ->when($f['mahalle_id'], fn ($t, $v) => $t->where('mahalle_id', $v))
+                        ->when($f['ada'] !== '', fn ($t) => $t->where('ada', $f['ada']))
+                        ->when($f['parsel'] !== '', fn ($t) => $t->where('parsel', $f['parsel'])))));
+        };
+    }
+
+    /** @param  array<string, mixed>  $f */
+    private function dosyasizlarDahil(array $f): bool
+    {
+        foreach (['ids', 'q', 'dosya_no', 'kiraci', 'isyeri', 'ihale_turu', 'hukuki_durum_id', 'kiracilik_durum_id',
+            'baslangic', 'bitis', 'tahliye', 'kalan', 'durum', 'ana_dosya'] as $anahtar) {
+            if (! empty($f[$anahtar])) {
+                return false;
+            }
+        }
+
+        return $f['dolu_bos'] !== 'dolu';
+    }
+
+    /**
      * İndirme uçlarının çizdiği poligonlar. Süzgeç ve seçili dosya id'leri
      * listeyle aynı sorguyu kullanır.
      *
@@ -528,14 +571,16 @@ class KiraController extends Controller
      */
     private function haritaPoligonlari(Request $request): Collection
     {
-        $dosyaIdleri = $this->sorgu($this->filtre($request))->select('id');
+        $f = $this->filtre($request);
+        $dosyaIdleri = $this->sorgu($f)->select('id');
+        $alanKosulu = $this->haritaAlanKosulu($f, $dosyaIdleri);
 
         return KiraPoligon::query()
             ->whereIn('id', KiraAlan::query()
-                ->whereIn('kira_dosya_id', $dosyaIdleri)
+                ->where($alanKosulu)
                 ->whereNotNull('poligon_id')
                 ->select('poligon_id'))
-            ->with(['alanlar' => fn ($s) => $s->whereIn('kira_dosya_id', $dosyaIdleri)->with([
+            ->with(['alanlar' => fn ($s) => $s->where($alanKosulu)->with([
                 'isKolu:id,ad',
                 'dosya:id,dosya_no,isyeri_adi,dolu_bos',
                 'dosya.anaKiraci',
@@ -588,227 +633,19 @@ class KiraController extends Controller
         return implode(' ', $parcalar);
     }
 
-    public function olustur(Request $request): View
-    {
-        return view('panel.kira.form', $this->formVerisi(null, $request));
-    }
-
     /**
-     * Yeni dosya: dosya + kiracı + taşınmaz + sözleşme + bedeller tek işlemde
-     * yazılır. Parçalardan biri düşerse yarım dosya kalmasın diye hepsi aynı
-     * veritabanı işleminde.
+     * Yeni kayıt artık kira alanından açılır: önce kira taşınmazı eklenir,
+     * kiraya verilirken dosya numarası bağlanır. Eski bağlantılar (harita,
+     * yer imleri) parsel bilgisiyle birlikte oraya yönlenir.
      */
-    public function kaydet(Request $request): RedirectResponse
+    public function olustur(Request $request): RedirectResponse
     {
-        $veri = $this->dogrula($request);
-
-        $dosya = DB::transaction(function () use ($veri, $request) {
-            $dosya = KiraDosyasi::create([
-                'dosya_no' => $veri['dosya_no'],
-                'eski_dosya_no' => $veri['eski_dosya_no'] ?? null,
-                'ana_dosya_id' => $veri['ana_dosya_id'] ?? null,
-                'isyeri_adi' => $veri['isyeri_adi'] ?? null,
-                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
-                'dolu_bos' => $veri['dolu_bos'],
-                'ihale_turu' => $veri['ihale_turu'],
-                'hukuki_durum_id' => $veri['hukuki_durum_id'] ?? null,
-                'kiracilik_durum_id' => $veri['kiracilik_durum_id'] ?? null,
-                'muhasebe_niteligi_id' => $veri['muhasebe_niteligi_id'] ?? null,
-                'sozlesme_aktif_mi' => $request->boolean('sozlesme_aktif_mi'),
-                'tahliye_ihbarnamesi_mi' => $request->boolean('tahliye_ihbarnamesi_mi'),
-                'arac_kapasitesi' => $veri['arac_kapasitesi'] ?? null,
-                'uyari' => $veri['uyari'] ?? null,
-                'aciklama' => $veri['aciklama'] ?? null,
-                'sorumlu_personel_id' => $veri['sorumlu_personel_id'] ?? null,
-                'olusturan_id' => $request->user()->id,
-            ]);
-
-            if (filled($veri['kiraci_ad_unvan'] ?? null)) {
-                $dosya->kiracilar()->create([
-                    'tip' => 'ana',
-                    'ad_unvan' => $veri['kiraci_ad_unvan'],
-                    'tc_vergi_no' => $veri['kiraci_tc_vergi_no'] ?? null,
-                    'telefon' => $veri['kiraci_telefon'] ?? null,
-                    'eposta' => $veri['kiraci_eposta'] ?? null,
-                    'adres' => $veri['kiraci_adres'] ?? null,
-                    'iban' => $veri['kiraci_iban'] ?? null,
-                    'avukat' => $veri['kiraci_avukat'] ?? null,
-                ]);
-            }
-
-            $dosya->tasinmaz()->create([
-                'tasinmaz_id' => $veri['tasinmaz_id'] ?? null,
-                'il_id' => $veri['il_id'] ?? null,
-                'ilce_id' => $veri['ilce_id'] ?? null,
-                'mahalle_id' => $veri['mahalle_id'] ?? null,
-                'ada' => $veri['ada'] ?? null,
-                'parsel' => $veri['parsel'] ?? null,
-                'adres' => $veri['adres'] ?? null,
-                'yuzolcum' => $veri['yuzolcum'] ?? null,
-                'imar_durumu_id' => $veri['imar_durumu_id'] ?? null,
-            ]);
-
-            $sozlesme = $dosya->sozlesmeler()->create([
-                'sozlesme_no' => $veri['sozlesme_no'] ?? null,
-                'baslangic_tarihi' => $veri['baslangic_tarihi'],
-                'bitis_tarihi' => $veri['bitis_tarihi'],
-                'sure_ay' => $veri['sure_ay'] ?? null,
-                'taksit_sayisi' => $veri['taksit_sayisi'] ?? null,
-                'odeme_sekli' => $veri['odeme_sekli'] ?? null,
-                'sozlesme_tarihi' => $veri['sozlesme_tarihi'] ?? null,
-                'noter_tarihi' => $veri['noter_tarihi'] ?? null,
-                'yevmiye_no' => $veri['yevmiye_no'] ?? null,
-                'kdv_orani' => $veri['kdv_orani'] ?? null,
-                'kdv_dahil_mi' => $request->boolean('kdv_dahil_mi'),
-                'artirma_yontemi' => $veri['artirma_yontemi'] ?? null,
-                'aktif_mi' => true,
-            ]);
-
-            foreach ($this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi']) as $satir) {
-                $sozlesme->bedeller()->create($satir);
-            }
-
-            // Dosyanın birincil kira alanı; geometri varsa paylaşılabilir
-            // poligona bağlanır (aynı poligon başka kayıtlarca da kullanılabilir).
-            $dosya->alanlar()->create([
-                'poligon_id' => $this->poligonuCozumle($veri, $request),
-                'ad' => $veri['isyeri_adi'] ?? 'Ana alan',
-                'adres' => $veri['adres'] ?? null,
-                'alan' => $veri['yuzolcum'] ?? null,
-                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
-                'dolu_bos' => $veri['dolu_bos'],
-                'kiraci_ad_unvan' => $veri['kiraci_ad_unvan'] ?? null,
-                'yillik_bedel' => $this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi'])[0]['yillik_bedel'] ?? null,
-                'baslangic_tarihi' => $veri['baslangic_tarihi'],
-                'bitis_tarihi' => $veri['bitis_tarihi'],
-                'aktif_mi' => true,
-            ]);
-
-            return $dosya;
-        });
-
-        return redirect()->route('panel.kira.index')
-            ->with('basari', $dosya->dosya_no.' numaralı kira dosyası oluşturuldu.');
-    }
-
-    /**
-     * Haritadan gelen parseli form alanlarına çevirir: TKGM mahalle kimliği
-     * yerel il/ilçe/mahalleye çözülür, geometri ve alan TKGM'den alınır.
-     * Referans sistemde yalnız geometri haritadan geliyordu; ada/parsel ve
-     * alan elle giriliyordu.
-     *
-     * @return array<string, mixed>
-     */
-    private function onDolgu(Request $request): array
-    {
-        $dolgu = array_filter([
-            'ada' => trim((string) $request->query('ada', '')),
-            'parsel' => trim((string) $request->query('parsel', '')),
-        ], fn ($v) => $v !== '');
-
-        $mahalle = $request->query('mahalle_tkgm')
-            ? Mahalle::with('ilce')->where('tkgm_id', $request->query('mahalle_tkgm'))->first()
-            : null;
-
-        if ($mahalle) {
-            $dolgu['mahalle_id'] = $mahalle->id;
-            $dolgu['ilce_id'] = $mahalle->ilce_id;
-            $dolgu['il_id'] = $mahalle->ilce?->il_id;
-            $dolgu['mahalle_ad'] = $mahalle->ad;
-            $dolgu['ilce_ad'] = $mahalle->ilce?->ad;
-        }
-
-        // Geometri ve resmî alan TKGM'den; ağ hatası formu engellemez
-        if ($mahalle && ($dolgu['ada'] ?? '') !== '' && ($dolgu['parsel'] ?? '') !== '') {
-            try {
-                $yanit = Http::timeout(10)
-                    ->withHeaders(['Accept' => 'application/json', 'User-Agent' => 'EmlakYonetim/1.0'])
-                    ->get("https://cbsapi.tkgm.gov.tr/megsiswebapi.v3.1/api/parsel/{$mahalle->tkgm_id}/{$dolgu['ada']}/{$dolgu['parsel']}");
-                $veri = $yanit->successful() ? $yanit->json() : null;
-                if (is_array($veri) && ! empty($veri['geometry'])) {
-                    $dolgu['koordinat'] = json_encode($veri['geometry']);
-                    $dolgu['yuzolcum'] = $this->tkgmSayisi($veri['properties']['alan'] ?? null);
-                    $dolgu['nitelik'] = $veri['properties']['nitelik'] ?? null;
-                }
-            } catch (\Throwable $e) {
-                // Geometri sonradan haritadan eklenebilir
-            }
-        }
-
-        return array_filter($dolgu, fn ($v) => $v !== null && $v !== '');
-    }
-
-    /**
-     * Kaydın bağlanacağı poligonu bulur.
-     *
-     * Öncelik sırası: formda seçilen mevcut poligon → aynı parselin daha önce
-     * çizilmiş poligonu → haritadan gelen yeni geometriden üretilen poligon.
-     * Aynı parsel için ikinci bir poligon açılmaz; aynı poligonda birden çok
-     * kayıt olabilmesinin temeli bu.
-     *
-     * @param  array<string, mixed>  $veri
-     */
-    private function poligonuCozumle(array $veri, Request $request): ?int
-    {
-        if (filled($veri['poligon_id'] ?? null)) {
-            return (int) $veri['poligon_id'];
-        }
-
-        $mahalleId = $veri['mahalle_id'] ?? null;
-        $ada = $veri['ada'] ?? null;
-        $parsel = $veri['parsel'] ?? null;
-
-        if ($mahalleId && $ada && $parsel) {
-            $mevcut = KiraPoligon::parselde($mahalleId, $ada, $parsel)->first();
-            if ($mevcut) {
-                return $mevcut->id;
-            }
-        }
-
-        $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
-        if (! is_array($geometri) || ! isset($geometri['type'])) {
-            return null;
-        }
-
-        return KiraPoligon::create([
-            'ad' => $veri['isyeri_adi'] ?? null,
-            'kaynak' => 'tkgm',
-            'mahalle_id' => $mahalleId,
-            'ada' => $ada,
-            'parsel' => $parsel,
-            'koordinat' => $geometri,
-            'alan' => $veri['yuzolcum'] ?? null,
-            'olusturan_id' => $request->user()->id,
-        ])->id;
-    }
-
-    /** TKGM sayıları Türkçe biçimde gelir: "618.795,00" → 618795.0 */
-    private function tkgmSayisi(mixed $deger): ?float
-    {
-        $ham = trim((string) $deger);
-        if ($ham === '') {
-            return null;
-        }
-        $nokta = strrpos($ham, '.');
-        $virgul = strrpos($ham, ',');
-
-        if ($nokta !== false && $virgul !== false) {
-            $sayi = $virgul > $nokta
-                ? str_replace(',', '.', str_replace('.', '', $ham))
-                : str_replace(',', '', $ham);
-        } elseif ($virgul !== false) {
-            $sayi = str_replace(',', '.', $ham);
-        } else {
-            $sayi = $ham;
-        }
-
-        return is_numeric($sayi) ? (float) $sayi : null;
+        return redirect()->route('panel.kira.alanlar.olustur', $request->query());
     }
 
     public function duzenle(int $id): View
     {
-        // Geometri dosyada değil, alanın poligonunda duruyor
-        $dosya = KiraDosyasi::with(['kiracilar', 'tasinmaz', 'alanlar.poligon', 'sozlesmeler.bedeller'])->findOrFail($id);
+        $dosya = KiraDosyasi::with(['kiracilar', 'tasinmaz', 'aktifSozlesme', 'sozlesmeler.bedeller'])->findOrFail($id);
 
         return view('panel.kira.form', $this->formVerisi($dosya, request()));
     }
@@ -820,7 +657,7 @@ class KiraController extends Controller
      */
     public function guncelle(Request $request, int $id): RedirectResponse
     {
-        $dosya = KiraDosyasi::with(['anaKiraci', 'tasinmaz', 'alanlar', 'sozlesmeler'])->findOrFail($id);
+        $dosya = KiraDosyasi::with(['anaKiraci', 'tasinmaz', 'sozlesmeler'])->findOrFail($id);
         $veri = $this->dogrula($request, $dosya);
 
         DB::transaction(function () use ($dosya, $veri, $request) {
@@ -852,13 +689,6 @@ class KiraController extends Controller
                 'iban' => $veri['kiraci_iban'] ?? null,
                 'avukat' => $veri['kiraci_avukat'] ?? null,
             ];
-            if (filled($kiraciAlanlari['ad_unvan'])) {
-                $dosya->kiracilar()->updateOrCreate(['tip' => 'ana'], $kiraciAlanlari);
-            } else {
-                // Boş yere düşen dosyada ana kiracı satırı kalmasın
-                $dosya->kiracilar()->where('tip', 'ana')->delete();
-            }
-
             $dosya->tasinmaz()->updateOrCreate(['kira_dosya_id' => $dosya->id], [
                 'tasinmaz_id' => $veri['tasinmaz_id'] ?? null,
                 'il_id' => $veri['il_id'] ?? null,
@@ -893,33 +723,29 @@ class KiraController extends Controller
                 $sozlesme = $dosya->sozlesmeler()->create($sozlesmeAlanlari);
             }
 
+            // Kiracı yürürlükteki dönemin kiracısıdır. Eski dönemlerin
+            // kiracıları geçmiştir; dosya formu onlara dokunmaz. (Dönemsiz
+            // eski satır varsa bu döneme bağlanarak güncellenir.)
+            $kiraci = $sozlesme->kiracilar()->where('tip', 'ana')->first()
+                ?? $dosya->kiracilar()->whereNull('kira_sozlesme_id')->where('tip', 'ana')->latest('id')->first();
+            if (filled($kiraciAlanlari['ad_unvan'])) {
+                if ($kiraci) {
+                    $kiraci->update($kiraciAlanlari + ['kira_sozlesme_id' => $sozlesme->id]);
+                } else {
+                    $sozlesme->kiracilar()->create($kiraciAlanlari + ['kira_dosya_id' => $dosya->id, 'tip' => 'ana']);
+                }
+            } else {
+                // Boş yere düşen dosyada yalnız yürürlükteki dönemin kiracısı kalkar
+                $kiraci?->delete();
+            }
+
             $sozlesme->bedeller()->delete();
-            foreach ($this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi']) as $satir) {
+            foreach (KiraKayit::bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi']) as $satir) {
                 $sozlesme->bedeller()->create($satir);
             }
 
-            // Birincil alan güncellenir; yeni geometri geldiyse poligonu değişir
-            $poligonId = $this->poligonuCozumle($veri, $request);
-            $birincil = $dosya->alanlar()->orderBy('id')->first();
-            $alanAlanlari = [
-                'ad' => $veri['isyeri_adi'] ?? 'Ana alan',
-                'adres' => $veri['adres'] ?? null,
-                'alan' => $veri['yuzolcum'] ?? null,
-                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
-                'dolu_bos' => $veri['dolu_bos'],
-                'kiraci_ad_unvan' => $veri['kiraci_ad_unvan'] ?? null,
-                'baslangic_tarihi' => $veri['baslangic_tarihi'],
-                'bitis_tarihi' => $veri['bitis_tarihi'],
-            ];
-            if ($poligonId) {
-                $alanAlanlari['poligon_id'] = $poligonId;
-            }
-
-            if ($birincil) {
-                $birincil->update($alanAlanlari);
-            } else {
-                $dosya->alanlar()->create($alanAlanlari + ['aktif_mi' => true]);
-            }
+            // Alanların kiracı/bedel/süre sütunları yürürlükteki dönemden gelir
+            $dosya->alanlariEsitle();
         });
 
         return redirect()->route('panel.kira.detay', $dosya->id)
@@ -937,7 +763,8 @@ class KiraController extends Controller
     private function formVarsayilanlari(?KiraDosyasi $dosya, array $onDolgu): array
     {
         $t = $dosya?->tasinmaz;
-        $kiraci = $dosya?->kiracilar->firstWhere('tip', KiraciTipi::Ana);
+        // Eski dönemlerin kiracısı değil, yürürlükteki dönemin kiracısı
+        $kiraci = $dosya?->guncelKiraci();
         $s = $dosya?->sozlesmeler->firstWhere('aktif_mi', true) ?? $dosya?->sozlesmeler->last();
 
         $bedeller = $s?->bedeller->map(fn ($b) => [
@@ -1002,181 +829,43 @@ class KiraController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function formVerisi(?KiraDosyasi $dosya, Request $request): array
+    private function formVerisi(KiraDosyasi $dosya, Request $request): array
     {
-        $onDolgu = $dosya ? [] : $this->onDolgu($request);
-        $v = $this->formVarsayilanlari($dosya, $onDolgu);
+        $v = $this->formVarsayilanlari($dosya, []);
         $ilId = old('il_id', $v['il_id'] ?? $request->query('il_id'));
         $ilceId = old('ilce_id', $v['ilce_id'] ?? $request->query('ilce_id'));
 
-        // Formdaki harita: dosyanın kendi sınırı ve aynı parseldeki diğer sınırlar
-        $birincilPoligon = $dosya?->alanlar->firstWhere(fn ($a) => $a->poligon !== null)?->poligon;
-        $komsuPoligonlar = $this->komsuPoligonlar($birincilPoligon, $v);
-
         return [
             'dosya' => $dosya,
-            'onDolgu' => $onDolgu,
             'v' => $v,
-            'birincilPoligon' => $birincilPoligon,
-            'komsuPoligonlar' => $komsuPoligonlar,
             'iller' => Il::orderBy('ad')->get(['id', 'ad']),
             'ilceler' => $ilId ? Ilce::where('il_id', $ilId)->orderBy('ad')->get(['id', 'ad']) : collect(),
-            // tkgm_id: form haritasındaki "Ada/Parselden Getir" bunu kullanır
             'mahalleler' => $ilceId ? Mahalle::where('ilce_id', $ilceId)->orderBy('ad')->get(['id', 'ad', 'tkgm_id']) : collect(),
             'isKollari' => KiraIsKolu::aktif()->get(['id', 'ad']),
             'hukukiDurumlar' => KiraHukukiDurum::aktif()->get(['id', 'ad']),
             'kiracilikDurumlar' => KiraKiracilikDurum::aktif()->get(['id', 'ad']),
             'muhasebeNitelikleri' => KiraMuhasebeNiteligi::aktif()->get(['id', 'ad']),
             'imarDurumlari' => ImarDurumu::where('aktif_mi', true)->orderBy('sira')->orderBy('ad')->get(['id', 'ad']),
-            'anaDosyalar' => KiraDosyasi::whereNull('ana_dosya_id')->orderBy('dosya_no')->limit(500)->get(['id', 'dosya_no', 'isyeri_adi']),
+            'anaDosyalar' => KiraDosyasi::whereNull('ana_dosya_id')->whereKeyNot($dosya->id)->orderBy('dosya_no')->limit(500)->get(['id', 'dosya_no', 'isyeri_adi']),
         ];
     }
 
     /**
-     * Form haritasında soluk çizilecek sınırlar: aynı parselde daha önce
-     * çizilmiş, bu dosyaya ait olmayan poligonlar. Kullanıcı aynı yeri ikinci
-     * kez çizmeden önce orada ne olduğunu görür.
+     * Dosya düzenleme kuralları — kira alanı ve "Kiracı Değişti" formlarıyla
+     * aynı kurallar (KiraKayit). Boş yerde kiracı istenmez.
      *
-     * @param  array<string, mixed>  $v
-     * @return Collection<int, KiraPoligon>
+     * @return array<string, mixed>
      */
-    private function komsuPoligonlar(?KiraPoligon $birincil, array $v): Collection
+    private function dogrula(Request $request, KiraDosyasi $dosya): array
     {
-        $mahalleId = old('mahalle_id', $v['mahalle_id'] ?? null);
-        $ada = old('ada', $v['ada'] ?? null);
-        $parsel = old('parsel', $v['parsel'] ?? null);
+        $konum = KiraKayit::konumKurallari($request);
+        unset($konum['koordinat'], $konum['poligon_id']);
 
-        if (! $mahalleId || ! $ada || ! $parsel) {
-            return collect();
-        }
+        $kurallar = KiraKayit::dosyaKurallari($dosya) + KiraKayit::donemKurallari(false) + $konum;
+        $kurallar['dolu_bos'] = ['required', Rule::in(['dolu', 'bos'])];
+        $kurallar['kiraci_ad_unvan'] = ['nullable', 'string', 'max:250', 'required_if:dolu_bos,dolu'];
 
-        return KiraPoligon::parselde((int) $mahalleId, (string) $ada, (string) $parsel)
-            ->when($birincil, fn ($q, $p) => $q->whereKeyNot($p->id))
-            ->limit(20)
-            ->get();
-    }
-
-    /** @return array<string, mixed> */
-    private function dogrula(Request $request, ?KiraDosyasi $dosya = null): array
-    {
-        // İlçe seçilen ile, mahalle seçilen ilçeye ait olmalı
-        $ilceKurali = Rule::exists('ilceler', 'id');
-        if ($request->filled('il_id')) {
-            $ilceKurali->where('il_id', $request->integer('il_id'));
-        }
-        $mahalleKurali = Rule::exists('mahalleler', 'id');
-        if ($request->filled('ilce_id')) {
-            $mahalleKurali->where('ilce_id', $request->integer('ilce_id'));
-        }
-
-        return $request->validate([
-            // Dosya
-            'dosya_no' => ['required', 'string', 'max:50', Rule::unique('kira_dosyalari', 'dosya_no')->ignore($dosya?->id)],
-            'eski_dosya_no' => ['nullable', 'string', 'max:50'],
-            'ana_dosya_id' => ['nullable', 'exists:kira_dosyalari,id'],
-            'isyeri_adi' => ['nullable', 'string', 'max:200'],
-            'is_kolu_id' => ['nullable', 'exists:kira_is_kollari,id'],
-            'dolu_bos' => ['required', Rule::in(['dolu', 'bos'])],
-            'ihale_turu' => ['required', Rule::in(['ihaleli', 'ihalesiz'])],
-            'arac_kapasitesi' => ['nullable', 'integer', 'min:0', 'max:100000'],
-            'hukuki_durum_id' => ['nullable', 'exists:kira_hukuki_durumlar,id'],
-            'kiracilik_durum_id' => ['nullable', 'exists:kira_kiracilik_durumlari,id'],
-            'muhasebe_niteligi_id' => ['nullable', 'exists:kira_muhasebe_nitelikleri,id'],
-            'sorumlu_personel_id' => ['nullable', 'exists:kullanicilar,id'],
-            'uyari' => ['nullable', 'string', 'max:300'],
-            'aciklama' => ['nullable', 'string', 'max:5000'],
-
-            // Kiracı (boş bırakılabilir: boş yerlerde kiracı yok)
-            'kiraci_ad_unvan' => ['nullable', 'string', 'max:250', 'required_if:dolu_bos,dolu'],
-            'kiraci_tc_vergi_no' => ['nullable', 'string', 'max:20'],
-            'kiraci_telefon' => ['nullable', 'string', 'max:30'],
-            'kiraci_eposta' => ['nullable', 'email', 'max:150'],
-            'kiraci_adres' => ['nullable', 'string', 'max:1000'],
-            'kiraci_iban' => ['nullable', 'string', 'max:34'],
-            'kiraci_avukat' => ['nullable', 'string', 'max:200'],
-
-            // Taşınmaz
-            'tasinmaz_id' => ['nullable', 'exists:tasinmazlar,id'],
-            'il_id' => ['nullable', 'exists:iller,id'],
-            'ilce_id' => ['nullable', $ilceKurali],
-            'mahalle_id' => ['nullable', $mahalleKurali],
-            'ada' => ['nullable', 'string', 'max:20'],
-            'parsel' => ['nullable', 'string', 'max:20'],
-            'adres' => ['nullable', 'string', 'max:1000'],
-            'yuzolcum' => ['nullable', 'numeric', 'min:0', 'max:99999999999'],
-            'imar_durumu_id' => ['nullable', 'exists:imar_durumlari,id'],
-            'koordinat' => ['nullable', 'string', 'max:200000'],
-            'poligon_id' => ['nullable', 'exists:kira_poligonlari,id'],
-
-            // Sözleşme
-            'sozlesme_no' => ['nullable', 'string', 'max:60'],
-            'baslangic_tarihi' => ['required', 'date'],
-            'bitis_tarihi' => ['required', 'date', 'after:baslangic_tarihi'],
-            'sure_ay' => ['nullable', 'integer', 'min:1', 'max:1200'],
-            'taksit_sayisi' => ['nullable', 'integer', 'min:1', 'max:255'],
-            'odeme_sekli' => ['nullable', 'string', 'max:80'],
-            'sozlesme_tarihi' => ['nullable', 'date'],
-            'noter_tarihi' => ['nullable', 'date'],
-            'yevmiye_no' => ['nullable', 'string', 'max:60'],
-            'kdv_orani' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'artirma_yontemi' => ['nullable', 'string', 'max:100'],
-
-            // Bedeller
-            'bedeller' => ['required', 'array', 'min:1', 'max:30'],
-            'bedeller.*.yillik_bedel' => ['required', 'numeric', 'min:0', 'max:9999999999999'],
-            // Dönem ya iki tarihiyle girilir ya hiç girilmez; boşsa sözleşmeden hesaplanır
-            'bedeller.*.donem_baslangic' => ['nullable', 'date', 'required_with:bedeller.*.donem_bitis'],
-            'bedeller.*.donem_bitis' => ['nullable', 'date', 'required_with:bedeller.*.donem_baslangic', 'after_or_equal:bedeller.*.donem_baslangic'],
-            'bedeller.*.tufe_orani' => ['nullable', 'numeric', 'min:-100', 'max:999'],
-        ], [
-            'bitis_tarihi.after' => 'Kira bitiş tarihi başlangıçtan sonra olmalı.',
-            'kiraci_ad_unvan.required_if' => 'Dolu bir yerde kiracı adı/unvanı girilmeli.',
-            'bedeller.required' => 'En az bir yıl için kira bedeli girilmeli.',
-            'ilce_id.exists' => 'Seçilen ilçe bu ile ait değil.',
-            'mahalle_id.exists' => 'Seçilen mahalle bu ilçeye ait değil.',
-            'bedeller.*.donem_baslangic.required_with' => 'Bedel döneminin başlangıcı da girilmeli.',
-            'bedeller.*.donem_bitis.required_with' => 'Bedel döneminin bitişi de girilmeli.',
-            'bedeller.*.donem_bitis.after_or_equal' => 'Bedel döneminin bitişi başlangıçtan önce olamaz.',
-        ]);
-    }
-
-    /**
-     * Form satırlarını bedel kayıtlarına çevirir. Boş satırlar atılır, yıl
-     * sırası baştan numaralanır — kullanıcı aradan satır silmiş olabilir.
-     *
-     * Dönemi girilmemiş satır sözleşmenin N. yılı sayılır. Dönemsiz bedel
-     * yıllık toplama ve "güncel bedel"e hiç girmiyordu; sözleşme süresini
-     * aşan satır dönemsiz kalır.
-     *
-     * @param  array<int, array<string, mixed>>  $satirlar
-     * @return array<int, array<string, mixed>>
-     */
-    private function bedelSatirlari(array $satirlar, string $sozlesmeBaslangic, string $sozlesmeBitis): array
-    {
-        $dolu = array_values(array_filter($satirlar, fn ($s) => filled($s['yillik_bedel'] ?? null)));
-        $ilk = Carbon::parse($sozlesmeBaslangic)->startOfDay();
-        $son = Carbon::parse($sozlesmeBitis)->startOfDay();
-
-        return array_map(function ($s, $i) use ($ilk, $son) {
-            $baslangic = $s['donem_baslangic'] ?? null;
-            $bitis = $s['donem_bitis'] ?? null;
-
-            if (blank($baslangic) && blank($bitis)) {
-                $yilBasi = $ilk->copy()->addYearsNoOverflow($i);
-                if ($yilBasi->lte($son)) {
-                    $baslangic = $yilBasi->toDateString();
-                    $bitis = $yilBasi->copy()->addYearNoOverflow()->subDay()->min($son)->toDateString();
-                }
-            }
-
-            return [
-                'yil_sirasi' => $i + 1,
-                'donem_baslangic' => $baslangic ?: null,
-                'donem_bitis' => $bitis ?: null,
-                'yillik_bedel' => $s['yillik_bedel'],
-                'tufe_orani' => $s['tufe_orani'] ?? null,
-            ];
-        }, $dolu, array_keys($dolu));
+        return $request->validate($kurallar, KiraKayit::mesajlar());
     }
 
     /**

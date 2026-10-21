@@ -283,7 +283,7 @@
         const abbYapiKatman = abbDinamik('ABB · Yapı', ADRES_SERVIS, 2, { opacity: 0.85, minScale: 4550 });
         const abbNumaratajKatman = abbDinamik('ABB · Numarataj', ADRES_SERVIS, 0, { opacity: 0.90, minScale: 1500 });
 
-        const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 0.70 });
+        const parselKatman = new GraphicsLayer({ title: 'Taşınmaz Parselleri', opacity: 1 });
         const emsalKatman = new GraphicsLayer({ title: 'Emsaller', opacity: 0.70, visible: true });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
 
@@ -363,6 +363,16 @@
             return { type: 'simple-fill', color: renkAlfa(renk, opaklik === undefined ? 0.3 : opaklik), outline: { color: renk, width: 1.8 } };
         }
 
+        // Uydu altlığında ince renkli çizgi kayboluyor. Beyaz kontur şekli
+        // yerden ayırır, dolgu rengi (dolu/boş) içeride kalır.
+        function kiraDolgu(renk) {
+            return {
+                type: 'simple-fill',
+                color: renkAlfa(renk, 0.62),
+                outline: { color: [255, 255, 255, 1], width: 3 },
+            };
+        }
+
         function semNokta(renk) {
             return { type: 'simple-marker', style: 'circle', size: 11, color: renk, outline: { color: [255, 255, 255, 0.95], width: 1.6 } };
         }
@@ -386,10 +396,40 @@
          * ========================================================= */
         const WGS84 = { wkid: 4326 };
 
-        // GeoJSON dış halkaları CCW, ArcGIS CW bekler — simplify sarımı düzeltir.
+        // GeoJSON dış halkaları saatin tersine, ArcGIS saat yönünde bekler.
+        // Ters halka delik sayılır ve hiç boyanmaz. Küçük kira sınırları
+        // 4326 üzerinde sadeleştirilince de kaybolabildiği için önce yön
+        // düzeltilir, sonra Web Mercator'da sadeleştirilir.
+        function imzaliAlan(halka) {
+            let alan = 0;
+            for (let i = 0; i < halka.length - 1; i++) {
+                alan += halka[i][0] * halka[i + 1][1] - halka[i + 1][0] * halka[i][1];
+            }
+            return alan;
+        }
+
+        function esriHalkalari(parcalar) {
+            const halkalar = [];
+            (parcalar || []).forEach(function (parca) {
+                (parca || []).forEach(function (halka, indeks) {
+                    if (!halka || halka.length < 4) return;
+                    const saatYonunde = imzaliAlan(halka) < 0;
+                    const disHalka = indeks === 0;
+                    halkalar.push(saatYonunde === disHalka ? halka : halka.slice().reverse());
+                });
+            });
+            return halkalar;
+        }
+
         function halkalariDuzelt(polygon) {
             try {
-                return geometryEngine.simplify(polygon) || polygon;
+                const mercator = polygon.spatialReference && polygon.spatialReference.isWGS84
+                    ? webMercatorUtils.geographicToWebMercator(polygon)
+                    : polygon;
+                if (!mercator || !mercator.rings || !mercator.rings.length) return polygon;
+                const sade = geometryEngine.simplify(mercator);
+                if (sade && sade.rings && sade.rings.length) return sade;
+                return mercator;
             } catch (e) {
                 return polygon;
             }
@@ -401,12 +441,12 @@
                 return new Point({ longitude: +g.coordinates[0], latitude: +g.coordinates[1], spatialReference: WGS84 });
             }
             if (g.type === 'Polygon') {
-                return halkalariDuzelt(new Polygon({ rings: g.coordinates, spatialReference: WGS84 }));
+                const halkalar = esriHalkalari([g.coordinates]);
+                return halkalar.length ? halkalariDuzelt(new Polygon({ rings: halkalar, spatialReference: WGS84 })) : null;
             }
             if (g.type === 'MultiPolygon') {
-                const rings = [];
-                g.coordinates.forEach(function (poly) { poly.forEach(function (r) { rings.push(r); }); });
-                return rings.length ? halkalariDuzelt(new Polygon({ rings: rings, spatialReference: WGS84 })) : null;
+                const halkalar = esriHalkalari(g.coordinates);
+                return halkalar.length ? halkalariDuzelt(new Polygon({ rings: halkalar, spatialReference: WGS84 })) : null;
             }
             if (g.type === 'LineString') {
                 return halkalariDuzelt(new Polygon({ rings: [g.coordinates], spatialReference: WGS84 }));
@@ -943,7 +983,7 @@
                 const renk = kiraRenk(p);
                 return new Graphic({
                     geometry: geom,
-                    symbol: geom.type === 'point' ? semNokta(renk) : semDoldur(renk),
+                    symbol: geom.type === 'point' ? semNokta(renk) : kiraDolgu(renk),
                     attributes: p,
                 });
             }
@@ -994,6 +1034,24 @@
                 const g = parselGrafigi(f);
                 if (!g) return;
                 grafikler.push(g);
+                // Şehir ölçeğinde 40 metrelik sınır bir pikselin altında kalıyor.
+                // Yakınlaşana kadar merkezine okunur bir nokta konur.
+                if (MOD === 'kira' && view.zoom < 15 && g.geometry && g.geometry.extent && g.geometry.type !== 'point') {
+                    const e = g.geometry.extent;
+                    grafikler.push(new Graphic({
+                        geometry: new Point({
+                            x: (e.xmin + e.xmax) / 2,
+                            y: (e.ymin + e.ymax) / 2,
+                            spatialReference: g.geometry.spatialReference,
+                        }),
+                        symbol: {
+                            type: 'simple-marker', style: 'circle', size: 13,
+                            color: renkAlfa(kiraRenk(f.properties || {}), 0.95),
+                            outline: { color: [255, 255, 255, 1], width: 2 },
+                        },
+                        attributes: f.properties || {},
+                    }));
+                }
                 if (tumunu) {
                     const e = geometriExtent(g.geometry);
                     if (e) tumExtent = tumExtent ? tumExtent.union(e) : e;
@@ -2335,7 +2393,7 @@
                 if (o.parselNo) kq.set('parsel', o.parselNo);
 
                 return '<div class="hrm-pop-eylemler">' +
-                    '<a class="hrm-pop-eylem" href="' + kacis(KIRA.yeni + '?' + kq) + '">+ Kira Dosyası Aç</a>' +
+                    '<a class="hrm-pop-eylem" href="' + kacis(KIRA.yeni + '?' + kq) + '">+ Kira Alanı Ekle</a>' +
                 '</div>';
             }
             if (MOD !== 'degerleme') return '';

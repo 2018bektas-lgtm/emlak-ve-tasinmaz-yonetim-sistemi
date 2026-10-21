@@ -460,12 +460,12 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::delete('harita/alan/{alanId}/sinir', [KiraHaritaController::class, 'alanSinirAyir'])
             ->middleware('izin:kira.duzenle')->whereNumber('alanId')->name('harita.alan.sinir-ayir');
 
+        // Yeni kayıt kira alanından açılır; eski "yeni dosya" adresi oraya yönlenir
         Route::get('yeni', [KiraController::class, 'olustur'])
             ->middleware('izin:kira.olustur')->name('olustur');
-        Route::post('yeni', [KiraController::class, 'kaydet'])
-            ->middleware('izin:kira.olustur')->name('kaydet');
 
-        // Kira alanları — bir dosyada kiraya verilen tek tek yerler
+        // Kira alanları (kira taşınmazları) — kayıt akışının merkezi: alan
+        // eklenir, kiraya verilirken dosya numarası bağlanır
         Route::prefix('alanlar')->name('alanlar.')->group(function () {
             Route::get('/', [KiraAlanController::class, 'index'])->name('index');
             Route::get('excel', [KiraAlanController::class, 'excelIndir'])->name('excel');
@@ -473,6 +473,8 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
                 ->middleware('izin:kira.olustur')->name('olustur');
             Route::post('yeni', [KiraAlanController::class, 'kaydet'])
                 ->middleware('izin:kira.olustur')->name('kaydet');
+            Route::get('dosya-kontrol', [KiraAlanController::class, 'dosyaKontrol'])
+                ->middleware('izin:kira.olustur')->name('dosya-kontrol');
             Route::get('{id}', [KiraAlanController::class, 'detay'])->whereNumber('id')->name('detay');
             Route::get('{id}/duzenle', [KiraAlanController::class, 'duzenle'])
                 ->middleware('izin:kira.duzenle')->whereNumber('id')->name('duzenle');

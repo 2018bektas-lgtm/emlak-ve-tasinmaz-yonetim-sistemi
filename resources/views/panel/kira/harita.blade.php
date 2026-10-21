@@ -246,9 +246,9 @@
             </div>
             <div class="hrm-katman-alt-satir">
                 <span class="hrm-opaklik-label">Opaklık</span>
-                <input type="range" id="hrm-ov-parsel-op" min="10" max="100" value="70" class="hrm-range">
-                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parsel-op">70%</span>
-                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-parsel-op" title="Varsayılana döndür">↺</button>
+                <input type="range" id="hrm-ov-parsel-op" min="10" max="100" value="100" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parsel-op">100%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="100" data-hedef="hrm-ov-parsel-op" title="Varsayılana döndür">↺</button>
             </div>
             <div class="hrm-katman-alt-satir">
                 <span class="hrm-opaklik-label">Renk</span>
@@ -865,7 +865,7 @@
         csrf:          @json(csrf_token()),
         kira: {
             dosya:       @json(url('/panel/kira/harita/dosya')),
-            yeni:        @json(route('panel.kira.olustur')),
+            yeni:        @json(route('panel.kira.alanlar.olustur')),
             ekleyebilir: @json($ekleyebilir),
             // Seçim ve kayıt araçları
             secim:       @json(route('panel.kira.harita.secim')),
@@ -884,5 +884,5 @@
         },
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=52"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=54"></script>
 @endpush
