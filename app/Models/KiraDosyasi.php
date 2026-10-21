@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
@@ -98,9 +99,13 @@ class KiraDosyasi extends Model
         return $this->hasOne(KiraTasinmaz::class, 'kira_dosya_id');
     }
 
-    public function koordinat(): HasOne
+    /**
+     * Dosyanın haritadaki geometrileri — alanları üzerinden. Geometri artık
+     * dosyada değil, paylaşılabilir poligonlarda duruyor.
+     */
+    public function poligonlar(): HasManyThrough
     {
-        return $this->hasOne(KiraKoordinat::class, 'kira_dosya_id');
+        return $this->hasManyThrough(KiraPoligon::class, KiraAlan::class, 'kira_dosya_id', 'id', 'id', 'poligon_id');
     }
 
     public function sozlesmeler(): HasMany

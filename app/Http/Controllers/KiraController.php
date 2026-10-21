@@ -3,16 +3,18 @@
 namespace App\Http\Controllers;
 
 use AppEnumsKiraciTipi;
+use App\Enums\KiraDoluBos;
 use App\Enums\KiraciTipi;
 use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\ImarDurumu;
 use App\Models\KiraDosyasi;
 use App\Models\KiraHukukiDurum;
+use App\Models\KiraAlan;
 use App\Models\KiraIsKolu;
 use App\Models\KiraKiraci;
 use App\Models\KiraKiracilikDurum;
-use App\Models\KiraKoordinat;
+use App\Models\KiraPoligon;
 use App\Models\KiraMuhasebeNiteligi;
 use App\Models\KiraSozlesme;
 use App\Models\KiraTasinmaz;
@@ -118,9 +120,8 @@ class KiraController extends Controller
             'isKolu', 'anaDosya', 'altDosyalar:id,dosya_no,isyeri_adi',
             'hukukiDurum', 'kiracilikDurum', 'muhasebeNiteligi', 'sorumluPersonel',
             'tasinmaz.il', 'tasinmaz.ilce', 'tasinmaz.mahalle', 'tasinmaz.imarDurumu', 'tasinmaz.tasinmaz',
-            'koordinat',
             'sozlesmeler.bedeller',
-            'alanlar.isKolu',
+            'alanlar.isKolu', 'alanlar.poligon', 'alanlar.kiracilikDurum', 'alanlar.hukukiDurum', 'alanlar.belgeler',
             'ihaleler.komisyon', 'ihaleler.katilimcilar',
             'kararlar',
             'surecOlaylari.olusturan',
@@ -130,6 +131,7 @@ class KiraController extends Controller
 
         return view('panel.kira.detay', [
             'dosya' => $dosya,
+            'birincilPoligon' => $dosya->alanlar->firstWhere('poligon_id', '!=', null)?->poligon,
             'aktifSozlesme' => $dosya->sozlesmeler->firstWhere('aktif_mi', true) ?? $dosya->sozlesmeler->last(),
         ]);
     }
@@ -158,70 +160,92 @@ class KiraController extends Controller
 
         $dosyaIdleri = $this->sorgu($f)->select('id');
 
-        $koordinatlar = KiraKoordinat::query()
+        // Harita artık alanları çizer: bir dosyanın birden çok kira alanı,
+        // her alanın da paylaşılabilir bir poligonu olabiliyor.
+        $alanIdleri = KiraAlan::query()
             ->whereIn('kira_dosya_id', $dosyaIdleri)
-            ->when($imar !== null, fn ($s) => $s->whereIn('kira_dosya_id', KiraTasinmaz::query()->select('kira_dosya_id')
-                ->where(function ($w) use ($imar) {
-                    if ($imar['idler'] === [] && ! $imar['yok']) {
-                        $w->whereRaw('1 = 0');
+            ->whereNotNull('poligon_id')
+            ->select('poligon_id');
 
-                        return;
-                    }
-                    if ($imar['idler'] !== []) {
-                        $w->whereIn('imar_durumu_id', $imar['idler']);
-                    }
-                    if ($imar['yok']) {
-                        $w->orWhereNull('imar_durumu_id');
-                    }
-                })));
+        $poligonlar = KiraPoligon::query()
+            ->whereIn('id', $alanIdleri)
+            ->when($imar !== null, fn ($s) => $s->whereIn('id', KiraAlan::query()->select('poligon_id')
+                ->whereIn('kira_dosya_id', KiraTasinmaz::query()->select('kira_dosya_id')
+                    ->where(function ($w) use ($imar) {
+                        if ($imar['idler'] === [] && ! $imar['yok']) {
+                            $w->whereRaw('1 = 0');
+
+                            return;
+                        }
+                        if ($imar['idler'] !== []) {
+                            $w->whereIn('imar_durumu_id', $imar['idler']);
+                        }
+                        if ($imar['yok']) {
+                            $w->orWhereNull('imar_durumu_id');
+                        }
+                    }))));
 
         if ($request->boolean('kapsam')) {
-            return response()->json(HaritaGorunum::kapsam($koordinatlar));
+            return response()->json(HaritaGorunum::kapsam($poligonlar));
         }
 
         $bbox = HaritaGorunum::bbox($request);
-        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+        if ($bbox && ($kume = HaritaGorunum::kumeler($poligonlar, $bbox, HaritaGorunum::zoom($request)))) {
             return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
         }
 
-        $gorunen = (clone $koordinatlar)
+        $gorunen = (clone $poligonlar)
             ->when($bbox, fn ($s) => $s->alanda($bbox))
-            ->with(['dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,is_kolu_id,sozlesme_aktif_mi', 'dosya.isKolu:id,ad',
+            ->with(['alanlar' => fn ($s) => $s->whereIn('kira_dosya_id', $dosyaIdleri)->with([
+                'isKolu:id,ad',
+                'dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,sozlesme_aktif_mi',
                 'dosya.aktifSozlesme',
                 'dosya.anaKiraci:id,kira_dosya_id,ad_unvan',
-                'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,yuzolcum,imar_durumu_id',
-                'dosya.tasinmaz.ilce:id,ad', 'dosya.tasinmaz.mahalle:id,ad'])
+                'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,imar_durumu_id',
+                'dosya.tasinmaz.ilce:id,ad', 'dosya.tasinmaz.mahalle:id,ad',
+            ])])
             ->get();
 
         $features = [];
-        foreach ($gorunen as $k) {
-            $geo = $k->geoJson();
-            $d = $k->dosya;
-            if (! $geo || ! $d) {
+        foreach ($gorunen as $p) {
+            $geo = $p->geoJson();
+            $alanlar = $p->alanlar;
+            if (! $geo || $alanlar->isEmpty()) {
                 continue;
             }
-            $t = $d->tasinmaz;
+
+            // Aynı poligonda birden çok kayıt olabildiği için öne çıkan kayıt
+            // seçilir: önce dolu olan, yoksa ilk alan.
+            $oneCikan = $alanlar->firstWhere('dolu_bos', KiraDoluBos::Dolu) ?? $alanlar->first();
+            $d = $oneCikan->dosya;
+            $t = $d?->tasinmaz;
+
             $features[] = [
                 'type' => 'Feature',
-                'id' => $d->id,
+                'id' => $p->id,
                 'geometry' => $geo,
                 'properties' => [
-                    'id' => $d->id,
-                    'dosya_no' => $d->dosya_no,
-                    'ada' => $t?->ada,
-                    'parsel' => $t?->parsel,
+                    'poligon_id' => $p->id,
+                    'id' => $d?->id,
+                    'alan_id' => $oneCikan->id,
+                    // Aynı poligonda kaç kayıt var — haritada rozet olarak gösterilir
+                    'kayit_sayisi' => $alanlar->count(),
+                    'dosya_no' => $d?->dosya_no,
+                    'ada' => $t?->ada ?? $p->ada,
+                    'parsel' => $t?->parsel ?? $p->parsel,
                     'ilce' => $t?->ilce?->ad,
                     'mahalle' => $t?->mahalle?->ad,
-                    'alan' => $t?->yuzolcum !== null ? (float) $t->yuzolcum : null,
+                    'alan' => $oneCikan->alan !== null ? (float) $oneCikan->alan : null,
                     'imar_id' => $t?->imar_durumu_id,
-                    'isyeri' => $d->isyeri_adi,
-                    'is_kolu' => $d->isKolu?->ad,
-                    'kiraci' => $d->anaKiraci?->ad_unvan,
-                    'dolu_bos' => $d->dolu_bos->value,
-                    'ihale' => $d->ihale_turu->etiket(),
+                    'isyeri' => $oneCikan->ad ?: $d?->isyeri_adi,
+                    'is_kolu' => $oneCikan->isKolu?->ad,
+                    'kiraci' => $oneCikan->kiraci_ad_unvan ?: $d?->anaKiraci?->ad_unvan,
+                    'dolu_bos' => $oneCikan->dolu_bos->value,
+                    'ihale' => $d?->ihale_turu->etiket(),
                     // Sözleşme bitişine göre renklendirme istemcide yapılır.
                     // Yürürlükte olmayan dosya süre uyarısı almaz.
-                    'kalan_gun' => $d->sozlesme_aktif_mi ? $d->aktifSozlesme?->kalanGun() : null,
+                    'kalan_gun' => $oneCikan->kalanGun()
+                        ?? ($d?->sozlesme_aktif_mi ? $d->aktifSozlesme?->kalanGun() : null),
                 ],
             ];
         }
@@ -342,11 +366,21 @@ class KiraController extends Controller
                 $sozlesme->bedeller()->create($satir);
             }
 
-            // Haritadan gelindiyse parsel geometrisi de kaydedilir
-            $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
-            if (is_array($geometri) && isset($geometri['type'])) {
-                $dosya->koordinat()->create(['koordinat' => $geometri]);
-            }
+            // Dosyanın birincil kira alanı; geometri varsa paylaşılabilir
+            // poligona bağlanır (aynı poligon başka kayıtlarca da kullanılabilir).
+            $dosya->alanlar()->create([
+                'poligon_id' => $this->poligonuCozumle($veri, $request),
+                'ad' => $veri['isyeri_adi'] ?? 'Ana alan',
+                'adres' => $veri['adres'] ?? null,
+                'alan' => $veri['yuzolcum'] ?? null,
+                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
+                'dolu_bos' => $veri['dolu_bos'],
+                'kiraci_ad_unvan' => $veri['kiraci_ad_unvan'] ?? null,
+                'yillik_bedel' => $this->bedelSatirlari($veri['bedeller'] ?? [], $veri['baslangic_tarihi'], $veri['bitis_tarihi'])[0]['yillik_bedel'] ?? null,
+                'baslangic_tarihi' => $veri['baslangic_tarihi'],
+                'bitis_tarihi' => $veri['bitis_tarihi'],
+                'aktif_mi' => true,
+            ]);
 
             return $dosya;
         });
@@ -400,6 +434,50 @@ class KiraController extends Controller
         }
 
         return array_filter($dolgu, fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * Kaydın bağlanacağı poligonu bulur.
+     *
+     * Öncelik sırası: formda seçilen mevcut poligon → aynı parselin daha önce
+     * çizilmiş poligonu → haritadan gelen yeni geometriden üretilen poligon.
+     * Aynı parsel için ikinci bir poligon açılmaz; aynı poligonda birden çok
+     * kayıt olabilmesinin temeli bu.
+     *
+     * @param  array<string, mixed>  $veri
+     */
+    private function poligonuCozumle(array $veri, Request $request): ?int
+    {
+        if (filled($veri['poligon_id'] ?? null)) {
+            return (int) $veri['poligon_id'];
+        }
+
+        $mahalleId = $veri['mahalle_id'] ?? null;
+        $ada = $veri['ada'] ?? null;
+        $parsel = $veri['parsel'] ?? null;
+
+        if ($mahalleId && $ada && $parsel) {
+            $mevcut = KiraPoligon::parselde($mahalleId, $ada, $parsel)->first();
+            if ($mevcut) {
+                return $mevcut->id;
+            }
+        }
+
+        $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
+        if (! is_array($geometri) || ! isset($geometri['type'])) {
+            return null;
+        }
+
+        return KiraPoligon::create([
+            'ad' => $veri['isyeri_adi'] ?? null,
+            'kaynak' => 'tkgm',
+            'mahalle_id' => $mahalleId,
+            'ada' => $ada,
+            'parsel' => $parsel,
+            'koordinat' => $geometri,
+            'alan' => $veri['yuzolcum'] ?? null,
+            'olusturan_id' => $request->user()->id,
+        ])->id;
     }
 
     /** TKGM sayıları Türkçe biçimde gelir: "618.795,00" → 618795.0 */
@@ -517,9 +595,27 @@ class KiraController extends Controller
                 $sozlesme->bedeller()->create($satir);
             }
 
-            $geometri = json_decode((string) ($veri['koordinat'] ?? ''), true);
-            if (is_array($geometri) && isset($geometri['type'])) {
-                $dosya->koordinat()->updateOrCreate(['kira_dosya_id' => $dosya->id], ['koordinat' => $geometri]);
+            // Birincil alan güncellenir; yeni geometri geldiyse poligonu değişir
+            $poligonId = $this->poligonuCozumle($veri, $request);
+            $birincil = $dosya->alanlar()->orderBy('id')->first();
+            $alanAlanlari = [
+                'ad' => $veri['isyeri_adi'] ?? 'Ana alan',
+                'adres' => $veri['adres'] ?? null,
+                'alan' => $veri['yuzolcum'] ?? null,
+                'is_kolu_id' => $veri['is_kolu_id'] ?? null,
+                'dolu_bos' => $veri['dolu_bos'],
+                'kiraci_ad_unvan' => $veri['kiraci_ad_unvan'] ?? null,
+                'baslangic_tarihi' => $veri['baslangic_tarihi'],
+                'bitis_tarihi' => $veri['bitis_tarihi'],
+            ];
+            if ($poligonId) {
+                $alanAlanlari['poligon_id'] = $poligonId;
+            }
+
+            if ($birincil) {
+                $birincil->update($alanAlanlari);
+            } else {
+                $dosya->alanlar()->create($alanAlanlari + ['aktif_mi' => true]);
             }
         });
 
@@ -676,6 +772,7 @@ class KiraController extends Controller
             'yuzolcum' => ['nullable', 'numeric', 'min:0', 'max:99999999999'],
             'imar_durumu_id' => ['nullable', 'exists:imar_durumlari,id'],
             'koordinat' => ['nullable', 'string', 'max:200000'],
+            'poligon_id' => ['nullable', 'exists:kira_poligonlari,id'],
 
             // Sözleşme
             'sozlesme_no' => ['nullable', 'string', 'max:60'],

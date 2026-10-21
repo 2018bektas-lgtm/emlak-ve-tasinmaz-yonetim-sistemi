@@ -47,8 +47,8 @@
         @can('kira.duzenle')
             <a href="{{ route('panel.kira.duzenle', $dosya->id) }}" class="btn-submit">Düzenle</a>
         @endcan
-        @if ($dosya->koordinat)
-            <a href="{{ route('panel.kira.harita', ['merkez' => $dosya->koordinat->merkez_lat.','.$dosya->koordinat->merkez_lng, 'zoom' => 17]) }}" class="btn-cancel">Haritada Göster</a>
+        @if ($birincilPoligon)
+            <a href="{{ route('panel.kira.harita', ['merkez' => $birincilPoligon->merkez_lat.','.$birincilPoligon->merkez_lng, 'zoom' => 17]) }}" class="btn-cancel">Haritada Göster</a>
         @endif
     </div>
 </section>
@@ -108,7 +108,7 @@
             <div><dt>Yüzölçüm</dt><dd class="td-mono">{{ $tl($t?->yuzolcum) }} m²</dd></div>
             <div><dt>İmar Durumu</dt><dd>{{ $t?->imarDurumu?->ad ?: '—' }}</dd></div>
             <div><dt>Envanter Kaydı</dt><dd>{{ $t?->tasinmaz ? '#'.$t->tasinmaz->id.' · '.$t->tasinmaz->ada.'/'.$t->tasinmaz->parsel : 'Bağlı değil' }}</dd></div>
-            <div><dt>Geometri</dt><dd>{{ $dosya->koordinat ? 'Var' : 'Yok' }}</dd></div>
+            <div><dt>Geometri</dt><dd>{{ $birincilPoligon ? 'Var'.($birincilPoligon->kayitSayisi() > 1 ? ' · bu poligonda '.$birincilPoligon->kayitSayisi().' kayıt' : '') : 'Yok' }}</dd></div>
         </dl>
         @if ($t?->adres)
             <p class="kr-aciklama">{{ $t->adres }}</p>

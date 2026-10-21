@@ -11,7 +11,7 @@ class KiraBelge extends Model
 {
     protected $table = 'kira_belgeleri';
 
-    protected $fillable = ['kira_dosya_id', 'tur', 'ad', 'dosya_yolu', 'boyut', 'aciklama', 'yukleyen_id'];
+    protected $fillable = ['kira_dosya_id', 'kira_alan_id', 'tur', 'ad', 'dosya_yolu', 'boyut', 'aciklama', 'yukleyen_id'];
 
     protected function casts(): array
     {
@@ -21,6 +21,12 @@ class KiraBelge extends Model
     public function dosya(): BelongsTo
     {
         return $this->belongsTo(KiraDosyasi::class, 'kira_dosya_id');
+    }
+
+    /** Belge alana da bağlanabilir; referansta belgeler alan düzeyinde tutuluyor. */
+    public function alan(): BelongsTo
+    {
+        return $this->belongsTo(KiraAlan::class, 'kira_alan_id');
     }
 
     public function yukleyen(): BelongsTo
