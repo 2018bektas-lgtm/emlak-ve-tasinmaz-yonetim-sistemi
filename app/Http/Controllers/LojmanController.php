@@ -80,12 +80,12 @@ class LojmanController extends Controller
         $durum = array_key_exists((string) $request->query('durum'), Lojman::DURUMLAR) ? $request->query('durum') : null;
 
         $sorgu = Lojman::query()
-            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('ad', 'like', "%{$q}%")
-                ->orWhere('blok', 'like', "%{$q}%")
-                ->orWhere('daire_no', 'like', "%{$q}%")
+            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->whereLike('ad', "%{$q}%")
+                ->orWhereLike('blok', "%{$q}%")
+                ->orWhereLike('daire_no', "%{$q}%")
                 ->orWhere('ada', $q)
                 ->orWhere('parsel', $q)
-                ->orWhereHas('aktifTahsisler', fn ($t) => $t->where('ad_soyad', 'like', "%{$q}%"))))
+                ->orWhereHas('aktifTahsisler', fn ($t) => $t->whereLike('ad_soyad', "%{$q}%"))))
             ->when($ilId, fn ($w) => $w->where('il_id', $ilId))
             ->when($ilceId, fn ($w) => $w->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($w) => $w->where('mahalle_id', $mahalleId))
@@ -125,7 +125,7 @@ class LojmanController extends Controller
         $tahsisAdaylari = LojmanBasvuru::query()
             ->whereIn('durum', LojmanBasvuru::ACIK_DURUMLAR)
             ->where(fn ($q) => $q->whereNull('lojman_id')->orWhere('lojman_id', $lojman->id))
-            ->orderByRaw("FIELD(durum, 'onaylandi', 'degerlendirmede', 'basvuruldu')")
+            ->orderByRaw(...$this->durumSirasi(['onaylandi', 'degerlendirmede', 'basvuruldu']))
             ->orderBy('basvuru_tarihi')
             ->get(['id', 'lojman_id', 'ad_soyad', 'sicil_no', 'basvuru_tarihi', 'durum', 'tahsis_turu']);
 
@@ -371,10 +371,10 @@ class LojmanController extends Controller
 
         $sorgu = LojmanBasvuru::query()
             // Önceden gruplanmamış orWhere durum filtresini devre dışı bırakıyordu
-            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('ad_soyad', 'like', "%{$q}%")
-                ->orWhere('tc_kimlik', 'like', "%{$q}%")
-                ->orWhere('sicil_no', 'like', "%{$q}%")
-                ->orWhere('birim', 'like', "%{$q}%")))
+            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->whereLike('ad_soyad', "%{$q}%")
+                ->orWhereLike('tc_kimlik', "%{$q}%")
+                ->orWhereLike('sicil_no', "%{$q}%")
+                ->orWhereLike('birim', "%{$q}%")))
             ->when($tur !== '', fn ($w) => $w->where('tahsis_turu', $tur));
 
         $sayac = ['tumu' => (clone $sorgu)->count()];
@@ -385,7 +385,7 @@ class LojmanController extends Controller
         $basvurular = $sorgu
             ->when($durum, fn ($w) => $w->where('durum', $durum))
             ->with(['lojman:id,ad,blok,daire_no', 'tahsisRelation.lojman:id,ad'])
-            ->orderByRaw("FIELD(durum, 'onaylandi', 'degerlendirmede', 'basvuruldu', 'tahsisedildi', 'reddedildi')")
+            ->orderByRaw(...$this->durumSirasi(['onaylandi', 'degerlendirmede', 'basvuruldu', 'tahsisedildi', 'reddedildi']))
             ->orderBy('basvuru_tarihi')
             ->orderBy('id')
             ->paginate(20)->withQueryString();
@@ -920,5 +920,25 @@ class LojmanController extends Controller
     {
         return Lojman::query()->where('durum', '!=', 'kullanim-disi')
             ->orderBy('ad')->get(['id', 'ad', 'blok', 'daire_no', 'tip', 'durum']);
+    }
+
+    /**
+     * Başvuruları sabit bir durum sırasına göre dizer.
+     *
+     * MySQL'in FIELD() fonksiyonu PostgreSQL'de yok; taşınabilir karşılığı CASE.
+     * FIELD gibi davranır: listede olmayan durum 0 döner, yani artan sıralamada
+     * en başa gelir.
+     *
+     * @param  list<string>  $sira
+     * @return array{0: string, 1: list<string>}
+     */
+    private function durumSirasi(array $sira): array
+    {
+        $ifade = 'CASE durum';
+        foreach (array_keys($sira) as $i) {
+            $ifade .= ' WHEN ? THEN '.($i + 1);
+        }
+
+        return [$ifade.' ELSE 0 END', $sira];
     }
 }

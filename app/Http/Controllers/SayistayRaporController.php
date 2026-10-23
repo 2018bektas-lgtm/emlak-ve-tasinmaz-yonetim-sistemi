@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\KayitTuru;
 use App\Models\Tasinmaz;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -79,13 +81,29 @@ class SayistayRaporController extends Controller
     /**
      * Ortak rapor akışı: liste ekranı + Excel export.
      */
-    private function raporGoster(Request $request, string $rootKod, array $meta): View|StreamedResponse
+    private function raporGoster(Request $request, string $rootKod, array $meta): View|StreamedResponse|RedirectResponse
     {
         $rootKategori = KayitTuru::query()->where('kod', $rootKod)->first();
         $kategoriIdleri = $rootKategori ? $this->tumAltKategoriIdleri($rootKategori) : [];
 
-        $ilceler = Ilce::query()->orderBy('ad')->get(['id', 'ad']);
+        // Listeler yalnızca envanterde gerçekten geçen il/ilçeleri gösterir:
+        // konum tabloları Türkiye'nin tamamını taşıyor (81 il, 973 ilçe) ama
+        // taşınmazlar bunların küçük bir kısmında.
+        $iller = Il::query()->whereIn('id', Tasinmaz::query()->distinct()->select('il_id'))
+            ->orderBy('ad')->get(['id', 'ad']);
+
+        $secilenIl = $request->query('il_id');
         $secilenIlce = $request->query('ilce_id');
+
+        $ilceler = Ilce::query()
+            ->whereIn('id', Tasinmaz::query()->distinct()->select('ilce_id'))
+            ->when($secilenIl, fn ($q, $v) => $q->where('il_id', $v))
+            ->orderBy('ad')->get(['id', 'ad', 'il_id']);
+
+        // İl değişince eski ilçe seçimi geçersiz kalır
+        if ($secilenIlce && ! $ilceler->contains('id', (int) $secilenIlce)) {
+            $secilenIlce = null;
+        }
         $sayfaBasi = (int) $request->query('per_page', 20);
         if (! in_array($sayfaBasi, [10, 20, 50, 100, 200], true)) {
             $sayfaBasi = 20;
@@ -106,14 +124,31 @@ class SayistayRaporController extends Controller
                 $q->whereHas('kategori', fn ($k) => $k->whereIn('kayit_turu_id', $kategoriIdleri));
             })
             ->whereHas('hisseler', fn ($h) => $h->where('hisse_durum', 'aktif'))
+            ->when($secilenIl, fn ($q) => $q->where('il_id', $secilenIl))
             ->when($secilenIlce, fn ($q) => $q->where('ilce_id', $secilenIlce))
             ->orderBy('ilce_id')
             ->orderBy('mahalle_id')
             ->orderBy('ada')
             ->orderBy('parsel');
 
-        // Excel export — sayfalama olmadan tüm sonuçlar
+        // Excel export — sayfalama olmadan tüm sonuçlar.
+        //
+        // İl ve ilçe zorunlu: Sayıştay formu ilçe bazlı düzenlenir (başlık
+        // satırı da "ÜLKESİ / İLİ : TÜRKİYE / <ilçe>" yazar) ve filtresiz
+        // çıktı 100 bin satıra çıkıyor. PhpSpreadsheet tabloyu tümüyle
+        // bellekte kurduğundan (ölçüm: satır başına ~50 KB) bu, isteğin
+        // bellek sınırını aşıp düşmesine yol açıyordu.
         if ($request->boolean('excel')) {
+            if (! $secilenIl || ! $secilenIlce) {
+                return back()->with('hata', 'Excel indirmek için il ve ilçe seçmelisiniz. Sayıştay formu ilçe bazlı düzenlenir.');
+            }
+
+            // Tek ilçe en fazla birkaç bin satır; yine de PhpSpreadsheet'in
+            // hücre başına belleği yüksek olduğu için paya ihtiyaç var.
+            if ((int) ini_get('memory_limit') !== -1) {
+                ini_set('memory_limit', '1G');
+            }
+
             return $this->excelIndir($sorgu->get(), $meta, $secilenIlce, $ilceler);
         }
 
@@ -121,6 +156,8 @@ class SayistayRaporController extends Controller
         $data = $this->veriHazirla($tasinmazlar->getCollection());
 
         return view($meta['view'], [
+            'iller' => $iller,
+            'secilenIl' => $secilenIl,
             'baslik' => $meta['baslik'],
             'ek' => $meta['ek'],
             'data' => $data,

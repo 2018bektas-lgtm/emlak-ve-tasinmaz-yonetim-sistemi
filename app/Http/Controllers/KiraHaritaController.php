@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\KiraAlan;
 use App\Models\KiraPoligon;
-use App\Support\Geometri;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -17,14 +16,21 @@ use Illuminate\Validation\Rule;
  * seçim için Nokta Bilgisi / Alan İçinde Kalanlar / Çizgiyi Kesenler /
  * Pencere, kayıt için Yeni Kayıt / Kayıt Güncelle / Kayıt Sil.
  *
- * Geometri spatial sütunda değil GeoJSON olarak tutuluyor; her sorgu önce
- * indexli sınır kutusuyla kaba süzülür, kesin test (App\Support\Geometri)
- * yalnızca kutusu çakışan kayıtlara uygulanır.
+ * Geometri PostGIS `sinir` sütununda tutulur ve GiST ile indexlenir; bu yüzden
+ * seçim testleri (nokta içinde mi, pencereyle kesişiyor mu, çizgi kesiyor mu)
+ * tek bir SQL sorgusunda, index üzerinden çalışır. Önceden kaba sınır kutusu
+ * süzmesinden sonra kesin test PHP'de (App\Support\Geometri) yapılıyordu.
  */
 class KiraHaritaController extends Controller
 {
     /** Bir seçimde en fazla kaç kayıt döner — geniş seçim ekranı kilitlemesin. */
     private const SINIR = 300;
+
+    /**
+     * Nokta seçiminde kenar payı (derece, ~5 m). Tam sınıra basıldığında da
+     * poligon bulunsun diye nokta bu yarıçapla aranır.
+     */
+    private const NOKTA_PAYI = 0.00005;
 
     /**
      * Seçim araçları. İstek gövdesi:
@@ -47,27 +53,22 @@ class KiraHaritaController extends Controller
             'kesisen' => ['nullable', 'boolean'],
         ]);
 
-        [$bbox, $test] = match ($veri['tur']) {
-            'nokta' => $this->noktaTesti($veri['nokta']),
-            'pencere' => $this->pencereTesti($veri['pencere'], $request->boolean('kesisen')),
-            'alan' => $this->halkaTesti($this->noktaDizisi($veri['halka']), $request->boolean('kesisen')),
-            'cizgi' => $this->cizgiTesti($this->noktaDizisi($veri['cizgi'])),
+        [$kosul, $baglar] = match ($veri['tur']) {
+            'nokta' => $this->noktaKosulu($veri['nokta']),
+            'pencere' => $this->pencereKosulu($veri['pencere'], $request->boolean('kesisen')),
+            'alan' => $this->halkaKosulu($this->noktaDizisi($veri['halka']), $request->boolean('kesisen')),
+            'cizgi' => $this->cizgiKosulu($this->noktaDizisi($veri['cizgi'])),
         };
 
-        // Kaba süzme: sınır kutusu index üzerinden
-        $poligonlar = KiraPoligon::query()->alanda($bbox)->limit(2000)->get();
+        // Kesin test veritabanında: PostGIS işlevleri sınır kutusu karşılaştırmasını
+        // kendi içinde yapar, yani GiST index kullanılır ve geometri PHP'ye hiç gelmez.
+        $poligonIdleri = KiraPoligon::query()->whereRaw($kosul, $baglar)->pluck('id');
 
-        $eslesen = $poligonlar->filter(function (KiraPoligon $p) use ($test) {
-            $geo = $p->geoJson();
-
-            return $geo && $test($geo);
-        });
-
-        if ($eslesen->isEmpty()) {
+        if ($poligonIdleri->isEmpty()) {
             return response()->json(['toplam' => 0, 'kayitlar' => []]);
         }
 
-        return response()->json($this->kayitlar($eslesen->pluck('id')));
+        return response()->json($this->kayitlar($poligonIdleri));
     }
 
     /**
@@ -267,48 +268,88 @@ class KiraHaritaController extends Controller
     }
 
     // ------------------------------------------------------------------
-    // Seçim testleri — her biri [bbox, test closure] döner
+    // Seçim koşulları — her biri [sql, bağlar] döner, `sinir` sütununa uygulanır
     // ------------------------------------------------------------------
 
-    /** @return array{0: array<int, float>, 1: callable} */
-    private function noktaTesti(array $nokta): array
+    /**
+     * Nokta Bilgisi: basılan noktadaki poligonlar.
+     *
+     * ST_DWithin SRID 4326'da derece cinsinden ölçer ve GiST index kullanır;
+     * NOKTA_PAYI sayesinde tam sınıra basıldığında da poligon bulunur.
+     *
+     * @return array{0: string, 1: list<float>}
+     */
+    private function noktaKosulu(array $nokta): array
     {
         [$lng, $lat] = array_map('floatval', $nokta);
-        // Nokta için kutuyu biraz genişlet: tam kenara basıldığında da bulunsun
-        $d = 0.00002;
 
-        return [[$lng - $d, $lat - $d, $lng + $d, $lat + $d],
-            fn (array $geo) => Geometri::noktaIcinde($geo, $lng, $lat)];
+        return [
+            'ST_DWithin(sinir, ST_SetSRID(ST_MakePoint(?, ?), 4326), ?)',
+            [$lng, $lat, self::NOKTA_PAYI],
+        ];
     }
 
-    /** @return array{0: array<int, float>, 1: callable} */
-    private function pencereTesti(array $pencere, bool $kesisen): array
+    /**
+     * Pencere: ekranda çizilen dikdörtgen.
+     *
+     * @return array{0: string, 1: list<float>}
+     */
+    private function pencereKosulu(array $pencere, bool $kesisen): array
     {
         [$minLng, $minLat, $maxLng, $maxLat] = array_map('floatval', $pencere);
-        $halka = Geometri::pencereHalkasi(
-            min($minLng, $maxLng), min($minLat, $maxLat),
-            max($minLng, $maxLng), max($minLat, $maxLat)
-        );
 
-        return $this->halkaTesti($halka, $kesisen);
+        return $this->alanKosulu(
+            'ST_MakeEnvelope(?, ?, ?, ?, 4326)',
+            [min($minLng, $maxLng), min($minLat, $maxLat), max($minLng, $maxLng), max($minLat, $maxLat)],
+            $kesisen
+        );
     }
 
-    /** @return array{0: array<int, float>, 1: callable} */
-    private function halkaTesti(array $halka, bool $kesisen): array
+    /**
+     * Alan İçinde Kalanlar: serbest çizilen halka.
+     *
+     * @param  list<array{0: float, 1: float}>  $halka
+     * @return array{0: string, 1: list<string>}
+     */
+    private function halkaKosulu(array $halka, bool $kesisen): array
     {
         if ($halka[0] !== end($halka)) {
             $halka[] = $halka[0];
         }
 
-        return [Geometri::sinirKutusu($halka), $kesisen
-            ? fn (array $geo) => Geometri::kesisiyor($geo, $halka)
-            : fn (array $geo) => Geometri::tamamenIcinde($geo, $halka)];
+        return $this->alanKosulu(
+            'ST_SetSRID(ST_GeomFromGeoJSON(?), 4326)',
+            [json_encode(['type' => 'Polygon', 'coordinates' => [$halka]])],
+            $kesisen
+        );
     }
 
-    /** @return array{0: array<int, float>, 1: callable} */
-    private function cizgiTesti(array $cizgi): array
+    /**
+     * Çizgiyi Kesenler: çizginin geçtiği poligonlar.
+     *
+     * @param  list<array{0: float, 1: float}>  $cizgi
+     * @return array{0: string, 1: list<string>}
+     */
+    private function cizgiKosulu(array $cizgi): array
     {
-        return [Geometri::sinirKutusu($cizgi), fn (array $geo) => Geometri::cizgiKesiyor($geo, $cizgi)];
+        return [
+            'ST_Intersects(sinir, ST_SetSRID(ST_GeomFromGeoJSON(?), 4326))',
+            [json_encode(['type' => 'LineString', 'coordinates' => $cizgi])],
+        ];
+    }
+
+    /**
+     * Alan seçimi: "kesişen" sınırı seçime değen her kaydı alır, aksi hâlde
+     * yalnız seçimin içine tümüyle düşenler. İkisi de index destekli.
+     *
+     * @param  list<mixed>  $baglar
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function alanKosulu(string $alanSql, array $baglar, bool $kesisen): array
+    {
+        $islev = $kesisen ? 'ST_Intersects' : 'ST_Within';
+
+        return ["{$islev}(sinir, {$alanSql})", $baglar];
     }
 
     /** @param  list<array{0: float, 1: float}>|array<int, mixed>  $ham */

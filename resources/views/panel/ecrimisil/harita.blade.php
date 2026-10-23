@@ -91,7 +91,7 @@
                     <label class="ech-switch"><input type="checkbox" id="ech-lyr-marker" checked><span class="ech-switch-slider"></span></label>
                 </div>
                 <div class="ech-katman-kart">
-                    <span class="ech-katman-ikon" style="background:#8b5cf6;">
+                    <span class="ech-katman-ikon is-kume">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4"/><circle cx="17" cy="7" r="4"/><circle cx="12" cy="17" r="4"/></svg>
                     </span>
                     <div class="ech-katman-meta">
@@ -103,9 +103,9 @@
             </div>
             <div class="ech-lejant">
                 <div class="ech-lejant-baslik">Ecrimisil Durumu</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#94a3b8;"></span> Yeni kayıt (tutanak yok)</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#f43f5e;"></span> Devam eden işgal</div>
-                <div class="ech-lejant-oge"><span class="ech-lejant-nokta" style="background:#10b981;"></span> Sonlanmış işgal</div>
+                <div class="ech-lejant-oge"><span class="ech-lejant-nokta is-yeni"></span> Yeni kayıt (tutanak yok)</div>
+                <div class="ech-lejant-oge"><span class="ech-lejant-nokta is-devam-eden"></span> Devam eden işgal</div>
+                <div class="ech-lejant-oge"><span class="ech-lejant-nokta is-sonlanmis"></span> Sonlanmış işgal</div>
             </div>
         </div>
     </div>
@@ -196,10 +196,14 @@
         csrf: @json(csrf_token()),
     };
 
+    // Durum renkleri corporate.css ':root' içinde tek yerde durur; lejant
+    // noktaları, harita işaretçileri ve kayıt formundaki çizim aynı değeri okur.
+    const kokStil = getComputedStyle(document.documentElement);
+    const durumRengi = d => kokStil.getPropertyValue('--durum-' + d).trim();
     const DURUM_RENK = {
-        'yeni':        { renk: '#94a3b8', etiket: 'Tutanak yok' },
-        'devam-eden':  { renk: '#f43f5e', etiket: 'İşgal sürüyor' },
-        'sonlanmis':   { renk: '#10b981', etiket: 'İşgal sonlandı' },
+        'yeni':        { renk: durumRengi('yeni'),       etiket: 'Tutanak yok' },
+        'devam-eden':  { renk: durumRengi('devam-eden'), etiket: 'İşgal sürüyor' },
+        'sonlanmis':   { renk: durumRengi('sonlanmis'),  etiket: 'İşgal sonlandı' },
     };
     const durumSinifi = d => 'is-' + ({ 'yeni':'yeni','devam-eden':'devam-eden','sonlanmis':'sonlanmis' }[d] || 'yeni');
 
@@ -225,10 +229,12 @@
         disableClusteringAtZoom: 17,
         iconCreateFunction: c => {
             const n = c.getChildCount();
-            const cls = n < 10 ? 'ech-cluster-small' : (n < 50 ? 'ech-cluster-medium' : 'ech-cluster-large');
+            // Kutu capi sinifin capiyla ayni olmali, yoksa baloncuk kayar.
+            const [cls, boy] = n < 10 ? ['ech-cluster-small', 32]
+                : (n < 50 ? ['ech-cluster-medium', 38] : ['ech-cluster-large', 46]);
             return L.divIcon({
-                html: `<div class="ech-cluster ${cls}">${n}</div>`,
-                className: 'ech-cluster-wrap', iconSize: [40, 40],
+                html: `<div class="ech-cluster ${cls}" style="--cap:${boy}px">${n}</div>`,
+                className: 'ech-cluster-wrap', iconSize: [boy, boy],
             });
         },
     });
@@ -238,20 +244,90 @@
     let secilenLayer = null;
     let secilenKayitId = null;
     let mevcutFiltre = new URLSearchParams();
+    let istekNo = 0;
+    let kaydirma;
 
-    function haritayiYukle(filtre, sigdir = true) {
+    function haritaSorgu(filtre) {
+        const p = new URLSearchParams(filtre ? filtre.toString() : '');
+        const b = map.getBounds();
+        p.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => (+v).toFixed(5)).join(','));
+        p.set('zoom', String(Math.round(map.getZoom())));
+        return p;
+    }
+
+    function ulkeyeSigdir(filtre) {
+        const once = map.getBounds().toBBoxString();
+        const p = new URLSearchParams(filtre ? filtre.toString() : '');
+        p.set('kapsam', '1');
+        return fetch(API.geojson + '?' + p.toString(), { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(k => {
+                if (k.bbox && k.bbox.length === 4) {
+                    map.fitBounds([[k.bbox[1], k.bbox[0]], [k.bbox[3], k.bbox[2]]], { padding: [24, 24], maxZoom: 8 });
+                    if (map.getBounds().toBBoxString() === once) haritayiYukle(filtre, false);
+                } else {
+                    haritayiYukle(filtre, false);
+                }
+            })
+            .catch(e => console.error('Kapsam hatası', e));
+    }
+
+    function haritayiYukle(filtre, sigdir = false) {
+        const no = ++istekNo;
         parselKatman.clearLayers();
         etiketKatman.clearLayers();
         markerKatman.clearLayers();
         clusterKatman.clearLayers();
         layerById.clear();
         markerById.clear();
-        const url = filtre?.toString() ? API.geojson + '?' + filtre.toString() : API.geojson;
+        const url = API.geojson + '?' + haritaSorgu(filtre).toString();
 
         return fetch(url, { headers: { 'Accept': 'application/json' } })
             .then(r => r.json())
             .then(fc => {
-                document.getElementById('ech-sayi').textContent = (fc.features || []).length;
+                if (no !== istekNo) return;
+                const toplam = fc.toplam != null ? fc.toplam : (fc.features || []).length;
+                document.getElementById('ech-sayi').textContent = Number(toplam).toLocaleString('tr-TR');
+                if (fc.kumeli) {
+                    // Çap: alan ∝ adet olacak şekilde karekök — göz daireyi alanıyla
+                    // okur, çapıyla değil. Ölçek görünümdeki en kalabalık kümeye göre
+                    // normalize edilir. Eskiden çap mutlak bir log10 formülündeydi ve
+                    // 26px tavanına dayandığı için 100 bin kayıtta kümelerin %88'i
+                    // aynı boyda çıkıyordu; boyut hiçbir şey anlatmıyordu.
+                    const adetler = (fc.features || []).map(f => (f.properties || {}).adet || 0);
+                    const enCok = Math.max(1, ...adetler);
+                    const kumeCapi = n => Math.round(24 + 32 * Math.sqrt(n / enCok));
+                    const kumeKademe = n => n < enCok / 8 ? 'ech-cluster-small'
+                        : (n < enCok / 2 ? 'ech-cluster-medium' : 'ech-cluster-large');
+                    // 5152 -> "5,2B"; tam sayı baloncuğa sığmıyor, hover'da veriliyor.
+                    const kisaAdet = n => n < 1000 ? String(n)
+                        : (n / 1000).toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + 'B';
+
+                    (fc.features || []).forEach(f => {
+                        const p = f.properties || {};
+                        const c = (f.geometry && f.geometry.coordinates) || [32.85, 39.93];
+                        const adet = p.adet || 0;
+                        const boy = kumeCapi(adet);
+                        // Sayı baloncuğun içinde. Eskiden permanent bir Leaflet
+                        // tooltip'iydi ve .ech-kume-tip'in hiç stili olmadığı için her
+                        // kümenin üstünde Leaflet'in varsayılan beyaz kutusu duruyordu.
+                        const m = L.marker([c[1], c[0]], {
+                            icon: L.divIcon({
+                                html: `<div class="ech-cluster ${kumeKademe(adet)}" style="--cap:${boy}px">${kisaAdet(adet)}</div>`,
+                                className: 'ech-cluster-wrap', iconSize: [boy, boy],
+                            }),
+                        });
+                        m.bindTooltip(Number(adet).toLocaleString('tr-TR') + ' kayıt', { direction: 'top' });
+                        m.on('click', () => {
+                            if (p.bbox && p.bbox.length === 4) {
+                                map.fitBounds([[p.bbox[1], p.bbox[0]], [p.bbox[3], p.bbox[2]]], { padding: [20, 20], maxZoom: 17 });
+                            }
+                        });
+                        parselKatman.addLayer(m);
+                    });
+                    markerKatmanGuncelle();
+                    return;
+                }
                 const bounds = [];
                 (fc.features || []).forEach(f => {
                     const p = f.properties || {};
@@ -310,7 +386,11 @@
         l.setStyle({ color: s.renk, fillColor: s.renk, weight: aktif ? 4 : 2.4, fillOpacity: aktif ? .55 : .30 });
     }
 
-    haritayiYukle(mevcutFiltre);
+    map.on('moveend', () => {
+        clearTimeout(kaydirma);
+        kaydirma = setTimeout(() => haritayiYukle(mevcutFiltre, false), 160);
+    });
+    ulkeyeSigdir(mevcutFiltre);
 
     // Katman switch
     document.getElementById('ech-lyr-parseller').addEventListener('change', e => {
@@ -366,7 +446,7 @@
         p.hidden = !p.hidden;
         document.getElementById('ech-arama-btn').setAttribute('aria-expanded', p.hidden ? 'false' : 'true');
     });
-    document.getElementById('ech-fit-btn').addEventListener('click', () => { if (allBounds) map.fitBounds(allBounds, { padding: [30, 30] }); });
+    document.getElementById('ech-fit-btn').addEventListener('click', () => ulkeyeSigdir(mevcutFiltre));
     document.querySelectorAll('[data-panel-kapat]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.panelKapat;
@@ -423,7 +503,7 @@
         e.preventDefault();
         mevcutFiltre = new URLSearchParams();
         for (const [k, v] of new FormData(e.target)) if (v) mevcutFiltre.set(k, v);
-        haritayiYukle(mevcutFiltre);
+        ulkeyeSigdir(mevcutFiltre);
         return false;
     };
     window.echFiltreTemizle = function () {
@@ -433,7 +513,7 @@
         document.getElementById('ech-f-mahalle').innerHTML = '<option>— Önce ilçe —</option>';
         document.getElementById('ech-f-mahalle').disabled = true;
         mevcutFiltre = new URLSearchParams();
-        haritayiYukle(mevcutFiltre);
+        ulkeyeSigdir(mevcutFiltre);
     };
 
     // Kayıt seçimi

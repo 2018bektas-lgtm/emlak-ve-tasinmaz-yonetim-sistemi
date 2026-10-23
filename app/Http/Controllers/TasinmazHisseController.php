@@ -404,11 +404,11 @@ class TasinmazHisseController extends Controller
             ->when($f['il_id'], fn (Builder $s) => $s->whereHas('tasinmaz', fn (Builder $t) => $t->where('il_id', $f['il_id'])))
             ->when($f['ilce_id'], fn (Builder $s) => $s->whereHas('tasinmaz', fn (Builder $t) => $t->where('ilce_id', $f['ilce_id'])))
             ->when($f['mahalle_id'], fn (Builder $s) => $s->whereHas('tasinmaz', fn (Builder $t) => $t->where('mahalle_id', $f['mahalle_id'])))
-            ->when($f['nitelik'] !== '', fn (Builder $s) => $s->whereHas('tasinmaz', fn (Builder $t) => $t->where('nitelik', 'like', '%'.$f['nitelik'].'%')))
-            ->when($f['hisse_no'] !== '', fn (Builder $s) => $s->where('hisse_no', 'like', '%'.$f['hisse_no'].'%'))
-            ->when($f['edinme'] !== '', fn (Builder $s) => $s->where('edinme_sekli', 'like', '%'.$f['edinme'].'%'))
-            ->when($f['yevmiye'] !== '', fn (Builder $s) => $s->where('yevmiye_no', 'like', '%'.$f['yevmiye'].'%'))
-            ->when($f['cikis'] !== '', fn (Builder $s) => $s->where('kayitlardan_cikis', 'like', '%'.$f['cikis'].'%'))
+            ->when($f['nitelik'] !== '', fn (Builder $s) => $s->whereHas('tasinmaz', fn (Builder $t) => $t->whereLike('nitelik', '%'.$f['nitelik'].'%')))
+            ->when($f['hisse_no'] !== '', fn (Builder $s) => $s->whereLike('hisse_no', '%'.$f['hisse_no'].'%'))
+            ->when($f['edinme'] !== '', fn (Builder $s) => $s->whereLike('edinme_sekli', '%'.$f['edinme'].'%'))
+            ->when($f['yevmiye'] !== '', fn (Builder $s) => $s->whereLike('yevmiye_no', '%'.$f['yevmiye'].'%'))
+            ->when($f['cikis'] !== '', fn (Builder $s) => $s->whereLike('kayitlardan_cikis', '%'.$f['cikis'].'%'))
             ->when($alanMin !== null || $alanMax !== null, function (Builder $s) use ($alanMin, $alanMax) {
                 $s->whereHas('tasinmaz', function (Builder $t) use ($alanMin, $alanMax) {
                     $t->when($alanMin !== null, fn (Builder $q) => $q->where('alan', '>=', $alanMin))
@@ -418,15 +418,15 @@ class TasinmazHisseController extends Controller
             ->when($f['q'] !== '', function (Builder $s) use ($f) {
                 $q = $f['q'];
                 $s->where(function (Builder $w) use ($q) {
-                    $w->where('edinme_sekli', 'like', "%{$q}%")
-                        ->orWhere('hisse_no', 'like', "%{$q}%")
-                        ->orWhere('yevmiye_no', 'like', "%{$q}%")
+                    $w->whereLike('edinme_sekli', "%{$q}%")
+                        ->orWhereLike('hisse_no', "%{$q}%")
+                        ->orWhereLike('yevmiye_no', "%{$q}%")
                         ->orWhereHas('tasinmaz', function (Builder $t) use ($q) {
-                            $t->where('ada', 'like', "%{$q}%")
-                                ->orWhere('parsel', 'like', "%{$q}%")
-                                ->orWhere('nitelik', 'like', "%{$q}%")
-                                ->orWhereHas('mahalle', fn (Builder $m) => $m->where('ad', 'like', "%{$q}%"))
-                                ->orWhereHas('ilce', fn (Builder $i) => $i->where('ad', 'like', "%{$q}%"));
+                            $t->whereLike('ada', "%{$q}%")
+                                ->orWhereLike('parsel', "%{$q}%")
+                                ->orWhereLike('nitelik', "%{$q}%")
+                                ->orWhereHas('mahalle', fn (Builder $m) => $m->whereLike('ad', "%{$q}%"))
+                                ->orWhereHas('ilce', fn (Builder $i) => $i->whereLike('ad', "%{$q}%"));
                         });
                 });
             });

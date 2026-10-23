@@ -14,9 +14,11 @@ use App\Models\Ilce;
 use App\Models\Mahalle;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazEncumen;
+use App\Models\TasinmazKoordinat;
 use App\Models\TasinmazMalik;
 use App\Models\HisseIslemGecmisi;
 use App\Rules\TcKimlikNo;
+use App\Support\HaritaGorunum;
 use App\Support\HisseSureci;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -155,16 +157,16 @@ class HisseSatisController extends Controller
             ->when($kisayol === 'bu-ay', fn ($q) => $q->whereBetween('basvuru_tarihi', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()]))
             ->when($baslangic, fn ($q) => $q->where('basvuru_tarihi', '>=', $baslangic))
             ->when($bitis, fn ($q) => $q->where('basvuru_tarihi', '<=', $bitis))
-            ->when($adSoyad !== '', fn ($q) => $q->where('ad_soyad', 'like', "%{$adSoyad}%"))
-            ->when($tcKimlik !== '', fn ($q) => $q->where('tc_kimlik', 'like', "%{$tcKimlik}%"));
+            ->when($adSoyad !== '', fn ($q) => $q->whereLike('ad_soyad', "%{$adSoyad}%"))
+            ->when($tcKimlik !== '', fn ($q) => $q->whereLike('tc_kimlik', "%{$tcKimlik}%"));
 
         // Serbest arama: ad_soyad / tc_kimlik / ada / parsel
         if ($q !== '') {
             $sorgu->where(function ($w) use ($q) {
-                $w->where('ad_soyad', 'like', "%{$q}%")
-                    ->orWhere('tc_kimlik', 'like', "%{$q}%")
+                $w->whereLike('ad_soyad', "%{$q}%")
+                    ->orWhereLike('tc_kimlik', "%{$q}%")
                     ->orWhereHas('tasinmaz', function ($t) use ($q) {
-                        $t->where('ada', 'like', "%{$q}%")->orWhere('parsel', 'like', "%{$q}%");
+                        $t->whereLike('ada', "%{$q}%")->orWhereLike('parsel', "%{$q}%");
                     });
             });
         }
@@ -1187,6 +1189,50 @@ class HisseSatisController extends Controller
         $parsel = trim((string) $request->query('parsel', ''));
         $durum = $request->query('durum'); // yeni | encumen-var | satis-tebligat | tamamlandi | reddedildi
 
+        $konumVar = $ilId || $ilceId || $mahalleId || $ada !== '' || $parsel !== '' || $q !== '';
+        $konum = function ($s) use ($ilId, $ilceId, $mahalleId, $ada, $parsel, $q) {
+            $s->when($ilId, fn ($x) => $x->where('il_id', $ilId))
+                ->when($ilceId, fn ($x) => $x->where('ilce_id', $ilceId))
+                ->when($mahalleId, fn ($x) => $x->where('mahalle_id', $mahalleId))
+                ->when($ada !== '', fn ($x) => $x->where('ada', $ada))
+                ->when($parsel !== '', fn ($x) => $x->where('parsel', $parsel))
+                ->when($q !== '', function ($x) use ($q) {
+                    $x->where(function ($w) use ($q) {
+                        $w->whereLike('ada', "%{$q}%")
+                            ->orWhereLike('parsel', "%{$q}%")
+                            ->orWhereLike('nitelik', "%{$q}%");
+                    });
+                });
+        };
+
+        // 1 milyon başvuruda tüm tabloyu çekmek haritayı kilitler. Diğer
+        // haritalardaki gibi yalnızca ekrandaki alan (yoksa kapsam) döner.
+        $koordinatlar = TasinmazKoordinat::query()
+            ->whereIn('tasinmaz_id', HisseBasvuru::query()->select('tasinmaz_id'))
+            ->when($konumVar, fn ($s) => $s->whereIn('tasinmaz_id', Tasinmaz::query()->tap($konum)->select('id')));
+
+        if ($request->boolean('kapsam')) {
+            return response()->json(HaritaGorunum::kapsam($koordinatlar));
+        }
+
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
+        if (! $bbox) {
+            $kapsam = HaritaGorunum::kapsam($koordinatlar);
+            if ($kapsam['toplam'] > HaritaGorunum::DETAY_SINIRI) {
+                return response()->json([
+                    'type' => 'FeatureCollection',
+                    'kumeli' => true,
+                    'toplam' => $kapsam['toplam'],
+                    'features' => [],
+                    'bbox' => $kapsam['bbox'],
+                ]);
+            }
+        }
+
         $tasinmazlar = Tasinmaz::query()
             ->with([
                 'il:id,ad',
@@ -1196,18 +1242,8 @@ class HisseSatisController extends Controller
             ])
             ->whereHas('koordinat')
             ->whereIn('id', HisseBasvuru::query()->select('tasinmaz_id'))
-            ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
-            ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
-            ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
-            ->when($ada !== '', fn ($s) => $s->where('ada', $ada))
-            ->when($parsel !== '', fn ($s) => $s->where('parsel', $parsel))
-            ->when($q !== '', function ($s) use ($q) {
-                $s->where(function ($w) use ($q) {
-                    $w->where('ada', 'like', "%{$q}%")
-                        ->orWhere('parsel', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%");
-                });
-            })
+            ->when($konumVar, fn ($s) => $s->tap($konum))
+            ->when($bbox, fn ($s) => $s->whereIn('id', (clone $koordinatlar)->alanda($bbox)->select('tasinmaz_id')))
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik']);
 
         $meta = $this->haritaDurumOzeti($tasinmazlar->pluck('id'));

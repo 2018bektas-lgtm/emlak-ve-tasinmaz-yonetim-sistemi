@@ -362,7 +362,11 @@ class KiraKayit
 
     /**
      * Poligonun içine düşen envanter taşınmazı. Birden çoksa sınırın
-     * merkezine en yakın olanı. Önce sınır kutusuyla daraltılır.
+     * merkezine en yakın olanı.
+     *
+     * Hem içinde-mi testi hem mesafeye göre sıralama PostGIS'te yapılır;
+     * koordinatlar PHP'ye hiç gelmez. Taşınmazın noktası (lat/lng) esas
+     * alınır — taşınmazın kendi poligonu değil.
      */
     public static function envanterTasinmazi(?KiraPoligon $poligon): ?int
     {
@@ -371,18 +375,22 @@ class KiraKayit
             return null;
         }
 
-        $adaylar = TasinmazKoordinat::query()
-            ->whereBetween('lat', [(float) $poligon->min_lat, (float) $poligon->max_lat])
-            ->whereBetween('lng', [(float) $poligon->min_lng, (float) $poligon->max_lng])
-            ->get(['tasinmaz_id', 'lat', 'lng'])
-            ->filter(fn ($k) => Geometri::noktaIcinde($geo, (float) $k->lng, (float) $k->lat, 0));
-
+        $sinir = json_encode($geo);
         $mLat = (float) ($poligon->merkez_lat ?? $poligon->lat);
         $mLng = (float) ($poligon->merkez_lng ?? $poligon->lng);
 
-        return $adaylar
-            ->sortBy(fn ($k) => ((float) $k->lat - $mLat) ** 2 + ((float) $k->lng - $mLng) ** 2)
-            ->first()?->tasinmaz_id;
+        return TasinmazKoordinat::query()
+            ->whereRaw(
+                'ST_Intersects(ST_SetSRID(ST_GeomFromGeoJSON(?), 4326), ST_SetSRID(ST_MakePoint(lng, lat), 4326))',
+                [$sinir]
+            )
+            // `<->` iki geometri arasındaki mesafe; eskiden PHP'de alınan
+            // karesel uzaklık sıralamasının aynısını verir.
+            ->orderByRaw(
+                'ST_SetSRID(ST_MakePoint(lng, lat), 4326) <-> ST_SetSRID(ST_MakePoint(?, ?), 4326)',
+                [$mLng, $mLat]
+            )
+            ->value('tasinmaz_id');
     }
 
     /**

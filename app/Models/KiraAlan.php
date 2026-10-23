@@ -118,6 +118,15 @@ class KiraAlan extends Model
     /** Bitişe kalan gün; geçmişse negatif. */
     public function kalanGun(): ?int
     {
+        // Sorgu `kalan_gun`'u seçtiyse onu kullan: Carbon'un diffInDays'i
+        // pahalıdır ve harita binlerce kayıt için bunu çağırıyor. SQL'deki
+        // `bitis_tarihi - CURRENT_DATE` bu hesabın aynısını verir.
+        if (array_key_exists('kalan_gun', $this->attributes)) {
+            return $this->attributes['kalan_gun'] === null
+                ? null
+                : (int) $this->attributes['kalan_gun'];
+        }
+
         return $this->bitis_tarihi
             ? (int) now()->startOfDay()->diffInDays($this->bitis_tarihi, false)
             : null;

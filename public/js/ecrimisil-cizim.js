@@ -43,7 +43,11 @@
     const tsnKaldir = document.getElementById('ec-tsn-kaldir');
 
     const RENK = { cizim: '#ff6a3d', ref: '#facc15' };
-    const MEVCUT_RENK = { 'yeni': '#94a3b8', 'devam-eden': '#f43f5e', 'sonlanmis': '#10b981' };
+    // Durum renkleri corporate.css ':root' içinde tek yerde durur; harita
+    // lejantı ve işaretçileri de aynı değeri okur.
+    const kokStil = getComputedStyle(document.documentElement);
+    const durumRengi = d => kokStil.getPropertyValue('--durum-' + d).trim();
+    const MEVCUT_RENK = { 'yeni': durumRengi('yeni'), 'devam-eden': durumRengi('devam-eden'), 'sonlanmis': durumRengi('sonlanmis') };
 
     // ---------- Harita ----------
     const harita = L.map(haritaEl, { zoomControl: false, attributionControl: false, doubleClickZoom: false })
@@ -366,9 +370,21 @@
 
     // ---------- Mevcut ecrimisil alanları (tıkla → aynı alana yeni kayıt) ----------
     const mevcutKatman = L.featureGroup().addTo(harita);
-    fetch(API_MEVCUT + (HARIC_ID ? '?haric=' + encodeURIComponent(HARIC_ID) : ''), { headers: { 'Accept': 'application/json' } })
+    let mevcutIstek = 0;
+    let mevcutKaydirma;
+    function mevcutYukle() {
+        const no = ++mevcutIstek;
+        const b = harita.getBounds();
+        const p = new URLSearchParams();
+        if (HARIC_ID) p.set('haric', HARIC_ID);
+        p.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => (+v).toFixed(5)).join(','));
+        p.set('zoom', String(Math.round(harita.getZoom())));
+        mevcutKatman.clearLayers();
+        fetch(API_MEVCUT + '?' + p.toString(), { headers: { 'Accept': 'application/json' } })
         .then(r => r.json())
-        .then(fc => (fc.features || []).forEach(f => {
+        .then(fc => {
+            if (no !== mevcutIstek || fc.kumeli) return;
+            (fc.features || []).forEach(f => {
             const p = f.properties || {};
             const renk = MEVCUT_RENK[p.durum] || MEVCUT_RENK.yeni;
             L.geoJSON(f, { style: { color: renk, fillColor: renk, fillOpacity: .1, weight: 1.8, dashArray: '4 4' } })
@@ -389,8 +405,15 @@
                     l.on('mouseover', () => l.setStyle({ fillOpacity: .26, weight: 2.5 }));
                     l.on('mouseout', () => l.setStyle({ fillOpacity: .1, weight: 1.8 }));
                 });
-        }))
+            });
+        })
         .catch(() => { /* mevcut kayıtlar yalnızca yardımcı katman */ });
+    }
+    harita.on('moveend', () => {
+        clearTimeout(mevcutKaydirma);
+        mevcutKaydirma = setTimeout(mevcutYukle, 200);
+    });
+    mevcutYukle();
 
     function mevcuttanKopyala(feature) {
         const pts = halkaNoktalari(feature.geometry);

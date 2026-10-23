@@ -771,3 +771,86 @@ button.hrm-pop-eylem { border: 0; font: inherit; cursor: pointer; }
     text-decoration: none;
 }
 .hrm-kr-bilgi-ekle:hover { background: #0f766e; }
+
+/* ==========================================================================
+   Küme rozetleri — imleç, ipucu balonu ve panel lejantı
+   Rozetlerin kendisi haritaya CIM sembolüyle çizilir (harita-esri.js);
+   buradaki kurallar yalnızca onları saran arayüz parçaları içindir.
+   ========================================================================== */
+
+/* Rozet tıklanabilir — imleç bunu söylesin. */
+.hrm-map.hrm-cursor-kume .esri-view-surface { cursor: pointer !important; }
+
+/* İmlecin yanında yüzen balon. position:fixed, konumu JS transform ile
+   verilir; pointer-events kapalı, yoksa kendi altındaki rozeti gölgeliyor. */
+.hrm-shell .hrm-kume-ipucu {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 7px 11px;
+    border-radius: 12px;
+    background: var(--hm-cam-koyu);
+    -webkit-backdrop-filter: var(--hm-blur);
+    backdrop-filter: var(--hm-blur);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 10px 26px -10px rgba(2, 6, 16, 0.75);
+    color: #f1f5f9;
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.hrm-shell .hrm-kume-ipucu[hidden] { display: none; }
+.hrm-shell .hrm-kume-ipucu strong { font-size: 0.84rem; font-weight: 700; color: #fff; }
+.hrm-shell .hrm-kume-ipucu span { font-size: 0.64rem; color: rgba(226, 232, 240, 0.72); }
+
+/* Katman panelindeki yoğunluk lejantı: haritadaki kademelerin aynısı. */
+.hrm-kume-lejant {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #e6e8ec;
+}
+.hrm-katman-kart[data-aktif="0"] .hrm-kume-lejant { opacity: 0.4; }
+.hrm-kume-lejant-baslik {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8b93a5;
+}
+.hrm-kume-lejant-skala {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* Noktaların hale halkası kutunun dışına taşıyor; pay bırakılır. */
+    margin-top: 10px;
+    padding: 0 5px;
+}
+.hrm-kume-nokta {
+    width: var(--kn-cap);
+    height: var(--kn-cap);
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: rgb(var(--kn-renk));
+    box-shadow:
+        0 0 0 1.5px #fff,
+        0 0 0 2.5px rgba(8, 13, 23, 0.18),
+        0 0 0 5px rgba(var(--kn-renk), 0.2);
+}
+.hrm-kume-lejant-uc {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 9px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #8b93a5;
+}
+.hrm-kume-lejant-not {
+    margin: 6px 0 0;
+    font-size: 0.64rem;
+    line-height: 1.4;
+    color: #94a0b3;
+}

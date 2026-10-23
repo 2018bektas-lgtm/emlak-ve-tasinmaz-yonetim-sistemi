@@ -1,6 +1,28 @@
 <?php
 
 use Illuminate\Support\Str;
+use Pdo\Mysql;
+
+/*
+ * PHP 8.5 ile PDO sürücü sabitleri Pdo\Mysql gibi alt sınıflara taşındı;
+ * eski PDO::MYSQL_ATTR_* sabitleri artık "deprecated" uyarısı veriyor.
+ * Yapılandırma dosyaları hata yakalayıcıdan önce yüklendiği için uyarı
+ * doğrudan ekrana basılıyor ve sayfanın başını bozuyordu. Sabite yalnız
+ * gerçekten bir SSL kökü tanımlıysa, çalışan sürüme uygun adıyla dokunuyoruz.
+ */
+$mysqlSecenekleri = static function (): array {
+    $sslKoku = env('MYSQL_ATTR_SSL_CA');
+
+    if (! $sslKoku || ! extension_loaded('pdo_mysql')) {
+        return [];
+    }
+
+    $sabit = class_exists('Pdo\Mysql', false)
+        ? Mysql::ATTR_SSL_CA
+        : PDO::MYSQL_ATTR_SSL_CA;
+
+    return [$sabit => $sslKoku];
+};
 
 return [
 
@@ -57,9 +79,7 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'options' => $mysqlSecenekleri(),
         ],
 
         'mariadb' => [
@@ -77,9 +97,7 @@ return [
             'prefix_indexes' => true,
             'strict' => true,
             'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+            'options' => $mysqlSecenekleri(),
         ],
 
         'pgsql' => [

@@ -19,10 +19,20 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
             Yazdır
         </button>
-        <a href="{{ url()->current() }}?{{ http_build_query(array_merge(request()->except('page'), ['excel' => 1])) }}" class="btn-submit sr-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-            Excel İndir
-        </a>
+        @php $indirilebilir = $secilenIl && $secilenIlce; @endphp
+        {{-- Sayıştay formu ilçe bazlı; il ve ilçe seçilmeden indirilemez --}}
+        @if ($indirilebilir)
+            <a href="{{ url()->current() }}?{{ http_build_query(array_merge(request()->except('page'), ['excel' => 1])) }}" class="btn-submit sr-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+                Excel İndir
+            </a>
+        @else
+            <span class="btn-submit sr-btn is-kapali" aria-disabled="true"
+                  title="Excel indirmek için il ve ilçe seçin">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+                Excel İndir
+            </span>
+        @endif
     </div>
 </section>
 
@@ -36,12 +46,31 @@
     @endforeach
 </div>
 
+@if (session('hata'))
+    <div class="flash-error" role="alert">{{ session('hata') }}</div>
+@endif
+
+@unless ($secilenIl && $secilenIlce)
+    <div class="flash-info" role="status">
+        Sayıştay formu ilçe bazlı düzenlenir. <strong>Excel indirmek için il ve ilçe seçin.</strong>
+    </div>
+@endunless
+
 {{-- Filtre --}}
 <form method="GET" action="{{ url()->current() }}" class="sr-filtre">
     <div class="form-field">
+        <label for="il_id">İl</label>
+        <select name="il_id" id="il_id" class="form-select" data-sr-il>
+            <option value="">Seçiniz</option>
+            @foreach ($iller as $il)
+                <option value="{{ $il->id }}" @selected($secilenIl == $il->id)>{{ $il->ad }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div class="form-field">
         <label for="ilce_id">İlçe</label>
-        <select name="ilce_id" id="ilce_id" class="form-select">
-            <option value="">Tüm İlçeler</option>
+        <select name="ilce_id" id="ilce_id" class="form-select" @disabled(! $secilenIl)>
+            <option value="">{{ $secilenIl ? 'Tüm İlçeler' : 'Önce il seçin' }}</option>
             @foreach ($ilceler as $ilce)
                 <option value="{{ $ilce->id }}" @selected($secilenIlce == $ilce->id)>{{ $ilce->ad }}</option>
             @endforeach
@@ -57,7 +86,7 @@
     </div>
     <div class="sr-filtre-btnler">
         <button type="submit" class="btn-submit">Filtrele</button>
-        @if ($secilenIlce)
+        @if ($secilenIl || $secilenIlce)
             <a href="{{ url()->current() }}" class="btn-cancel">Sıfırla</a>
         @endif
     </div>
@@ -165,6 +194,14 @@
 </div>
 
 <script>
+// İl değişince ilçe listesi sunucudan yenilenir: ilçe seçimi ile il
+// tutarsız kalmasın.
+document.querySelector('[data-sr-il]')?.addEventListener('change', function () {
+    const ilce = document.getElementById('ilce_id');
+    if (ilce) { ilce.value = ''; }
+    this.form.submit();
+});
+
 document.getElementById('sr-yazdir-btn')?.addEventListener('click', function () {
     const alan = document.getElementById('sr-yazdir-alan');
     const w = window.open('', '', 'width=1200,height=800');

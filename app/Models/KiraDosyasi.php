@@ -205,17 +205,17 @@ class KiraDosyasi extends Model
         $adaParsel = preg_match('~^\s*([\w-]+)\s*/\s*([\w-]+)\s*$~u', $arama, $m) ? [$m[1], $m[2]] : null;
 
         return $q->where(function (Builder $w) use ($arama, $adaParsel) {
-            $w->where('dosya_no', 'like', "%{$arama}%")
-                ->orWhere('eski_dosya_no', 'like', "%{$arama}%")
-                ->orWhere('isyeri_adi', 'like', "%{$arama}%")
+            $w->whereLike('dosya_no', "%{$arama}%")
+                ->orWhereLike('eski_dosya_no', "%{$arama}%")
+                ->orWhereLike('isyeri_adi', "%{$arama}%")
                 ->orWhereIn('id', KiraKiraci::query()->select('kira_dosya_id')
-                    ->where('ad_unvan', 'like', "%{$arama}%")->orWhere('tc_vergi_no', $arama))
+                    ->whereLike('ad_unvan', "%{$arama}%")->orWhere('tc_vergi_no', $arama))
                 ->orWhereIn('id', KiraTasinmaz::query()->select('kira_dosya_id')->where(function ($t) use ($arama, $adaParsel) {
                     $t->where('ada', $arama)
                         ->orWhere('parsel', $arama)
                         ->when($adaParsel, fn ($x) => $x->orWhere(fn ($y) => $y->where('ada', $adaParsel[0])->where('parsel', $adaParsel[1])))
-                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->where('ad', 'like', "%{$arama}%"))
-                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->where('ad', 'like', "%{$arama}%"));
+                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->whereLike('ad', "%{$arama}%"))
+                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->whereLike('ad', "%{$arama}%"));
                 }));
         });
     }

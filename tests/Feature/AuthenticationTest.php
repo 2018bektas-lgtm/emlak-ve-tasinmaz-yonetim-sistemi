@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Models\Kullanici;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -10,60 +10,95 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_login_page_is_displayed(): void
+    public function test_giris_sayfasi_gosterilir(): void
     {
         $this->get(route('login'))
             ->assertOk()
-            ->assertSee('Hesabınıza giriş yapın', false);
+            ->assertSee('Kurumsal hesabınızla oturum açın', false);
     }
 
-    public function test_users_can_authenticate_using_the_login_screen(): void
+    public function test_kullanici_mail_ile_giris_yapar(): void
     {
-        $user = User::factory()->create();
+        $kullanici = Kullanici::factory()->create();
 
-        $response = $this->post(route('login.store'), [
-            'email' => $user->email,
-            'password' => 'password',
+        $yanit = $this->post(route('login.store'), [
+            'giris' => $kullanici->mail,
+            'sifre' => 'password',
         ]);
 
-        $this->assertAuthenticated();
-        $response->assertRedirect(route('panel.dashboard'));
+        $this->assertAuthenticatedAs($kullanici);
+        $yanit->assertRedirect(route('panel.dashboard'));
     }
 
-    public function test_users_cannot_authenticate_with_invalid_password(): void
+    public function test_kullanici_adi_ile_de_giris_yapilir(): void
     {
-        $user = User::factory()->create();
+        $kullanici = Kullanici::factory()->create();
 
         $this->post(route('login.store'), [
-            'email' => $user->email,
-            'password' => 'yanlis-sifre',
+            'giris' => $kullanici->kullanici_adi,
+            'sifre' => 'password',
         ]);
+
+        $this->assertAuthenticatedAs($kullanici);
+    }
+
+    public function test_yanlis_sifre_ile_giris_yapilmaz(): void
+    {
+        $kullanici = Kullanici::factory()->create();
+
+        $this->post(route('login.store'), [
+            'giris' => $kullanici->mail,
+            'sifre' => 'yanlis-sifre',
+        ])->assertSessionHasErrors('giris');
 
         $this->assertGuest();
     }
 
-    public function test_authenticated_users_can_visit_the_panel(): void
+    public function test_pasif_hesap_giris_yapamaz(): void
     {
-        $user = User::factory()->create();
+        $kullanici = Kullanici::factory()->create(['aktif_mi' => false]);
 
-        $this->actingAs($user)
+        $this->post(route('login.store'), [
+            'giris' => $kullanici->mail,
+            'sifre' => 'password',
+        ])->assertSessionHasErrors('giris');
+
+        $this->assertGuest();
+    }
+
+    public function test_giris_yapan_kullanici_paneli_gorur(): void
+    {
+        $kullanici = Kullanici::factory()->create();
+
+        $this->actingAs($kullanici)
             ->get(route('panel.dashboard'))
             ->assertOk()
-            ->assertSee($user->name, false);
+            ->assertSee($kullanici->ad);
     }
 
-    public function test_guests_are_redirected_from_the_panel(): void
+    public function test_misafir_panelden_yonlendirilir(): void
     {
-        $this->get(route('panel.dashboard'))
-            ->assertRedirect(route('login'));
+        // Misafirler kök adrese düşer; orası da giriş sayfasına yönlendirir.
+        $this->get(route('panel.dashboard'))->assertRedirect('/');
     }
 
-    public function test_authenticated_users_are_redirected_from_the_login_page(): void
+    public function test_giris_yapan_kullanici_giris_sayfasindan_yonlendirilir(): void
     {
-        $user = User::factory()->create();
+        $kullanici = Kullanici::factory()->create();
 
-        $this->actingAs($user)
+        $this->actingAs($kullanici)
             ->get(route('login'))
             ->assertRedirect(route('panel.dashboard'));
+    }
+
+    public function test_cikis_oturumu_kapatir(): void
+    {
+        $kullanici = Kullanici::factory()->create();
+
+        $this->actingAs($kullanici)
+            ->post(route('logout'))
+            ->assertRedirect(route('login'));
+
+        $this->assertGuest();
     }
 }

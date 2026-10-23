@@ -130,16 +130,16 @@ class TasinmazDegerleme extends Model
         $adaParsel = preg_match('~^\s*([\w-]+)\s*/\s*([\w-]+)\s*$~u', $q, $m) ? [$m[1], $m[2]] : null;
 
         return $query->where(function ($w) use ($q, $adaParsel) {
-            $w->where('rapor_no', 'like', "%{$q}%")
+            $w->whereLike('rapor_no', "%{$q}%")
                 ->orWhere('bb_no', $q)
-                ->orWhere('bb_nitelik', 'like', "%{$q}%")
+                ->orWhereLike('bb_nitelik', "%{$q}%")
                 // Değerleme başına EXISTS yerine taşınmazlar bir kez süzülür
                 ->orWhereIn('tasinmaz_id', Tasinmaz::query()->select('id')->where(function ($t) use ($q, $adaParsel) {
                     $t->where('ada', $q)
                         ->orWhere('parsel', $q)
                         ->when($adaParsel, fn ($x) => $x->orWhere(fn ($y) => $y->where('ada', $adaParsel[0])->where('parsel', $adaParsel[1])))
-                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->where('ad', 'like', "%{$q}%"))
-                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->where('ad', 'like', "%{$q}%"));
+                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->whereLike('ad', "%{$q}%"))
+                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->whereLike('ad', "%{$q}%"));
                 }));
         });
     }

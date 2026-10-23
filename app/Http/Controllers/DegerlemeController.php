@@ -269,8 +269,12 @@ class DegerlemeController extends Controller
 
     public function harita(Request $request): View
     {
-        $yillar = TasinmazDegerleme::whereNotNull('rapor_tarihi')->pluck('rapor_tarihi')
-            ->map(fn ($t) => (int) $t->format('Y'))->unique()->sortDesc()->values();
+        $yillar = TasinmazDegerleme::query()
+            ->whereNotNull('rapor_tarihi')
+            ->selectRaw('EXTRACT(YEAR FROM rapor_tarihi)::int AS yil')
+            ->distinct()
+            ->orderByDesc('yil')
+            ->pluck('yil');
 
         // Katman listesi yalnızca haritada karşılığı olan imar durumlarını gösterir;
         // 97 tanımın tamamı panele sığmaz ve çoğu boş çıkar.
@@ -306,7 +310,7 @@ class DegerlemeController extends Controller
         $parsel = trim((string) $request->query('parsel', ''));
         $degSuz = fn ($d) => $d->when($tip, fn ($x) => $x->where('tip', $tip))
             ->when($yil, fn ($x) => $x->whereBetween('rapor_tarihi', [$yil.'-01-01', $yil.'-12-31']))
-            ->when($q !== '', fn ($x) => $x->where(fn ($y) => $y->where('rapor_no', 'like', "%{$q}%")->orWhere('bb_no', $q)));
+            ->when($q !== '', fn ($x) => $x->where(fn ($y) => $y->whereLike('rapor_no', "%{$q}%")->orWhere('bb_no', $q)));
 
         $tasinmazId = (int) $request->query('tasinmaz_id');
         $ilId = $request->query('il_id');

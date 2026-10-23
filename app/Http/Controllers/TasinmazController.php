@@ -99,7 +99,7 @@ class TasinmazController extends Controller
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
-            ->when($nitelik !== '', fn ($s) => $s->where('nitelik', 'like', "%{$nitelik}%"))
+            ->when($nitelik !== '', fn ($s) => $s->whereLike('nitelik', "%{$nitelik}%"))
             ->when($binaVarMi === '1', fn ($s) => $s->where('uzeri_bina_var_mi', true))
             ->when($binaVarMi === '0', fn ($s) => $s->where('uzeri_bina_var_mi', false))
             // Satış durumu yalnızca ekbilgi'de tutulur (yapı satırları hep varsayılan
@@ -122,17 +122,17 @@ class TasinmazController extends Controller
             ->mulkiyet($mulkiyet)
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
-                    $w->where('ada', 'like', "%{$q}%")
-                        ->orWhere('parsel', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%")
-                        ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
-                        ->orWhereHas('ekbilgi', fn ($e) => $e->where('aciklama', 'like', "%{$q}%"))
+                    $w->whereLike('ada', "%{$q}%")
+                        ->orWhereLike('parsel', "%{$q}%")
+                        ->orWhereLike('nitelik', "%{$q}%")
+                        ->orWhereHas('kategori', fn ($k) => $k->whereLike('mevcut_kullanim_sekli', "%{$q}%"))
+                        ->orWhereHas('ekbilgi', fn ($e) => $e->whereLike('aciklama', "%{$q}%"))
                         ->orWhereHas('yapilar', function ($y) use ($q) {
-                            $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%")
-                                ->orWhere('aciklama', 'like', "%{$q}%")
-                                ->orWhere('bagimsiz_bolum_no', 'like', "%{$q}%");
+                            $y->whereLike('mevcut_kullanim_sekli', "%{$q}%")
+                                ->orWhereLike('aciklama', "%{$q}%")
+                                ->orWhereLike('bagimsiz_bolum_no', "%{$q}%");
                         })
-                        ->orWhereHas('tapu', fn ($tp) => $tp->where('takbis_zemin_no', 'like', "%{$q}%"));
+                        ->orWhereHas('tapu', fn ($tp) => $tp->whereLike('takbis_zemin_no', "%{$q}%"));
                 });
             })
             ->orderByDesc('id');
@@ -271,7 +271,7 @@ class TasinmazController extends Controller
             ->when($ilId, fn ($s) => $s->where('il_id', $ilId))
             ->when($ilceId, fn ($s) => $s->where('ilce_id', $ilceId))
             ->when($mahalleId, fn ($s) => $s->where('mahalle_id', $mahalleId))
-            ->when($nitelik !== '', fn ($s) => $s->where('nitelik', 'like', "%{$nitelik}%"))
+            ->when($nitelik !== '', fn ($s) => $s->whereLike('nitelik', "%{$nitelik}%"))
             ->when($binaVarMi === '1', fn ($s) => $s->where('uzeri_bina_var_mi', true))
             ->when($binaVarMi === '0', fn ($s) => $s->where('uzeri_bina_var_mi', false))
             // Satış durumu yalnızca ekbilgi'de tutulur (yapı satırları hep varsayılan
@@ -293,17 +293,17 @@ class TasinmazController extends Controller
             ->mulkiyet($mulkiyet)
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
-                    $w->where('ada', 'like', "%{$q}%")
-                        ->orWhere('parsel', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%")
-                        ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
-                        ->orWhereHas('ekbilgi', fn ($e) => $e->where('aciklama', 'like', "%{$q}%"))
+                    $w->whereLike('ada', "%{$q}%")
+                        ->orWhereLike('parsel', "%{$q}%")
+                        ->orWhereLike('nitelik', "%{$q}%")
+                        ->orWhereHas('kategori', fn ($k) => $k->whereLike('mevcut_kullanim_sekli', "%{$q}%"))
+                        ->orWhereHas('ekbilgi', fn ($e) => $e->whereLike('aciklama', "%{$q}%"))
                         ->orWhereHas('yapilar', function ($y) use ($q) {
-                            $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%")
-                                ->orWhere('aciklama', 'like', "%{$q}%")
-                                ->orWhere('bagimsiz_bolum_no', 'like', "%{$q}%");
+                            $y->whereLike('mevcut_kullanim_sekli', "%{$q}%")
+                                ->orWhereLike('aciklama', "%{$q}%")
+                                ->orWhereLike('bagimsiz_bolum_no', "%{$q}%");
                         })
-                        ->orWhereHas('tapu', fn ($tp) => $tp->where('takbis_zemin_no', 'like', "%{$q}%"));
+                        ->orWhereHas('tapu', fn ($tp) => $tp->whereLike('takbis_zemin_no', "%{$q}%"));
                 });
             });
     }
@@ -638,11 +638,11 @@ class TasinmazController extends Controller
             ->when($parsel !== '', fn ($s) => $s->where('parsel', $parsel))
             ->when($q, function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
-                    $w->where('ada', 'like', "%{$q}%")
-                        ->orWhere('parsel', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%")
-                        ->orWhereHas('kategori', fn ($k) => $k->where('mevcut_kullanim_sekli', 'like', "%{$q}%"))
-                        ->orWhereHas('yapilar', fn ($y) => $y->where('mevcut_kullanim_sekli', 'like', "%{$q}%"));
+                    $w->whereLike('ada', "%{$q}%")
+                        ->orWhereLike('parsel', "%{$q}%")
+                        ->orWhereLike('nitelik', "%{$q}%")
+                        ->orWhereHas('kategori', fn ($k) => $k->whereLike('mevcut_kullanim_sekli', "%{$q}%"))
+                        ->orWhereHas('yapilar', fn ($y) => $y->whereLike('mevcut_kullanim_sekli', "%{$q}%"));
                 });
             })
             ->orderByDesc('id')
@@ -1148,8 +1148,30 @@ class TasinmazController extends Controller
         if ($request->boolean('kapsam')) {
             return response()->json(HaritaGorunum::kapsam($koordinatlar));
         }
+
+        // ?noktalar=1 — yalnızca merkez noktaları. Kümeleme istemcide yakınlığa
+        // göre yapıldığı için (ArcGIS featureReduction) tüm kayıtların konumu bir
+        // kez indirilir; sonrasında gezinme ve yakınlaşma sunucuya hiç gitmez.
+        // Poligon ve ilişkiler bilerek dışarıda: yük buradan geliyor.
+        if ($request->boolean('noktalar')) {
+            $satirlar = (clone $koordinatlar)->toBase()
+                ->whereNotNull('merkez_lat')
+                ->whereNotNull('merkez_lng')
+                ->get(['tasinmaz_id', 'merkez_lng', 'merkez_lat']);
+
+            $noktalar = [];
+            foreach ($satirlar as $s) {
+                // 5 ondalık ~1 metre: kümeleme için fazlasıyla yeterli, yükü yarıya indirir.
+                $noktalar[] = [round((float) $s->merkez_lng, 5), round((float) $s->merkez_lat, 5), (int) $s->tasinmaz_id];
+            }
+
+            return response()->json(['toplam' => count($noktalar), 'noktalar' => $noktalar]);
+        }
         $bbox = HaritaGorunum::bbox($request);
-        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, HaritaGorunum::zoom($request)))) {
+        // Parsel sınırının okunmadığı zoom'larda kayıt az olsa da kümelenir,
+        // yoksa ilçe ve şehir ölçeğinde harita boş görünüyor.
+        $zoom = HaritaGorunum::zoom($request);
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, $zoom, HaritaGorunum::DETAY_ZOOM))) {
             return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
         }
 
@@ -1166,7 +1188,17 @@ class TasinmazController extends Controller
                 fn ($q) => $q->whereIn('id', TasinmazKoordinat::query()->alanda($bbox)->select('tasinmaz_id')),
                 fn ($q) => $q->whereHas('koordinat'))
             ->when(is_array($idler) && ! empty($idler), fn ($q) => $q->whereIn('id', $idler))
+            // Üst sınır: bbox gönderilmediğinde kümeleme devreye girmez ve bu
+            // sorgu tüm tabloyu ilişkileriyle belleğe alırdı (100 bin kayıtta
+            // istek düşüyordu). Kümelemenin tek tek çizmeye geçtiği eşiğin bir
+            // fazlası alınır; fazlası varsa istemciye kesildiği bildirilir.
+            ->limit(HaritaGorunum::DETAY_SINIRI + 1)
             ->get(['id', 'il_id', 'ilce_id', 'mahalle_id', 'ada', 'parsel', 'alan', 'nitelik']);
+
+        $kesilen = $kayitlar->count() > HaritaGorunum::DETAY_SINIRI;
+        if ($kesilen) {
+            $kayitlar = $kayitlar->take(HaritaGorunum::DETAY_SINIRI);
+        }
 
         $features = [];
         foreach ($kayitlar as $t) {
@@ -1202,6 +1234,7 @@ class TasinmazController extends Controller
             'type' => 'FeatureCollection',
             'kumeli' => false,
             'toplam' => count($features),
+            'kesilen' => $kesilen,
             'features' => $features,
         ]);
     }

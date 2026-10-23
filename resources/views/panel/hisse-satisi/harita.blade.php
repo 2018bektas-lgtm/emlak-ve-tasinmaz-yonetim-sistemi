@@ -342,20 +342,69 @@
     const secili = new Set(); // seçili tasinmaz_id'leri
     const layerById = new Map(); // tasinmaz_id -> L.Layer
     let mevcutFiltre = new URLSearchParams();
+    let istekNo = 0;
+    let kaydirma;
 
-    // === 2) GeoJSON yükleme fonksiyonu (filtre destekli) ===
+    function haritaSorgu(filtre) {
+        const p = new URLSearchParams(filtre ? filtre.toString() : '');
+        const b = map.getBounds();
+        p.set('bbox', [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => (+v).toFixed(5)).join(','));
+        p.set('zoom', String(Math.round(map.getZoom())));
+        return p;
+    }
+
+    // Ülke / filtre sığdırma. Sınır değişirse moveend yükler; değişmezse burada yüklenir.
+    function sigdir(filtre) {
+        const once = map.getBounds().toBBoxString();
+        const p = new URLSearchParams(filtre ? filtre.toString() : '');
+        p.set('kapsam', '1');
+        return fetch(API.geojson + '?' + p.toString(), { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(k => {
+                if (k.bbox && k.bbox.length === 4) {
+                    map.fitBounds([[k.bbox[1], k.bbox[0]], [k.bbox[3], k.bbox[2]]], { padding: [24, 24], maxZoom: 8 });
+                    if (map.getBounds().toBBoxString() === once) haritayiYukle(filtre);
+                } else {
+                    haritayiYukle(filtre);
+                }
+            })
+            .catch(e => console.error('Kapsam hatası', e));
+    }
+
+    // === 2) GeoJSON yükleme fonksiyonu (yalnızca ekrandaki alan) ===
     function haritayiYukle(filtre) {
+        const no = ++istekNo;
         parselKatman.clearLayers();
         etiketKatman.clearLayers();
         clusterKatman.clearLayers();
         layerById.clear();
 
-        const url = filtre && filtre.toString() ? API.geojson + '?' + filtre.toString() : API.geojson;
+        const url = API.geojson + '?' + haritaSorgu(filtre).toString();
 
         return fetch(url, { headers: { 'Accept': 'application/json' } })
             .then(r => r.json())
             .then(fc => {
-                document.getElementById('hsh-sayi').textContent = (fc.features || []).length;
+                if (no !== istekNo) return;
+                const toplam = fc.toplam != null ? fc.toplam : (fc.features || []).length;
+                document.getElementById('hsh-sayi').textContent = Number(toplam).toLocaleString('tr-TR');
+                if (fc.kumeli) {
+                    (fc.features || []).forEach(f => {
+                        const p = f.properties || {};
+                        const c = (f.geometry && f.geometry.coordinates) || [32.85, 39.93];
+                        const m = L.circleMarker([c[1], c[0]], {
+                            radius: Math.max(12, Math.min(26, 8 + Math.log10(p.adet || 1) * 7)),
+                            color: '#1e3a8a', fillColor: '#38bdf8', fillOpacity: .92, weight: 2,
+                        });
+                        m.bindTooltip(Number(p.adet || 0).toLocaleString('tr-TR'), { permanent: true, direction: 'center', className: 'hsh-kume-tip' });
+                        m.on('click', () => {
+                            if (p.bbox && p.bbox.length === 4) {
+                                map.fitBounds([[p.bbox[1], p.bbox[0]], [p.bbox[3], p.bbox[2]]], { padding: [20, 20], maxZoom: 17 });
+                            }
+                        });
+                        parselKatman.addLayer(m);
+                    });
+                    return;
+                }
                 const bounds = [];
                 (fc.features || []).forEach(f => {
                     const props = f.properties || {};
@@ -391,7 +440,6 @@
 
                 if (bounds.length) {
                     allBounds = bounds.reduce((acc, b) => acc ? acc.extend(b) : L.latLngBounds(b.getSouthWest ? [b.getSouthWest(), b.getNorthEast()] : [b, b]), null);
-                    if (allBounds) map.fitBounds(allBounds, { padding: [30, 30] });
                 }
 
                 // Filtre sonrası eski seçimden bu görünümde olmayanlar temizlensin
@@ -416,8 +464,11 @@
         }
     }
 
-    // İlk yükleme
-    haritayiYukle(mevcutFiltre);
+    map.on('moveend', () => {
+        clearTimeout(kaydirma);
+        kaydirma = setTimeout(() => haritayiYukle(mevcutFiltre), 160);
+    });
+    sigdir(mevcutFiltre);
 
     // === 3) Katman switch'leri ===
     function toggleKatman(input, katman) {
@@ -469,9 +520,7 @@
         p.hidden = !gizli;
         document.getElementById('hsh-katman-btn').setAttribute('aria-expanded', gizli ? 'true' : 'false');
     });
-    document.getElementById('hsh-fit-btn').addEventListener('click', () => {
-        if (allBounds) map.fitBounds(allBounds, { padding: [30, 30] });
-    });
+    document.getElementById('hsh-fit-btn').addEventListener('click', () => sigdir(mevcutFiltre));
     document.querySelectorAll('[data-panel-kapat]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.panelKapat;
@@ -573,7 +622,7 @@
         for (const [k, v] of fd.entries()) {
             if (v && v !== '') mevcutFiltre.set(k, v);
         }
-        haritayiYukle(mevcutFiltre);
+        sigdir(mevcutFiltre);
         return false;
     };
     window.hshFiltreTemizle = function () {
@@ -584,7 +633,7 @@
         document.getElementById('hsh-f-mahalle').innerHTML = '<option value="">— Önce ilçe —</option>';
         document.getElementById('hsh-f-mahalle').disabled = true;
         mevcutFiltre = new URLSearchParams();
-        haritayiYukle(mevcutFiltre);
+        sigdir(mevcutFiltre);
     };
 
     function seciliChipGuncelle() {

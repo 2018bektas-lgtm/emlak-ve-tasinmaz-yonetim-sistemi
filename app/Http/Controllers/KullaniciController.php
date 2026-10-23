@@ -21,10 +21,10 @@ class KullaniciController extends Controller
             ->with(['rol:id,kod,ad'])
             ->when($q !== '', function ($s) use ($q) {
                 $s->where(function ($w) use ($q) {
-                    $w->where('ad', 'like', "%{$q}%")
-                        ->orWhere('soyad', 'like', "%{$q}%")
-                        ->orWhere('mail', 'like', "%{$q}%")
-                        ->orWhere('kullanici_adi', 'like', "%{$q}%");
+                    $w->whereLike('ad', "%{$q}%")
+                        ->orWhereLike('soyad', "%{$q}%")
+                        ->orWhereLike('mail', "%{$q}%")
+                        ->orWhereLike('kullanici_adi', "%{$q}%");
                 });
             })
             ->when($rolId, fn ($s) => $s->where('rol_id', $rolId))

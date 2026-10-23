@@ -13,6 +13,7 @@ use App\Models\Mahalle;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazKoordinat;
 use App\Rules\TcVergiNo;
+use App\Support\HaritaGorunum;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,10 +62,10 @@ class EcrimisilController extends Controller
             ->withCount(['tutanaklar', 'resimler', 'raporlar'])
             ->when($q !== '', function ($w) use ($q) {
                 $w->where(function ($x) use ($q) {
-                    $x->where('ad_soyad_unvan', 'like', "%{$q}%")
-                        ->orWhere('tc_vergi_no', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%")
-                        ->orWhereHas('tasinmaz', fn ($t) => $t->where('ada', 'like', "%{$q}%")->orWhere('parsel', 'like', "%{$q}%"));
+                    $x->whereLike('ad_soyad_unvan', "%{$q}%")
+                        ->orWhereLike('tc_vergi_no', "%{$q}%")
+                        ->orWhereLike('nitelik', "%{$q}%")
+                        ->orWhereHas('tasinmaz', fn ($t) => $t->whereLike('ada', "%{$q}%")->orWhereLike('parsel', "%{$q}%"));
                 });
             })
             ->when($kullaniciId, fn ($w) => $w->where('kullanici_id', $kullaniciId))
@@ -421,10 +422,20 @@ class EcrimisilController extends Controller
     public function mevcutEcrimisiller(Request $request): JsonResponse
     {
         $haric = $request->query('haric');
-        $isgalciler = EcrimisilIsgalci::query()
+        $bbox = HaritaGorunum::bbox($request);
+        $sorgu = EcrimisilIsgalci::query()
             ->with(['tasinmaz:id,ada,parsel', 'tasinmaz.koordinat:id,tasinmaz_id,lat,lng,koordinat', 'tutanaklar:id,isgalci_id,isgal_bitis_tarihi'])
             ->when($haric, fn ($q) => $q->where('id', '!=', (int) $haric))
-            ->get(['id', 'tasinmaz_id', 'ad_soyad_unvan', 'nitelik', 'koordinat', 'lat', 'lng']);
+            ->when($bbox, fn ($s) => $s->whereBetween('lat', [$bbox[1], $bbox[3]])->whereBetween('lng', [$bbox[0], $bbox[2]]));
+
+        $adet = (clone $sorgu)->count();
+        // Eşik yalnızca ekrandaki kayıt sayısına bakar; zoom kontrolü yok.
+        // Yakınlaşınca bbox daraldığı için sayı kendiliğinden eşiğin altına düşer.
+        if ($adet > 800) {
+            return response()->json(['type' => 'FeatureCollection', 'features' => [], 'kumeli' => true, 'toplam' => $adet]);
+        }
+
+        $isgalciler = $sorgu->get(['id', 'tasinmaz_id', 'ad_soyad_unvan', 'nitelik', 'koordinat', 'lat', 'lng']);
 
         $features = [];
         foreach ($isgalciler as $k) {
@@ -496,9 +507,9 @@ class EcrimisilController extends Controller
             ->when($kullaniciId, fn ($s) => $s->where('kullanici_id', $kullaniciId))
             ->when($q !== '', function ($w) use ($q) {
                 $w->where(function ($x) use ($q) {
-                    $x->where('ad_soyad_unvan', 'like', "%{$q}%")
-                        ->orWhere('tc_vergi_no', 'like', "%{$q}%")
-                        ->orWhere('nitelik', 'like', "%{$q}%");
+                    $x->whereLike('ad_soyad_unvan', "%{$q}%")
+                        ->orWhereLike('tc_vergi_no', "%{$q}%")
+                        ->orWhereLike('nitelik', "%{$q}%");
                 });
             })
             ->when($ilId || $ilceId || $mahalleId || $ada !== '' || $parsel !== '', function ($w) use ($ilId, $ilceId, $mahalleId, $ada, $parsel) {
@@ -509,7 +520,32 @@ class EcrimisilController extends Controller
                         ->when($ada !== '', fn ($s) => $s->where('ada', $ada))
                         ->when($parsel !== '', fn ($s) => $s->where('parsel', $parsel));
                 });
-            })
+            });
+
+        if ($request->boolean('kapsam')) {
+            return response()->json($this->ecrimisilKapsam($isgalciler));
+        }
+
+        $bbox = HaritaGorunum::bbox($request);
+        if ($bbox && ($kume = $this->noktaKumeleri($isgalciler, $bbox, HaritaGorunum::zoom($request)))) {
+            return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
+        }
+
+        if (! $bbox) {
+            $kapsam = $this->ecrimisilKapsam($isgalciler);
+            if ($kapsam['toplam'] > HaritaGorunum::DETAY_SINIRI) {
+                return response()->json([
+                    'type' => 'FeatureCollection',
+                    'kumeli' => true,
+                    'toplam' => $kapsam['toplam'],
+                    'features' => [],
+                    'bbox' => $kapsam['bbox'],
+                ]);
+            }
+        }
+
+        $isgalciler = $isgalciler
+            ->when($bbox, fn ($s) => $s->whereBetween('lat', [$bbox[1], $bbox[3]])->whereBetween('lng', [$bbox[0], $bbox[2]]))
             ->get();
 
         $features = [];
@@ -545,7 +581,60 @@ class EcrimisilController extends Controller
             ];
         }
 
-        return response()->json(['type' => 'FeatureCollection', 'features' => $features]);
+        return response()->json(['type' => 'FeatureCollection', 'kumeli' => false, 'toplam' => count($features), 'features' => $features]);
+    }
+
+    /**
+     * Ecrimisil tablosunda sınır kutusu sütunu yok; kümeleme merkez enlem/boylam
+     * üzerindedir. Kalabalık alanda tek tek poligon yerine ızgara döner.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\EcrimisilIsgalci>  $sorgu
+     * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox
+     * @return array{toplam: int, features: list<array<string, mixed>>}|null
+     */
+    private function noktaKumeleri($sorgu, array $bbox, int $zoom): ?array
+    {
+        [$minLng, $minLat, $maxLng, $maxLat] = $bbox;
+        $alanda = (clone $sorgu)->whereBetween('lat', [$minLat, $maxLat])->whereBetween('lng', [$minLng, $maxLng]);
+        $toplam = (clone $alanda)->count();
+        if ($toplam <= HaritaGorunum::DETAY_SINIRI) {
+            return null;
+        }
+
+        $hucre = 360 / (2 ** $zoom) / 256 * 80;
+        $satirlar = (clone $alanda)
+            ->selectRaw('FLOOR(lng / ?) AS gx, FLOOR(lat / ?) AS gy, COUNT(*) AS adet,
+                AVG(lat) AS lat, AVG(lng) AS lng,
+                MIN(lng) AS x1, MIN(lat) AS y1, MAX(lng) AS x2, MAX(lat) AS y2', [$hucre, $hucre])
+            ->groupBy('gx', 'gy')
+            ->toBase()
+            ->get();
+
+        $features = $satirlar->map(fn ($s) => [
+            'type' => 'Feature',
+            'geometry' => ['type' => 'Point', 'coordinates' => [round((float) $s->lng, 6), round((float) $s->lat, 6)]],
+            'properties' => [
+                'kume' => true,
+                'adet' => (int) $s->adet,
+                'bbox' => [(float) $s->x1, (float) $s->y1, (float) $s->x2, (float) $s->y2],
+            ],
+        ])->values()->all();
+
+        return ['toplam' => $toplam, 'features' => $features];
+    }
+
+    /** @param  \Illuminate\Database\Eloquent\Builder<\App\Models\EcrimisilIsgalci>  $sorgu */
+    private function ecrimisilKapsam($sorgu): array
+    {
+        $s = (clone $sorgu)->whereNotNull('lat')->whereNotNull('lng')
+            ->selectRaw('COUNT(*) AS adet, MIN(lng) AS x1, MIN(lat) AS y1, MAX(lng) AS x2, MAX(lat) AS y2')
+            ->toBase()
+            ->first();
+
+        return [
+            'toplam' => (int) ($s->adet ?? 0),
+            'bbox' => ($s->adet ?? 0) ? [(float) $s->x1, (float) $s->y1, (float) $s->x2, (float) $s->y2] : null,
+        ];
     }
 
     /** Bir ecrimisil kaydının detay AJAX'ı — harita İşlemler paneli için. */

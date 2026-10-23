@@ -101,16 +101,16 @@ class Emsal extends Model
         $adaParsel = preg_match('~^\s*([\w-]+)\s*/\s*([\w-]+)\s*$~u', $arama, $m) ? [$m[1], $m[2]] : null;
 
         return $q->where(function (Builder $w) use ($arama, $adaParsel) {
-            $w->where('karar_no', 'like', "%{$arama}%")
-                ->orWhere('yevmiye_no', 'like', "%{$arama}%")
-                ->orWhere('esas_no', 'like', "%{$arama}%")
-                ->orWhere('kayit_no', 'like', "%{$arama}%")
+            $w->whereLike('karar_no', "%{$arama}%")
+                ->orWhereLike('yevmiye_no', "%{$arama}%")
+                ->orWhereLike('esas_no', "%{$arama}%")
+                ->orWhereLike('kayit_no', "%{$arama}%")
                 ->orWhereIn('emsal_parsel_id', EmsalParsel::query()->select('id')->where(function ($p) use ($arama, $adaParsel) {
                     $p->where('ada', $arama)
                         ->orWhere('parsel', $arama)
                         ->when($adaParsel, fn ($x) => $x->orWhere(fn ($y) => $y->where('ada', $adaParsel[0])->where('parsel', $adaParsel[1])))
-                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->where('ad', 'like', "%{$arama}%"))
-                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->where('ad', 'like', "%{$arama}%"));
+                        ->orWhereIn('ilce_id', Ilce::query()->select('id')->whereLike('ad', "%{$arama}%"))
+                        ->orWhereIn('mahalle_id', Mahalle::query()->select('id')->whereLike('ad', "%{$arama}%"));
                 }));
         });
     }

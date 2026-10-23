@@ -110,7 +110,7 @@
             display: none !important;
         }
     </style>
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=8">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=9">
 @endpush
 
 @section('content')
@@ -223,7 +223,7 @@
 
         <div class="hrm-katman-kart" data-katman-kart="parsel" data-grup="sistem" data-ad="taşınmaz parselleri sistem parsel">
             <div class="hrm-katman-ust">
-                <span class="hrm-katman-ikon" style="background:#f59e0b;">
+                <span class="hrm-katman-ikon" style="background:#06b6d4;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 L12 3 L20 8 L18 20 L6 20 z"/></svg>
                 </span>
                 <div class="hrm-katman-meta">
@@ -240,6 +240,29 @@
                 <input type="range" id="hrm-ov-parsel-op" min="10" max="100" value="70" class="hrm-range">
                 <span class="hrm-opaklik-deger" data-hedef="hrm-ov-parsel-op">70%</span>
                 <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-parsel-op" title="Varsayılana döndür">↺</button>
+            </div>
+            <div class="hrm-katman-lejant" aria-label="Gösterim">
+                <span class="hrm-lejant-oge">
+                    <span class="hrm-lejant-swatch" style="background:rgba(34,211,238,.46);border-color:#22d3ee;"></span>
+                    Parsel
+                </span>
+                <span class="hrm-lejant-oge">
+                    <span class="hrm-lejant-swatch" style="background:rgba(240,134,24,.82);border-color:#e86a18;border-radius:50%;"></span>
+                    Küme
+                </span>
+            </div>
+            <div class="hrm-kume-lejant">
+                <span class="hrm-kume-lejant-baslik">Küme yoğunluğu</span>
+                <div class="hrm-kume-lejant-skala" aria-hidden="true">
+                    <span class="hrm-kume-nokta" style="--kn-cap:10px;--kn-renk:250,190,84"></span>
+                    <span class="hrm-kume-nokta" style="--kn-cap:13px;--kn-renk:246,163,32"></span>
+                    <span class="hrm-kume-nokta" style="--kn-cap:16px;--kn-renk:240,134,24"></span>
+                    <span class="hrm-kume-nokta" style="--kn-cap:19px;--kn-renk:232,106,24"></span>
+                    <span class="hrm-kume-nokta" style="--kn-cap:22px;--kn-renk:214,80,28"></span>
+                    <span class="hrm-kume-nokta" style="--kn-cap:25px;--kn-renk:189,60,34"></span>
+                </div>
+                <div class="hrm-kume-lejant-uc"><span>2 taşınmaz</span><span>5.000+</span></div>
+                <p class="hrm-kume-lejant-not">Rozete tıklayın, küme açılır. Yakınlaştıkça parsel sınırlarına döner.</p>
             </div>
         </div>
 
@@ -566,6 +589,9 @@
         </div>
     </div>
 
+    {{-- Rozetin üzerine gelince imlecin yanında beliren balon --}}
+    <div class="hrm-kume-ipucu" id="hrm-kume-ipucu" role="status" hidden></div>
+
     <div id="hrm-map" class="hrm-map"></div>
 </div>
 @endsection
@@ -591,5 +617,5 @@
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=54"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=87"></script>
 @endpush

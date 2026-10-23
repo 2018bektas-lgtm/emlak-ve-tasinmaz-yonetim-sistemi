@@ -10,19 +10,45 @@ use Illuminate\Http\Request;
  * Haritaların "yalnızca ekranda görünen alanı yükle" yardımcıları.
  *
  * İstemci ?bbox=minLng,minLat,maxLng,maxLat&zoom=Z gönderir. Alandaki kayıt
- * sayısı DETAY_SINIRI'nı aşarsa (ve yeterince yakınlaşılmamışsa) tek tek
- * geometri yerine ızgara kümeleri döner; böylece 100 bin kayıtta da yanıt
- * birkaç yüz öğeyle sınırlı kalır.
+ * sayısı DETAY_SINIRI'nı aşarsa tek tek geometri yerine ızgara kümeleri
+ * döner; böylece 100 bin kayıtta da yanıt birkaç yüz öğeyle sınırlı kalır.
+ *
+ * Karar yalnızca kayıt sayısına bakar. Önceden DETAY_ZOOM (17) ve üstünde
+ * sayıya bakılmadan tek tek çizilirdi; yoğun bir mahallede bu, tek karede
+ * 1500+ poligonun geometrisiyle ilişkilerinin Eloquent'e dönüştürülmesi
+ * demekti (ölçülen ~340 ms). Zoom ne olursa olsun ekranda bu kadar kayıt
+ * varken küme göstermek hem daha hızlı hem daha okunur; kullanıcı bir kademe
+ * daha yakınlaşınca sayı eşiğin altına düşer ve şekiller çizilir.
  */
 final class HaritaGorunum
 {
     public const DETAY_SINIRI = 1500;
 
-    /** Bu yakınlaştırmadan sonra her zaman tek tek gösterilir. */
-    public const DETAY_ZOOM = 17;
+    /**
+     * Parsel sınırının ekranda okunur hâle geldiği zoom.
+     *
+     * Bunun altında bir parsel bir-iki piksel kalıyor: tek tek çizilse bile
+     * görünmüyor. Haritada ülke görünümünde kümeler, sokak görünümünde
+     * poligonlar vardı; ilçe ve şehir ölçeğinde — kayıt sayısı DETAY_SINIRI
+     * altına düştüğü için küme de üretilmediğinden — ekran bomboş kalıyordu.
+     * Bu zoom'u geçen çağıranlar (bkz. $enAzZoom) altındaki her ölçekte küme
+     * alır, sayı az olsa bile.
+     */
+    public const DETAY_ZOOM = 16;
 
-    /** Küme hücresinin ekrandaki boyu (piksel). */
-    private const HUCRE_PX = 80;
+    /**
+     * Küme hücresinin ekrandaki boyu (piksel).
+     *
+     * Kümenin işi yoğunluğun nerede olduğunu göstermek, o yüzden çok sayıda
+     * küçük küme az sayıda dev baloncuktan iyidir — ama rozet çapı bu değerin
+     * altında kalmazsa komşular üst üste biner ve harita okunmaz hâle gelir.
+     *
+     * 80'di; rozetler 72px'e kadar büyüyünce (bkz. harita-esri.js, KUME_CAP_MAX)
+     * bu sınır aşıldı ve şehir ölçeğinde ekran birbirine girmiş yüzlerce
+     * rozetle doluyordu. 150 hem çakışmayı bitiriyor hem bir ekrana ~60 rozet
+     * düşürüyor. Değer tüm haritalarda ortak: rozetleri de ortak kod çiziyor.
+     */
+    private const HUCRE_PX = 150;
 
     /** @return array{0: float, 1: float, 2: float, 3: float}|null [minLng, minLat, maxLng, maxLat] */
     public static function bbox(Request $request): ?array
@@ -52,27 +78,38 @@ final class HaritaGorunum
      * aynı düzende tutulur.
      *
      * @param  Builder<TasinmazKoordinat>  $koordinatlar  süzgeçleri uygulanmış sorgu
+     * @param  int|null  $enAzZoom  bu zoom'un altında kayıt sayısına bakmadan kümele
      * @return array{toplam: int, features: list<array<string, mixed>>}|null
      */
-    public static function kumeler(Builder $koordinatlar, array $bbox, int $zoom): ?array
+    public static function kumeler(Builder $koordinatlar, array $bbox, int $zoom, ?int $enAzZoom = null): ?array
     {
-        $toplam = (clone $koordinatlar)->alanda($bbox)->count();
-        if ($zoom >= self::DETAY_ZOOM || $toplam <= self::DETAY_SINIRI) {
-            return null;
-        }
-
-        [$minLng, $minLat, $maxLng, $maxLat] = $bbox;
         $hucre = 360 / (2 ** $zoom) / 256 * self::HUCRE_PX;
 
+        // Tek sorgu. Önceden alandaki kayıt sayısı için ayrı bir COUNT(*)
+        // çalışıyordu; aynı işi iki kez yapıyordu ve 100 bin kayıtta harita
+        // hareketinin yarısını o yiyordu. Toplam artık hücre adetlerinin
+        // toplamından geliyor.
+        //
+        // Süzgeç de `alanda` (PostGIS `&&`, GiST index) üzerinden: eskiden
+        // kümeler merkez_lat/merkez_lng BETWEEN ile süzülüyordu, bu hem
+        // indexsizdi hem de COUNT'un saydığı kümeyle aynı değildi.
         $satirlar = (clone $koordinatlar)
-            ->whereBetween('merkez_lat', [$minLat, $maxLat])
-            ->whereBetween('merkez_lng', [$minLng, $maxLng])
+            ->alanda($bbox)
             ->selectRaw('FLOOR(merkez_lng / ?) AS gx, FLOOR(merkez_lat / ?) AS gy, COUNT(*) AS adet,
                 AVG(merkez_lat) AS lat, AVG(merkez_lng) AS lng,
                 MIN(min_lng) AS x1, MIN(min_lat) AS y1, MAX(max_lng) AS x2, MAX(max_lat) AS y2', [$hucre, $hucre])
             ->groupBy('gx', 'gy')
             ->toBase()
             ->get();
+
+        $toplam = (int) $satirlar->sum('adet');
+
+        // Az kayıt kaldıysa çağıran tek tek çizsin — ama yalnızca parsel sınırı
+        // görünecek kadar yakınsa. $enAzZoom verilmeyen çağıranlarda eski
+        // davranış aynen korunur.
+        if ($toplam <= self::DETAY_SINIRI && ($enAzZoom === null || $zoom >= $enAzZoom)) {
+            return null;
+        }
 
         $features = $satirlar->map(fn ($s) => [
             'type' => 'Feature',

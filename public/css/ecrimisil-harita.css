@@ -227,6 +227,9 @@
     color: #fff;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 6px 14px -8px rgba(15, 23, 42, 0.6);
 }
+/* Kumeleme ikonu kume baloncugunun rengini onizler; eskiden #8b5cf6 idi,
+   o mor arayuzde baska hicbir yerde gecmiyordu. */
+.ech-katman-ikon.is-kume { background: linear-gradient(135deg, #ffb27a, #ff8a5b); color: var(--eh-amber-ink); }
 .ech-katman-meta { flex: 1; min-width: 0; }
 .ech-katman-ad { display: block; color: var(--eh-ink); font-size: 0.84rem; font-weight: 700; }
 .ech-katman-alt { display: block; margin-top: 2px; color: var(--eh-muted); font-size: 0.72rem; }
@@ -283,6 +286,9 @@
 .ech-lejant-baslik { margin-bottom: 8px; color: var(--eh-muted); font-size: 0.66rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .ech-lejant-oge { display: flex; align-items: center; gap: 9px; padding: 4px 0; color: var(--eh-text); font-size: 0.78rem; }
 .ech-lejant-nokta { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.15); }
+.ech-lejant-nokta.is-yeni { background: var(--durum-yeni); }
+.ech-lejant-nokta.is-devam-eden { background: var(--durum-devam-eden); }
+.ech-lejant-nokta.is-sonlanmis { background: var(--durum-sonlanmis); }
 
 /* Arama paneli */
 .ech-arama { top: 84px; left: 372px; width: 340px; }
@@ -350,9 +356,11 @@
     white-space: nowrap;
 }
 .ech-rozet::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.ech-rozet.is-yeni        { color: #475569; background: rgba(148, 163, 184, 0.22); }
-.ech-rozet.is-devam-eden  { color: #be123c; background: rgba(244, 63, 94, 0.14); }
-.ech-rozet.is-sonlanmis   { color: #047857; background: rgba(16, 185, 129, 0.16); }
+/* Zemin, durum renginin saydam tonu: token degisince rozet de doner.
+   Metin rengi acikca yazili kalir, o kontrast icin ayarlanmis bir deger. */
+.ech-rozet.is-yeni        { color: #475569; background: color-mix(in srgb, var(--durum-yeni) 22%, transparent); }
+.ech-rozet.is-devam-eden  { color: #be123c; background: color-mix(in srgb, var(--durum-devam-eden) 14%, transparent); }
+.ech-rozet.is-sonlanmis   { color: #047857; background: color-mix(in srgb, var(--durum-sonlanmis) 16%, transparent); }
 .ech-encumen-head .ech-rozet { margin-right: 6px; }
 .ech-encumen-head .ech-rozet::before { display: none; }
 
@@ -504,18 +512,22 @@
     white-space: nowrap;
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
 }
+/* Cap --cap ile gelir: izgara kumesi onu adede gore hesaplar, markercluster
+   sabit kademe verir. Yazi boyu capla birlikte buyur. */
 .ech-cluster {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: var(--cap, 38px);
+    height: var(--cap, 38px);
     border: 2px solid #fff;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ffb27a, #ff7a45);
-    color: #3b1d0a;
-    font-size: 13px;
+    background: linear-gradient(135deg, #ffb27a, #ff8a5b);
+    color: var(--eh-amber-ink);
+    font-size: calc(var(--cap, 38px) * 0.33);
     font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
     box-shadow: 0 6px 16px -4px rgba(234, 88, 12, 0.6);
 }
 .ech-cluster-wrap { border: 0 !important; background: transparent !important; }
@@ -555,7 +567,7 @@
     background: rgba(255, 255, 255, 0.75);
     box-shadow: inset 0 0 0 1px var(--eh-line);
 }
-.ech-tut-item.is-acik { box-shadow: inset 3px 0 0 #f43f5e, inset 0 0 0 1px var(--eh-line); }
+.ech-tut-item.is-acik { box-shadow: inset 3px 0 0 var(--durum-devam-eden), inset 0 0 0 1px var(--eh-line); }
 .ech-tut-ust { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ech-tut-ust .num { flex: 1; color: var(--eh-ink); font-size: 0.86rem; font-weight: 750; }
 .ech-tut-ust .tarih { color: var(--eh-muted); font-size: 0.72rem; }
@@ -598,17 +610,22 @@
     box-shadow: 0 4px 10px rgba(15, 23, 42, 0.45);
 }
 .ech-marker::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.5); }
-.ech-marker-yeni { background: #64748b; }
-.ech-marker-devam-eden { background: #f43f5e; animation: ech-nabiz 1.8s infinite; }
-.ech-marker-sonlanmis { background: #10b981; }
+.ech-marker-yeni { background: var(--durum-yeni); }
+.ech-marker-devam-eden { background: var(--durum-devam-eden); animation: ech-nabiz 1.8s infinite; }
+.ech-marker-sonlanmis { background: var(--durum-sonlanmis); }
 .ech-marker-wrap { border: 0 !important; background: transparent !important; }
 @keyframes ech-nabiz {
-    0%, 100% { box-shadow: 0 4px 10px rgba(15, 23, 42, 0.45), 0 0 0 0 rgba(244, 63, 94, 0.5); }
-    50% { box-shadow: 0 4px 10px rgba(15, 23, 42, 0.45), 0 0 0 10px rgba(244, 63, 94, 0); }
+    0%, 100% { box-shadow: 0 4px 10px rgba(15, 23, 42, 0.45), 0 0 0 0 color-mix(in srgb, var(--durum-devam-eden) 50%, transparent); }
+    50% { box-shadow: 0 4px 10px rgba(15, 23, 42, 0.45), 0 0 0 10px color-mix(in srgb, var(--durum-devam-eden) 0%, transparent); }
 }
-.ech-cluster-small { background: linear-gradient(135deg, #cbd5e1, #64748b); color: #fff; }
-.ech-cluster-medium { background: linear-gradient(135deg, #ffb27a, #ff7a45); }
-.ech-cluster-large { background: linear-gradient(135deg, #fb7185, #e11d48); color: #fff; }
+/* Kume rengi YOGUNLUK anlatir, durum anlatmaz. Eskiden kucuk kume slate,
+   buyuk kume rose idi; ikisi de durum renkleriyle ayni aileden oldugu icin
+   harita uzerinde "yeni kayit" / "devam eden isgal" gibi okunuyordu. Artik
+   ucu de markanin amber vurgusu; buyukluk ayrica capla kodlanir, boylece
+   renk koruligunde de ayirt edilir. Hue = durum, amber = adet. */
+.ech-cluster-small { background: linear-gradient(135deg, #ffe3bd, #ffc98b); }
+.ech-cluster-medium { background: linear-gradient(135deg, #ffb27a, #ff8a5b); }
+.ech-cluster-large { background: linear-gradient(135deg, #ff8f52, #ea580c); }
 
 @media (prefers-reduced-motion: reduce) {
     .ech-marker-devam-eden { animation: none; }

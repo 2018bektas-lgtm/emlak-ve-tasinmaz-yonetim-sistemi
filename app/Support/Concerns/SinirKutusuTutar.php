@@ -101,7 +101,12 @@ trait SinirKutusuTutar
     {
         [$minLng, $minLat, $maxLng, $maxLat] = $bbox;
 
-        return $q->where('min_lat', '<=', $maxLat)->where('max_lat', '>=', $minLat)
-            ->where('min_lng', '<=', $maxLng)->where('max_lng', '>=', $minLng);
+        // `&&` PostGIS'in sınır kutusu kesişim operatörü: GiST index üzerinden
+        // çalışır, geometriyi hiç açmaz. Eski min/max sütun karşılaştırmasıyla
+        // aynı anlama gelir, ama index destekli.
+        return $q->whereRaw(
+            $q->getModel()->getTable().'.sinir && ST_MakeEnvelope(?, ?, ?, ?, 4326)',
+            [$minLng, $minLat, $maxLng, $maxLat]
+        );
     }
 }

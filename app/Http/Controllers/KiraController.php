@@ -297,14 +297,26 @@ class KiraController extends Controller
 
         $gorunen = (clone $poligonlar)
             ->when($bbox, fn ($s) => $s->alanda($bbox))
-            ->with(['alanlar' => fn ($s) => $s->where($alanKosulu)->with([
-                'isKolu:id,ad',
-                'dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,sozlesme_aktif_mi',
-                'dosya.aktifSozlesme',
-                'dosya.anaKiraci',
-                'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,imar_durumu_id',
-                'dosya.tasinmaz.ilce:id,ad', 'dosya.tasinmaz.mahalle:id,ad',
-            ])])
+            // Üst sınır: bbox gönderilmediğinde kümeleme devreye girmez ve bu
+            // sorgu tüm poligonları ilişkileriyle belleğe alırdı (100 bin
+            // kayıtta istek düşüyordu).
+            ->limit(HaritaGorunum::DETAY_SINIRI + 1)
+            // `kalan_gun` SQL'de: sözleşme bitişine kalan gün istemcide
+            // renklendirme için kullanılıyor ve PHP'de Carbon ile hesaplamak
+            // binlerce kayıtta yavaş. Modeldeki kalanGun() seçilen bu sütunu
+            // kullanır (bkz. KiraAlan/KiraSozlesme::kalanGun).
+            ->with(['alanlar' => fn ($s) => $s->where($alanKosulu)
+                ->select('kira_alanlari.*')
+                ->selectRaw('(bitis_tarihi - CURRENT_DATE) AS kalan_gun')
+                ->with([
+                    'isKolu:id,ad',
+                    'dosya:id,dosya_no,isyeri_adi,dolu_bos,ihale_turu,sozlesme_aktif_mi',
+                    'dosya.aktifSozlesme' => fn ($t) => $t->select('kira_sozlesmeleri.*')
+                        ->selectRaw('(kira_sozlesmeleri.bitis_tarihi - CURRENT_DATE) AS kalan_gun'),
+                    'dosya.anaKiraci',
+                    'dosya.tasinmaz:id,kira_dosya_id,ilce_id,mahalle_id,ada,parsel,imar_durumu_id',
+                    'dosya.tasinmaz.ilce:id,ad', 'dosya.tasinmaz.mahalle:id,ad',
+                ])])
             ->get();
 
         $features = [];
@@ -937,9 +949,9 @@ class KiraController extends Controller
             ->when($f['ids'] !== [], fn ($s) => $s->whereIn('id', $f['ids']))
             ->ara($f['q'])
             ->when($f['dosya_no'] !== '', fn ($s) => $s->where(fn ($w) => $w
-                ->where('dosya_no', 'like', "%{$f['dosya_no']}%")
-                ->orWhere('eski_dosya_no', 'like', "%{$f['dosya_no']}%")))
-            ->when($f['isyeri'] !== '', fn ($s) => $s->where('isyeri_adi', 'like', "%{$f['isyeri']}%"))
+                ->whereLike('dosya_no', "%{$f['dosya_no']}%")
+                ->orWhereLike('eski_dosya_no', "%{$f['dosya_no']}%")))
+            ->when($f['isyeri'] !== '', fn ($s) => $s->whereLike('isyeri_adi', "%{$f['isyeri']}%"))
             ->when($f['dolu_bos'], fn ($s, $v) => $s->where('dolu_bos', $v))
             ->when($f['ihale_turu'], fn ($s, $v) => $s->where('ihale_turu', $v))
             ->when($f['is_kolu_id'], fn ($s, $v) => $s->where('is_kolu_id', $v))
@@ -950,7 +962,7 @@ class KiraController extends Controller
             ->when($f['durum'] === 'pasif', fn ($s) => $s->where('sozlesme_aktif_mi', false))
             // Kiracı adı / TC: kiracılar bir kez süzülür
             ->when($f['kiraci'] !== '', fn ($s) => $s->whereIn('id', KiraKiraci::query()->select('kira_dosya_id')
-                ->where(fn ($w) => $w->where('ad_unvan', 'like', "%{$f['kiraci']}%")->orWhere('tc_vergi_no', $f['kiraci']))))
+                ->where(fn ($w) => $w->whereLike('ad_unvan', "%{$f['kiraci']}%")->orWhere('tc_vergi_no', $f['kiraci']))))
             // Konum ve ada/parsel: taşınmaz tablosu bir kez süzülür
             ->when($f['ada'] !== '' || $f['parsel'] !== '' || $f['ilce_id'] || $f['mahalle_id'],
                 fn ($s) => $s->whereIn('id', KiraTasinmaz::query()->select('kira_dosya_id')

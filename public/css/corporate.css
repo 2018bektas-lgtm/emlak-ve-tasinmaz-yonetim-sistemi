@@ -7,6 +7,13 @@
     --white: #ffffff;
     --gold: #d8bc8c;
     --danger: #b42318;
+
+    /* Ecrimisil durum renkleri. Harita sayfasi (ecrimisil-harita.css) ile kayit
+       formu (ecrimisil-cizim.js) ortak olarak yalnizca bu dosyayi yukluyor;
+       lejant, isaretci ve cizim ayni degeri buradan okur. */
+    --durum-yeni: #94a3b8;
+    --durum-devam-eden: #f43f5e;
+    --durum-sonlanmis: #10b981;
 }
 
 *,
@@ -2212,7 +2219,8 @@ input.oz-tarih-metin:focus { cursor: text; }
 /* Flash mesajlari */
 
 .flash-success,
-.flash-error {
+.flash-error,
+.flash-info {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2225,6 +2233,7 @@ input.oz-tarih-metin:focus { cursor: text; }
 
 .flash-success { background: #eaf7ee; color: #1f7a3a; border: 1px solid #cfeadb; }
 .flash-error { background: #fde8e6; color: #a92626; border: 1px solid #f5cbc7; }
+.flash-info { background: #eaf1fb; color: #1b4f8a; border: 1px solid #cbdcf2; }
 
 /* Sayfa hero'nu formda daha kompakt */
 .form-shell + section.page-hero,
@@ -7414,6 +7423,16 @@ input.oz-tarih-metin:focus { cursor: text; }
     vertical-align: middle;
 }
 .sr-btn { min-height: 40px; padding: 8px 14px !important; text-decoration: none; }
+
+/* Secim yapilmadan indirilemeyen dugme: tiklanamaz ama neden oldugu baslikta yazili */
+.sr-btn.is-kapali {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
 
 /* Sekme (rapor tipleri) */
 .sr-tab {

@@ -287,6 +287,156 @@
         const emsalKatman = new GraphicsLayer({ title: 'Emsaller', opacity: 0.70, visible: true });
         const sorguKatman = new GraphicsLayer({ title: 'Sorgu Sonucu' });
 
+        /* ---- Kümeleme nerede yapılır? ----
+         *
+         * Bir ara istemci tarafı denendi: tüm kayıtların merkez noktası bir kez
+         * indirilip ArcGIS featureReduction ile yakınlığa göre kümeleniyordu.
+         * Gezinme sunucuya hiç gitmiyordu ama açılış bedeli kabul edilemezdi —
+         * 100 bin kayıtta ölçülen: 2,5 MB indirme (localhost'ta 13 ms, sorun
+         * değil), 100 bin Graphic nesnesi 4,6 sn, applyEdits 4,7 sn. Yani ana
+         * iş parçacığı ~9,4 sn kilitli kalıyor ve harita 15 sn sonra açılıyordu.
+         * Düz nesne + FeatureLayer(source) da denendi: 0,2 sn + 3,9 sn, hâlâ
+         * çok yavaş.
+         *
+         * Kümeleme bu yüzden sunucuda kalıyor: görünen alan için ızgara
+         * toplaması her zoom'da 200-320 ms sürüyor ve yanıt birkaç yüz öğe.
+         * Kayıt sayısı artsa da bu değişmez; istemci yükü sabit.
+         */
+
+        /* Rozet görünümü.
+         *
+         * Önceki sürüm tek bir simple-marker kullanıyordu: opak amber disk, ince
+         * beyaz kontur, 24-54px arası sürekli ölçek. Ülke görünümünde 396 ile
+         * 3,6B neredeyse aynı büyüklükte okunuyor, diskler üst üste binip tek bir
+         * turuncu lekeye dönüşüyor ve opak dolgu altlığı tamamen kapatıyordu.
+         *
+         * Yerine kademeli rozet geldi. Üç şey birlikte değişir — çap, dolgu tonu
+         * (amber → kiremit) ve hale halkasının kalınlığı — böylece yoğunluk küçük
+         * bir ekran payında bile okunur. CIM kullanılır çünkü simple-marker tek
+         * kontur verir; buradaki katmanlama (saydam hale halkası + koyu kasa +
+         * beyaz halka + yarı saydam dolgu) tek grafikte ancak CIMPointSymbol ile
+         * kurulabilir. Dolgu yarı saydamdır: üst üste binen kümeler koyulaşarak
+         * yoğunluğun kendisini de gösterir.
+         */
+        // CIM çokgeni daire primitifi tanımaz; halka noktadan üretilir.
+        function cemberHalka(yaricap, tersYon) {
+            const n = 48;
+            const halka = [];
+            for (let i = 0; i <= n; i++) {
+                const a = (tersYon ? -i : i) / n * Math.PI * 2;
+                halka.push([
+                    Number((Math.cos(a) * yaricap).toFixed(4)),
+                    Number((Math.sin(a) * yaricap).toFixed(4)),
+                ]);
+            }
+            return halka;
+        }
+
+        // Tek bir CIMVectorMarker katmanı. Çerçeve -5..5 olduğu için içerideki
+        // kontur kalınlıkları da çerçeve birimindedir: boy ile orantılı büyürler.
+        function cimDaire(boyPt, yaricap, katmanlar, delik) {
+            const halkalar = [cemberHalka(yaricap)];
+            if (delik) halkalar.push(cemberHalka(delik, true));
+            return {
+                type: 'CIMVectorMarker',
+                enable: true,
+                size: boyPt,
+                frame: { xmin: -5, ymin: -5, xmax: 5, ymax: 5 },
+                markerGraphics: [{
+                    type: 'CIMMarkerGraphic',
+                    geometry: { rings: halkalar },
+                    symbol: { type: 'CIMPolygonSymbol', symbolLayers: katmanlar },
+                }],
+            };
+        }
+
+        // capPx: rozetin dış çapı. CIM boyutları PUNTO cinsindendir (px * 0.75).
+        function kumeSembolu(capPx, dolgu, hale) {
+            const pt = capPx * 0.75;
+            return {
+                type: 'cim',
+                data: {
+                    type: 'CIMSymbolReference',
+                    symbol: {
+                        type: 'CIMPointSymbol',
+                        // Katmanlar üstten alta çizilir: ilk eleman en üstte kalır.
+                        symbolLayers: [
+                            // Rozet: beyaz halka her zeminde ayırır, altındaki koyu
+                            // kasa uydu altlığının alacasında kenarı korur.
+                            cimDaire(pt, 4.4, [
+                                { type: 'CIMSolidStroke', enable: true, width: 0.62, color: [255, 255, 255, 248] },
+                                { type: 'CIMSolidStroke', enable: true, width: 1.3, color: [8, 13, 23, 115] },
+                                { type: 'CIMSolidFill', enable: true, color: dolgu },
+                            ]),
+                            // Hale halkası: rozetin dışında duran saydam bir çember.
+                            // Dolu disk yerine halka, çünkü altlık görünür kalmalı.
+                            cimDaire(pt * 1.18, 5, [
+                                { type: 'CIMSolidFill', enable: true, color: hale },
+                            ], 4.25),
+                        ],
+                    },
+                },
+            };
+        }
+
+        /* Rozetin iki değişkeni var: TON ve ÇAP.
+         *
+         * Ton kademeli (amber → kiremit), çap sürekli. İkisi de MUTLAK: aynı
+         * adet her görünümde aynı rozeti verir. Eskiden çap ekrandaki en
+         * kalabalık kümeye göre normalize ediliyordu, bu yüzden aynı küme bir
+         * kaydırmadan sonra büyüyüp küçülüyor, iki görünüm karşılaştırılamıyordu.
+         *
+         * Çap logaritmik: ızgara kümelemesinde aynı zoom'daki hücreler benzer
+         * adetler taşır (2-10 ya da 5.000-11.000 gibi). Doğrusal ölçekte bu
+         * farklar görünmez, log ölçekte okunur.
+         */
+        const KUME_KADEME = [
+            { alt: 2,    dolgu: [250, 190, 84, 205], hale: [252, 206, 130, 46] },
+            { alt: 10,   dolgu: [246, 163, 32, 207], hale: [250, 186, 92, 48] },
+            { alt: 50,   dolgu: [240, 134, 24, 209], hale: [247, 166, 74, 50] },
+            { alt: 200,  dolgu: [232, 106, 24, 211], hale: [243, 146, 68, 52] },
+            { alt: 1000, dolgu: [214, 80, 28, 214],  hale: [237, 124, 64, 54] },
+            { alt: 5000, dolgu: [189, 60, 34, 217],  hale: [228, 104, 62, 56] },
+        ];
+
+        const KUME_CAP_MIN = 28;
+        const KUME_CAP_MAX = 72;
+        const KUME_UST = 20000;
+
+        function kumeKademesi(adet) {
+            let secilen = KUME_KADEME[0];
+            for (let i = 0; i < KUME_KADEME.length; i++) {
+                if (adet >= KUME_KADEME[i].alt) secilen = KUME_KADEME[i];
+            }
+            return secilen;
+        }
+
+        const KUME_LOG_ALT = Math.log(2);
+        const KUME_LOG_ARA = Math.log(KUME_UST) - KUME_LOG_ALT;
+
+        function kumeCapi(adet) {
+            const t = Math.min(1, Math.max(0, (Math.log(Math.max(2, adet)) - KUME_LOG_ALT) / KUME_LOG_ARA));
+            // 2px kademeleri: sembol önbelleği birkaç düzine girdide kalır.
+            return Math.round((KUME_CAP_MIN + (KUME_CAP_MAX - KUME_CAP_MIN) * t) / 2) * 2;
+        }
+
+        /* Ekranda yüzlerce küme olabiliyor; her biri için CIM yeniden üretmek
+         * boşa iş. Çap 2px'e yuvarlandığı için önbellek küçük kalır. */
+        const kumeSembolOnbellek = new Map();
+
+        function kumeGorunumu(adet) {
+            const cap = kumeCapi(adet);
+            const kademe = kumeKademesi(adet);
+            const anahtar = cap + ':' + kademe.alt;
+            let sembol = kumeSembolOnbellek.get(anahtar);
+            if (!sembol) {
+                sembol = kumeSembolu(cap, kademe.dolgu, kademe.hale);
+                kumeSembolOnbellek.set(anahtar, sembol);
+            }
+            return { sembol: sembol, cap: cap };
+        }
+
+
         const harita = new EsriMap({
             basemap: altlikBasemap(aktifAltlikId),
             layers: [
@@ -330,11 +480,106 @@
             },
         });
 
+        // Rozetin üzerine gelince vurgulamak için parsel katmanının görünümü.
+        let parselLV = null;
+        view.whenLayerView(parselKatman).then(function (lv) { parselLV = lv; }).catch(function () {});
+
+        // Katman kapanınca ipucu balonu da kapanır; yoksa harita imlecin
+        // altından kayıp gidince balon ekranda asılı kalıyordu.
+        reactiveUtils.watch(function () { return parselKatman.visible; }, function (acik) {
+            if (!acik) ipucuGizle();
+        });
+
         /* =========================================================
          * 3) SEMBOLLER
          * ========================================================= */
-        const SEM_PARSEL = { type: 'simple-fill', color: [245, 158, 11, 0.25], outline: { color: [245, 158, 11, 0.95], width: 1.6 } };
-        const SEM_NOKTA  = { type: 'simple-marker', style: 'circle', size: 9, color: [245, 158, 11, 0.90], outline: { color: [14, 23, 38, 0.90], width: 1.4 } };
+        // Uydu altlığında ince renkli çizgi kayboluyor — kira katmanı bunu beyaz
+        // konturla çözüyor (bkz. kiraDolgu). Taşınmazda amber imza rengi
+        // korunsun diye casing kullanılır: altta kalın koyu hat, üstünde ince
+        // parlak amber. Koyu hat sınırı her zeminden (uydu, yol, arazi) ayırır,
+        // amber üstte kaldığı için katmanın kimliği durur.
+        //
+        // CIMSymbol tek grafikte çok katmanlı kontur verir; simple-fill'de tek
+        // outline olduğu için aynı etki parsel başına ikinci bir grafik
+        // gerektirirdi (1500 parselde 3000 grafik). CIM renkleri 0-255, alfa dahil.
+        function cimKasali(dolgu, cizgi, kalinlik) {
+            return {
+                type: 'cim',
+                data: {
+                    type: 'CIMSymbolReference',
+                    symbol: {
+                        type: 'CIMPolygonSymbol',
+                        // Katmanlar üstten alta çizilir: ilk eleman en üstte kalır.
+                        symbolLayers: [
+                            { type: 'CIMSolidStroke', enable: true, width: kalinlik === undefined ? 1.3 : kalinlik, color: cizgi },
+                            { type: 'CIMSolidStroke', enable: true, width: 3.6, color: [8, 13, 23, 205] },
+                            { type: 'CIMSolidFill', enable: true, color: dolgu },
+                        ],
+                    },
+                },
+            };
+        }
+
+        /* Parsel rengi: camgöbeği.
+         *
+         * Amberdi ve iki kez birden karışıyordu. Birincisi zeminle: uydu
+         * altlığında Anadolu'nun toprak tonları (kahve, tan, hardal) amber
+         * ailesinde, parsel tarlanın üstünde seçilmiyordu. İkincisi kendi
+         * haritamızla: küme rozetleri de amber, "bu bir küme mi yoksa parsel
+         * mi" ayrımı kayboluyordu.
+         *
+         * Camgöbeği toprak tonlarının tam karşısında durur ve uydu, yol
+         * haritası, OSM — hepsinde ayrışır. Harita artık iki renkle konuşuyor:
+         * AMBER = küme (yığın), CAMGÖBEĞİ = parselin kendisi.
+         *
+         * Şekli yerden ayıran beyaz anahtar çizgi ve altındaki koyu kasa kaldı:
+         * beyaz hem koyu şehir dokusunda hem açık tarlada ayırır, koyu kasa da
+         * beyazın parlak zeminlerde (beton, çatı, sera) kaybolmasını engeller.
+         */
+        const PARSEL_RENK = [34, 211, 238];
+        const SEM_PARSEL = cimKasali(PARSEL_RENK.concat(118), [255, 255, 255, 245], 2.2);
+        const SEM_NOKTA  = { type: 'simple-marker', style: 'circle', size: 11, color: PARSEL_RENK.concat(0.95), outline: { color: [255, 255, 255, 0.95], width: 2 } };
+
+        /* Küçük parsel için damla iğne.
+         *
+         * Kümeleme çözülüp gerçek geometriye geçildiğinde bile parsel çoğu
+         * zaman görünmüyordu: ilçe-mahalle arası zoom'da 300 m²'lik bir parsel
+         * ekranda birkaç piksellik leke. "6 parsel" yazıyor ama gözle bulmak
+         * mümkün değil. Şekil okunacak kadar büyük değilse üstüne iğne konur;
+         * iğnenin ucu parselin merkezine oturur, gövdesi yukarıda kalır, yani
+         * şekli kapatmaz, gösterir.
+         */
+        const SEM_IGNE = {
+            type: 'simple-marker',
+            style: 'path',
+            // Yalnızca mutlak komut: Esri'nin yol çözümleyicisi göreli
+            // komutlarda (c, s) sessizce hiçbir şey çizmiyor.
+            path: 'M 16 30 C 14.6 24.5 5 17.4 5 11.6 C 5 5.7 9.9 1 16 1 C 22.1 1 27 5.7 27 11.6 C 27 17.4 17.4 24.5 16 30 Z',
+            size: 24,
+            color: PARSEL_RENK.concat(0.97),
+            outline: { color: [255, 255, 255, 0.97], width: 1.8 },
+            // Yol çizimde merkezde; ucu noktaya otursun diye yarı boy yukarı.
+            yoffset: 12,
+        };
+
+        // Şekil ekranda bundan küçükse iğne konur.
+        const PARSEL_IGNE_PX = 46;
+
+        /* Geometrinin ekranda kapladığı en büyük kenar (piksel).
+         *
+         * Kapsam view.resolution ile karşılaştırılacağı için ikisi aynı
+         * birimde olmalı. GeoJSON WGS84 geliyor ama grafiğe dönüşen geometri
+         * görünümün uzamsal referansını (Web Mercator) alıyor; koşulsuz
+         * çevirmek ölçüyü 111.319 katına çıkarıyordu — 7 piksellik parsel
+         * 830.000 piksel görünüyor, iğne hiç konmuyordu. */
+        function ekranBoyu(geom) {
+            const e = geom && geom.extent;
+            if (!e || !view.resolution) return 0;
+            const sr = e.spatialReference;
+            const olculen = sr && sr.isGeographic ? webMercatorUtils.geographicToWebMercator(e) : e;
+            if (!olculen) return 0;
+            return Math.max(olculen.width, olculen.height) / view.resolution;
+        }
 
         /* ---- Değerleme kipi ----
          * Aynı modül iki haritayı çalıştırır. Altlıklar, ABB katmanları,
@@ -922,24 +1167,38 @@
         const SECILI_MOD = API.secilenSayi !== null && API.secilenSayi !== undefined;
         let yuklemeKontrol = null;
         let yuklemeZamanlayici = null;
+        // Grafiklerin hangi zoom'da çizildiği; zoom değişince bayatlarlar.
+        let cizilenZoom = null;
 
+
+
+        /* Sunucunun döndürdüğü her küme tek bir rozete ve bir sayı etiketine
+         * çevrilir. Çap ve ton kademeden gelir (bkz. KUME_KADEME); eskiden
+         * ekrandaki en kalabalık kümeye göre normalize ediliyordu, bu yüzden
+         * aynı küme farklı görünümlerde farklı boyda çıkıyor ve karşılaştırma
+         * yapılamıyordu. Kademeler artık mutlak. */
         function kumeGrafikleri(f) {
             const p = f.properties;
             const konum = new Point({ longitude: f.geometry.coordinates[0], latitude: f.geometry.coordinates[1], spatialReference: WGS84 });
-            const boy = Math.min(54, 26 + Math.log10(p.adet) * 9);
+            const gorunus = kumeGorunumu(p.adet);
             const ozellik = { kume: true, adet: p.adet, bbox: p.bbox };
+            const yazi = p.adet >= 1000
+                ? (p.adet / 1000).toLocaleString('tr-TR', { maximumFractionDigits: p.adet >= 10000 ? 0 : 1 }) + 'B'
+                : String(p.adet);
+
             return [
-                new Graphic({
-                    geometry: konum,
-                    attributes: ozellik,
-                    symbol: { type: 'simple-marker', style: 'circle', size: boy, color: [245, 158, 11, 0.85], outline: { color: [255, 255, 255, 0.95], width: 2 } },
-                }),
+                new Graphic({ geometry: konum, attributes: ozellik, symbol: gorunus.sembol }),
                 new Graphic({
                     geometry: konum,
                     attributes: ozellik,
                     symbol: {
-                        type: 'text', text: p.adet >= 1000 ? (p.adet / 1000).toFixed(p.adet >= 10000 ? 0 : 1) + 'B' : String(p.adet),
-                        color: [14, 23, 38, 1], yoffset: -4, font: { size: 11, weight: 'bold', family: 'sans-serif' },
+                        type: 'text', text: yazi,
+                        // Koyu hale, altlıktaki yer adlarının üstünde de okunsun diye.
+                        color: [255, 255, 255, 1],
+                        haloColor: [7, 11, 20, 0.85],
+                        haloSize: '1.4px',
+                        verticalAlignment: 'middle', horizontalAlignment: 'center',
+                        font: { size: Math.max(11, Math.round(gorunus.cap * 0.31)) + 'px', weight: 'bold', family: 'sans-serif' },
                     },
                 }),
             ];
@@ -1034,6 +1293,16 @@
                 const g = parselGrafigi(f);
                 if (!g) return;
                 grafikler.push(g);
+                // Şekil küçük kaldıysa iğne; aynı öznitelik ve popup, yani
+                // iğneye tıklamak parsele tıklamakla aynı şey.
+                if (MOD === 'tasinmaz' && g.geometry.type !== 'point' && ekranBoyu(g.geometry) < PARSEL_IGNE_PX) {
+                    grafikler.push(new Graphic({
+                        geometry: g.geometry.centroid || g.geometry.extent.center,
+                        symbol: SEM_IGNE,
+                        attributes: g.attributes,
+                        popupTemplate: g.popupTemplate,
+                    }));
+                }
                 // Şehir ölçeğinde 40 metrelik sınır bir pikselin altında kalıyor.
                 // Yakınlaşana kadar merkezine okunur bir nokta konur.
                 if (MOD === 'kira' && view.zoom < 15 && g.geometry && g.geometry.extent && g.geometry.type !== 'point') {
@@ -1059,6 +1328,7 @@
             });
             parselKatman.removeAll();
             parselKatman.addMany(grafikler);
+            cizilenZoom = view.zoom;
 
             sayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
             if (tumunu && tumExtent && grafikler.length && parselKatman.visible) {
@@ -1145,12 +1415,15 @@
             if (emsalSayiEl) emsalSayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
         }
 
+        // Yükleme harita durunca tetiklenir; üstüne uzun bir bekletme koymak
+        // kümelerin geç açılıp geç kapanmasının başlıca sebebiydi. Sunucu tarafı
+        // ~300ms olduğu için bekletmeyi kısa tutmak güvenli.
         function yuklemeyiZamanla() {
             clearTimeout(yuklemeZamanlayici);
-            yuklemeZamanlayici = setTimeout(parselleriYukle, 250);
+            yuklemeZamanlayici = setTimeout(parselleriYukle, 90);
             if (EMSAL) {
                 clearTimeout(emsalZamanlayici);
-                emsalZamanlayici = setTimeout(emsalleriYukle, 250);
+                emsalZamanlayici = setTimeout(emsalleriYukle, 90);
             }
         }
 
@@ -2270,15 +2543,99 @@
                 await view.goTo(tumExtent.expand(1.25)).catch(function () {});
             }
             reactiveUtils.when(function () { return view.stationary; }, yuklemeyiZamanla, { initial: true });
+
+            // Kümeleme eşiği de baloncuk çapı da zoom'a bağlı, yani zoom değişince
+            // ekrandaki grafikler geçersiz hâle gelir. Yeni yanıtı beklerken eskiyi
+            // ekranda tutmak "geç kapanıyor" hissi veriyordu; bir kademe
+            // uzaklaşıldığında hemen bırakılır. Kaydırmada (pan) temizlenmez:
+            // grafikler coğrafi olarak hâlâ doğru yerdedir.
+            reactiveUtils.watch(function () { return view.zoom; }, function (z) {
+                if (cizilenZoom !== null && Math.abs(z - cizilenZoom) >= 0.4) {
+                    parselKatman.removeAll();
+                    cizilenZoom = null;
+                }
+            });
         });
 
-        // Kümeye tıklayınca o alana yakınlaş
+        /* ---- Rozetle etkileşim ----
+         *
+         * Rozete tıklamak eskiden hiçbir şey yapmıyordu (sonra bir ara
+         * Esri'nin "Bu kümede N taşınmaz var" popup'ını açıyordu: yeni bir şey
+         * söylemiyor, üstelik kapatmak gerekiyordu). Artık tıklamak kümeyi
+         * açar — sunucu her küme için kapsayıcı dikdörtgeni de döndürdüğü için
+         * ek sorgu gerekmez. Rozetin tıklanabilir olduğu imleç, vurgu ve küçük
+         * bir ipucu balonuyla belli edilir.
+         */
+        function kumeRozeti(sonuc) {
+            return sonuc.results.find(function (r) {
+                return r.graphic && r.graphic.attributes && r.graphic.attributes.kume;
+            });
+        }
+
+        function kumeyiAc(grafik) {
+            const b = grafik.attributes.bbox;
+            if (!b) return;
+            ipucuGizle();
+            const kapsam = new Extent({ xmin: b[0], ymin: b[1], xmax: b[2], ymax: b[3], spatialReference: WGS84 });
+            // Tek noktada yığılmış kayıtlarda kapsam sıfır genişlikte gelir;
+            // goTo böyle bir alana gidemez, kademeli yakınlaşmaya düşülür.
+            if (kapsam.width > 0 && kapsam.height > 0) {
+                view.goTo(kapsam.expand(1.3)).catch(function () {});
+                return;
+            }
+            view.goTo({ target: grafik.geometry, zoom: view.zoom + 2.5 }).catch(function () {});
+        }
+
         view.on('click', async function (evt) {
             const sonuc = await view.hitTest(evt, { include: [parselKatman] });
-            const isabet = sonuc.results.find(function (r) { return r.graphic && r.graphic.attributes && r.graphic.attributes.kume; });
-            if (!isabet) return;
-            const b = isabet.graphic.attributes.bbox;
-            view.goTo(new Extent({ xmin: b[0], ymin: b[1], xmax: b[2], ymax: b[3], spatialReference: WGS84 }).expand(1.2)).catch(function () {});
+            const rozet = kumeRozeti(sonuc);
+            if (rozet) kumeyiAc(rozet.graphic);
+        });
+
+        const ipucuEl = document.getElementById('hrm-kume-ipucu');
+        let ipucuMesgul = false;
+        let kumeVurgu = null;
+
+        function ipucuGizle() {
+            if (kumeVurgu) { kumeVurgu.remove(); kumeVurgu = null; }
+            if (ipucuEl) ipucuEl.hidden = true;
+            mapEl.classList.remove('hrm-cursor-kume');
+        }
+
+        function ipucuGoster(grafik, x, y) {
+            mapEl.classList.add('hrm-cursor-kume');
+            if (!ipucuEl) return;
+            const adet = grafik.attributes.adet || 0;
+            ipucuEl.innerHTML = '<strong>' + adet.toLocaleString('tr-TR') + '</strong> taşınmaz'
+                + '<span>açmak için tıklayın</span>';
+            ipucuEl.hidden = false;
+            // Balon imlecin sağ üstünde durur; ekranın sağ kenarına
+            // yaklaşınca sola geçer, yoksa görünümün dışına taşıyordu.
+            const g = ipucuEl.getBoundingClientRect();
+            const sol = x + 16 + g.width > window.innerWidth ? x - 16 - g.width : x + 16;
+            ipucuEl.style.transform = 'translate(' + Math.round(sol) + 'px, ' + Math.round(y - g.height - 12) + 'px)';
+        }
+
+        // hitTest imleç hareketinde çalışır; önceki istek bitmeden yenisi
+        // açılmaz, yoksa hızlı gezinmede istek kuyruğa biniyor.
+        view.on('pointer-move', function (evt) {
+            if (ipucuMesgul) return;
+            ipucuMesgul = true;
+            view.hitTest(evt, { include: [parselKatman] }).then(function (sonuc) {
+                const rozet = kumeRozeti(sonuc);
+                if (!rozet) { ipucuGizle(); return; }
+                if (kumeVurgu) { kumeVurgu.remove(); kumeVurgu = null; }
+                try { if (parselLV) kumeVurgu = parselLV.highlight(rozet.graphic); } catch (e) { /* vurgu şart değil */ }
+                ipucuGoster(rozet.graphic, evt.x, evt.y);
+            }).catch(function () {}).then(function () { ipucuMesgul = false; });
+        });
+
+        view.on('pointer-leave', ipucuGizle);
+
+        // Harita imlecin altından kayarken balon eski kümeyi gösteriyordu;
+        // pointer-move gelmediği için kendiliğinden kapanmıyor.
+        reactiveUtils.watch(function () { return view.navigating; }, function (hareket) {
+            if (hareket) ipucuGizle();
         });
 
         document.getElementById('hrm-fit-btn').addEventListener('click', function () {
