@@ -8,9 +8,15 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Türkiye geneline yayılan yük testi: 100.000 taşınmaz ve aynı sayıda kira,
+ * Ankara'ya yayılan yük testi: 30.000 taşınmaz ve aynı sayıda kira,
  * değerleme, hisse başvurusu, ecrimisil ve emsal. Her kayıt haritada
  * görünen bir poligon taşır.
+ *
+ * Yalnızca Ankara mahalleleri kullanılır; her mahalle kendi ilçesinin
+ * merkezi çevresine serpilir. Kayıtlar mahallelere eşit değil, Kızılay'a
+ * uzaklıkla azalan ağırlıkla dağıtılır: şehir merkezindeki bir mahalle
+ * kırsaldakinin 30-40 katı parsel alır, harita gerçek bir belediyenin
+ * yoğunluğuna benzer.
  *
  *   php artisan db:seed --class=HaritaYukSeeder
  *   php artisan db:seed --class=TasinmazKiraYukSeeder
@@ -19,48 +25,40 @@ use RuntimeException;
  * kayıtları siler. Örnek kira verisi (ORN- / «Örnek veri») durur.
  *
  * İşaret: açıklama «Yük testi», dosya no YK-0000001 …, taşınmaz ada YK,
- * emsal ada YE. Önce KonumSeeder (81 il), imar/muhasebe/kayıt türü ve kira
- * kod tabloları dolu olmalı.
+ * emsal ada YE. Önce KonumSeeder (Ankara mahalleleri), imar/muhasebe/kayıt
+ * türü ve kira kod tabloları dolu olmalı.
  */
 class TasinmazKiraYukSeeder extends Seeder
 {
     public const ISARET = 'Yük testi';
 
-    public const TASINMAZ_SAYISI = 100000;
+    public const TASINMAZ_SAYISI = 30000;
 
-    public const KIRA_SAYISI = 100000;
+    public const KIRA_SAYISI = 30000;
 
     private const PARTI = 10000;
 
-    /** İl adı (ASCII) => [enlem, boylam]. Mahalle ızgarası bu merkezin çevresine serpilir. */
-    private const MERKEZLER = [
-        'adana' => [37.000, 35.321], 'adiyaman' => [37.764, 38.278], 'afyonkarahisar' => [38.757, 30.538],
-        'agri' => [39.719, 43.051], 'aksaray' => [38.368, 34.037], 'amasya' => [40.650, 35.833],
-        'ankara' => [39.933, 32.860], 'antalya' => [36.897, 30.713], 'ardahan' => [41.111, 42.702],
-        'artvin' => [41.182, 41.819], 'aydin' => [37.845, 27.840], 'balikesir' => [39.648, 27.883],
-        'bartin' => [41.635, 32.338], 'batman' => [37.881, 41.135], 'bayburt' => [40.256, 40.225],
-        'bilecik' => [40.142, 29.979], 'bingol' => [38.885, 40.498], 'bitlis' => [38.400, 42.109],
-        'bolu' => [40.732, 31.608], 'burdur' => [37.721, 30.291], 'bursa' => [40.195, 29.061],
-        'canakkale' => [40.147, 26.409], 'cankiri' => [40.600, 33.616], 'corum' => [40.550, 34.954],
-        'denizli' => [37.776, 29.086], 'diyarbakir' => [37.914, 40.231], 'duzce' => [40.844, 31.156],
-        'edirne' => [41.677, 26.556], 'elazig' => [38.675, 39.223], 'erzincan' => [39.750, 39.493],
-        'erzurum' => [39.905, 41.265], 'eskisehir' => [39.777, 30.521], 'gaziantep' => [37.066, 37.383],
-        'giresun' => [40.913, 38.390], 'gumushane' => [40.460, 39.481], 'hakkari' => [37.574, 43.741],
-        'hatay' => [36.401, 36.349], 'igdir' => [39.923, 44.045], 'isparta' => [37.765, 30.556],
-        'istanbul' => [41.008, 28.978], 'izmir' => [38.424, 27.143], 'kahramanmaras' => [37.575, 36.923],
-        'karabuk' => [41.206, 32.623], 'karaman' => [37.181, 33.215], 'kars' => [40.602, 43.098],
-        'kastamonu' => [41.376, 33.777], 'kayseri' => [38.721, 35.487], 'kilis' => [36.718, 37.115],
-        'kirikkale' => [39.846, 33.515], 'kirklareli' => [41.735, 27.225], 'kirsehir' => [39.146, 34.164],
-        'kocaeli' => [40.766, 29.917], 'konya' => [37.872, 32.493], 'kutahya' => [39.420, 29.983],
-        'malatya' => [38.355, 38.309], 'manisa' => [38.614, 27.429], 'mardin' => [37.313, 40.735],
-        'mersin' => [36.812, 34.641], 'mugla' => [37.215, 28.364], 'mus' => [38.734, 41.491],
-        'nevsehir' => [38.624, 34.714], 'nigde' => [37.970, 34.679], 'ordu' => [40.986, 37.880],
-        'osmaniye' => [37.074, 36.248], 'rize' => [41.025, 40.518], 'sakarya' => [40.774, 30.395],
-        'samsun' => [41.286, 36.332], 'siirt' => [37.933, 41.940], 'sinop' => [42.027, 35.151],
-        'sivas' => [39.750, 37.015], 'sanliurfa' => [37.167, 38.796], 'sirnak' => [37.519, 42.454],
-        'tekirdag' => [40.978, 27.511], 'tokat' => [40.314, 36.554], 'trabzon' => [41.003, 39.717],
-        'tunceli' => [39.106, 39.548], 'usak' => [38.674, 29.406], 'van' => [38.494, 43.380],
-        'yalova' => [40.655, 29.277], 'yozgat' => [39.820, 34.805], 'zonguldak' => [41.453, 31.789],
+    /** Kızılay: yoğunluğun tepe noktası. */
+    private const MERKEZ = [39.9208, 32.8541];
+
+    /**
+     * Ankara ilçeleri (ASCII ad) => [enlem, boylam, mahalle yayılım yarıçapı (derece)].
+     * Merkez ilçeler sıkışık, kırsal ilçeler geniş serpilir.
+     */
+    private const ILCE_MERKEZLERI = [
+        'cankaya' => [39.9030, 32.8600, 0.050], 'altindag' => [39.9460, 32.8800, 0.030],
+        'kecioren' => [39.9850, 32.8620, 0.032], 'yenimahalle' => [39.9680, 32.7900, 0.040],
+        'mamak' => [39.9250, 32.9250, 0.035], 'etimesgut' => [39.9500, 32.6700, 0.035],
+        'sincan' => [39.9700, 32.5800, 0.040], 'pursaklar' => [40.0380, 32.9000, 0.022],
+        'golbasi' => [39.7900, 32.8050, 0.070], 'akyurt' => [40.1340, 33.0870, 0.060],
+        'kahramankazan' => [40.2060, 32.6830, 0.070], 'elmadag' => [39.9210, 33.2310, 0.070],
+        'cubuk' => [40.2380, 33.0320, 0.090], 'polatli' => [39.5840, 32.1470, 0.120],
+        'haymana' => [39.4320, 32.4960, 0.120], 'bala' => [39.5540, 33.1240, 0.110],
+        'kalecik' => [40.0980, 33.4090, 0.090], 'beypazari' => [40.1680, 31.9210, 0.110],
+        'nallihan' => [40.1860, 31.3520, 0.120], 'ayas' => [40.0170, 32.3450, 0.080],
+        'gudul' => [40.2100, 32.2470, 0.070], 'camlidere' => [40.4900, 32.4750, 0.080],
+        'kizilcahamam' => [40.4700, 32.6500, 0.120], 'sereflikochisar' => [38.9390, 33.5410, 0.100],
+        'evren' => [39.0240, 33.8070, 0.050],
     ];
 
     public function run(): void
@@ -85,9 +83,9 @@ class TasinmazKiraYukSeeder extends Seeder
             }
 
             $this->merkezleriYukle();
-            $mahalleSayisi = $this->mahalleIzgarasi();
+            $this->mahalleIzgarasi();
             $kodlar = $this->kodlar();
-            $this->plan($mahalleSayisi);
+            $this->plan();
             $this->tasinmazlar();
             $this->tasinmazDetay($kodlar);
             $this->koordinatlar();
@@ -167,57 +165,76 @@ class TasinmazKiraYukSeeder extends Seeder
 
     private function merkezleriYukle(): void
     {
-        $iller = DB::table('iller')->orderBy('id')->get(['id', 'ad']);
-        if ($iller->isEmpty()) {
-            throw new RuntimeException('İl bulunamadı.');
+        $ankara = DB::table('iller')->get(['id', 'ad'])
+            ->first(fn ($il) => $this->anahtar($il->ad) === 'ankara');
+        if (! $ankara) {
+            throw new RuntimeException('Ankara ili bulunamadı. Önce KonumSeeder çalıştırılmalı.');
         }
 
         $degerler = [];
-        foreach ($iller as $il) {
-            $anahtar = $this->anahtar($il->ad);
-            if (! isset(self::MERKEZLER[$anahtar])) {
-                $this->command?->warn("İl merkezi eşleşmedi, Türkiye ortası kullanıldı: {$il->ad}");
+        foreach (DB::table('ilceler')->where('il_id', $ankara->id)->orderBy('id')->get(['id', 'ad']) as $ilce) {
+            $anahtar = $this->anahtar($ilce->ad);
+            if (! isset(self::ILCE_MERKEZLERI[$anahtar])) {
+                $this->command?->warn("İlçe merkezi eşleşmedi, Ankara merkezi kullanıldı: {$ilce->ad}");
             }
-            [$lat, $lng] = self::MERKEZLER[$anahtar] ?? [39.000, 35.000];
-            $degerler[] = '('.(int) $il->id.','.$lat.','.$lng.')';
+            [$lat, $lng, $yaricap] = self::ILCE_MERKEZLERI[$anahtar] ?? [self::MERKEZ[0], self::MERKEZ[1], 0.05];
+            $degerler[] = '('.(int) $ilce->id.','.(int) $ankara->id.','.$lat.','.$lng.','.$yaricap.')';
+        }
+        if ($degerler === []) {
+            throw new RuntimeException('Ankara ilçesi bulunamadı.');
         }
 
-        DB::unprepared('CREATE TEMP TABLE yt_merkez (il_id bigint PRIMARY KEY, lat double precision, lng double precision)');
-        foreach (array_chunk($degerler, 40) as $parca) {
-            DB::unprepared('INSERT INTO yt_merkez (il_id, lat, lng) VALUES '.implode(',', $parca));
-        }
+        DB::unprepared('CREATE TEMP TABLE yt_merkez (ilce_id bigint PRIMARY KEY, il_id bigint, lat double precision, lng double precision, yaricap double precision)');
+        DB::unprepared('INSERT INTO yt_merkez (ilce_id, il_id, lat, lng, yaricap) VALUES '.implode(',', $degerler));
     }
 
-    private function mahalleIzgarasi(): int
+    /**
+     * Mahalleler ilçe merkezinin çevresine ayçiçeği sarmalıyla (altın açı)
+     * serpilir: üst üste binmez, ızgara gibi de dizilmez. Her mahallenin
+     * payı Kızılay'a uzaklıkla üstel azalır; paylar tam olarak
+     * TASINMAZ_SAYISI'na tamamlanır (artan, en ağır mahallelere birer birer).
+     */
+    private function mahalleIzgarasi(): void
     {
-        $this->adim('Mahalle ızgarası', fn () => DB::unprepared(<<<'SQL'
+        [$mLat, $mLng] = self::MERKEZ;
+        $adet = self::TASINMAZ_SAYISI;
+
+        $this->adim('Mahalle yerleşimi', fn () => DB::unprepared(<<<SQL
             CREATE TEMP TABLE yt_mahalle AS
             WITH ham AS (
-                SELECT m.id AS mahalle_id, m.ilce_id, c.il_id, m.ad,
-                       row_number() OVER (ORDER BY m.id)::int AS sira,
-                       count(*) OVER ()::int AS n,
-                       row_number() OVER (PARTITION BY c.il_id ORDER BY m.id)::int AS il_sira,
-                       count(*) OVER (PARTITION BY c.il_id)::int AS il_n,
-                       k.lat AS il_lat, k.lng AS il_lng
+                SELECT m.id AS mahalle_id, m.ilce_id, k.il_id, m.ad, k.lat AS ilce_lat, k.lng AS ilce_lng, k.yaricap,
+                       row_number() OVER (PARTITION BY m.ilce_id ORDER BY m.id) AS ilce_sira,
+                       count(*) OVER (PARTITION BY m.ilce_id) AS ilce_n
                 FROM mahalleler m
-                JOIN ilceler c ON c.id = m.ilce_id
-                JOIN yt_merkez k ON k.il_id = c.il_id
+                JOIN yt_merkez k ON k.ilce_id = m.ilce_id
+            ),
+            konum AS (
+                SELECT ham.*,
+                       ilce_lat + yaricap * sqrt((ilce_sira - 0.5) / ilce_n) * sin(ilce_sira * 2.39996323) AS mlat,
+                       ilce_lng + yaricap * 1.3 * sqrt((ilce_sira - 0.5) / ilce_n) * cos(ilce_sira * 2.39996323) AS mlng
+                FROM ham
+            ),
+            agirlik AS (
+                SELECT konum.*,
+                       1 + 40 * exp(-sqrt(power(mlat - {$mLat}, 2) + power((mlng - {$mLng}) * 0.766, 2)) / 0.05) AS w
+                FROM konum
+            ),
+            pay AS (
+                SELECT agirlik.*,
+                       floor({$adet} * w / sum(w) OVER ())::int AS taban,
+                       row_number() OVER (ORDER BY w DESC, mahalle_id) AS agir_sira
+                FROM agirlik
             )
-            SELECT mahalle_id, ilce_id, il_id, ad, sira, n,
-                   il_lat + (((il_sira - 1) / cols) - (cols - 1) / 2.0) * (0.42 / cols) AS mlat,
-                   il_lng + (((il_sira - 1) % cols) - (cols - 1) / 2.0) * (0.55 / cols) AS mlng
-            FROM (
-                SELECT ham.*, ceil(sqrt(il_n::float))::int AS cols FROM ham
-            ) g
+            SELECT mahalle_id, ilce_id, il_id, ad, mlat, mlng,
+                   taban + CASE WHEN agir_sira <= {$adet} - sum(taban) OVER () THEN 1 ELSE 0 END AS adet
+            FROM pay
         SQL));
 
-        $n = (int) DB::selectOne('SELECT count(*) AS n FROM yt_mahalle')->n;
+        $n = (int) DB::selectOne('SELECT count(*) AS n FROM yt_mahalle WHERE adet > 0')->n;
         if ($n < 1) {
             throw new RuntimeException('Ankara mahallesi bulunamadı.');
         }
         $this->command?->info("  {$n} mahalle");
-
-        return $n;
     }
 
     /**
@@ -245,24 +262,33 @@ class TasinmazKiraYukSeeder extends Seeder
         ];
     }
 
-    private function plan(int $mahalleSayisi): void
+    /**
+     * Her mahallenin payı kadar parsel, mahalle noktasının çevresine kare
+     * düzende (17 x 18 m adım) dizilir. Poligonlar 13 x 13 m olduğu için
+     * komşular birbirine değmez.
+     */
+    private function plan(): void
     {
-        $adet = self::TASINMAZ_SAYISI;
-        $this->adim('Taşınmaz planı', fn () => DB::unprepared(<<<SQL
+        $this->adim('Taşınmaz planı', fn () => DB::unprepared(<<<'SQL'
             CREATE TEMP TABLE yt AS
-            SELECT gs AS sira,
-                   m.mahalle_id, m.ilce_id, m.il_id, m.ad AS mahalle_ad,
+            SELECT p.sira,
+                   p.mahalle_id, p.ilce_id, p.il_id, p.ad AS mahalle_ad,
                    'YK'::varchar(20) AS ada,
-                   (((gs - 1) / {$mahalleSayisi}) + 1)::varchar(20) AS parsel,
-                   round((180 + (gs % 7000) + (gs % 100) / 100.0)::numeric, 2) AS alan_m2,
-                   (ARRAY['Arsa','Tarla','Bahçe','Konut','İşyeri','Arsa'])[1 + (gs % 6)] AS nitelik,
-                   CASE WHEN gs % 10 = 0 THEN 'kat_mulkiyetli'
-                        WHEN gs % 10 IN (1, 2) THEN 'kat_mulkiyetsiz_bina'
+                   p.k::varchar(20) AS parsel,
+                   round((180 + (p.sira % 7000) + (p.sira % 100) / 100.0)::numeric, 2) AS alan_m2,
+                   (ARRAY['Arsa','Tarla','Bahçe','Konut','İşyeri','Arsa'])[1 + (p.sira % 6)] AS nitelik,
+                   CASE WHEN p.sira % 10 = 0 THEN 'kat_mulkiyetli'
+                        WHEN p.sira % 10 IN (1, 2) THEN 'kat_mulkiyetsiz_bina'
                         ELSE 'bos_parsel' END AS kayit_tipi,
-                   round((m.mlat + ((((gs - 1) / {$mahalleSayisi}) / 5) - 2) * 0.00016)::numeric, 7) AS lat,
-                   round((m.mlng + ((((gs - 1) / {$mahalleSayisi}) % 5) - 2) * 0.00020)::numeric, 7) AS lng
-            FROM generate_series(1, {$adet}) gs
-            JOIN yt_mahalle m ON m.sira = ((gs - 1) % {$mahalleSayisi}) + 1
+                   round((p.mlat + (((p.k - 1) / p.cols) - (p.cols - 1) / 2.0) * 0.00016)::numeric, 7) AS lat,
+                   round((p.mlng + (((p.k - 1) % p.cols) - (p.cols - 1) / 2.0) * 0.00020)::numeric, 7) AS lng
+            FROM (
+                SELECT m.*, k, ceil(sqrt(m.adet::float))::int AS cols,
+                       row_number() OVER (ORDER BY m.mahalle_id, k)::int AS sira
+                FROM yt_mahalle m
+                CROSS JOIN LATERAL generate_series(1, m.adet) k
+                WHERE m.adet > 0
+            ) p
         SQL));
         DB::unprepared('CREATE INDEX yt_sira ON yt (sira)');
         DB::unprepared('CREATE INDEX yt_konum ON yt (mahalle_id, ada, parsel)');
@@ -685,7 +711,8 @@ class TasinmazKiraYukSeeder extends Seeder
                 (SELECT count(*) FROM ecrimisil_isgalciler WHERE aciklama = 'Yük testi') AS ecrimisil,
                 (SELECT count(*) FROM emsal_parselleri WHERE ada = 'YE' AND (emsal_sayisi < 1 OR sinir IS NULL)) AS emsal_eksik,
                 (SELECT count(*) FROM emsaller WHERE aciklama = 'Yük testi') AS emsal,
-                (SELECT CASE WHEN min(k.min_lng) < 28 AND max(k.max_lng) > 42 AND min(k.min_lat) < 37 AND max(k.max_lat) > 41 THEN 1 ELSE 0 END FROM tasinmaz_koordinatlar k JOIN tasinmaz_ekbilgi e ON e.tasinmaz_id = k.tasinmaz_id WHERE e.aciklama = 'Yük testi') AS turkiye,
+                (SELECT CASE WHEN min(k.min_lng) > 30.8 AND max(k.max_lng) < 34.3 AND min(k.min_lat) > 38.6 AND max(k.max_lat) < 40.9 THEN 1 ELSE 0 END FROM tasinmaz_koordinatlar k JOIN tasinmaz_ekbilgi e ON e.tasinmaz_id = k.tasinmaz_id WHERE e.aciklama = 'Yük testi') AS ankara,
+                (SELECT round(100.0 * count(*) FILTER (WHERE abs(k.merkez_lat - 39.92) < 0.1 AND abs(k.merkez_lng - 32.85) < 0.13) / greatest(count(*), 1)) FROM tasinmaz_koordinatlar k JOIN tasinmaz_ekbilgi e ON e.tasinmaz_id = k.tasinmaz_id WHERE e.aciklama = 'Yük testi') AS merkez_yuzde,
                 (SELECT count(*) FROM kira_dosyalari WHERE dosya_no LIKE 'ORN-%') AS ornek_dosya,
                 (SELECT count(*) FROM (
                     SELECT mahalle_id, ada, parsel FROM tasinmazlar WHERE ada = 'YK' GROUP BY 1, 2, 3 HAVING count(*) > 1
@@ -703,7 +730,8 @@ class TasinmazKiraYukSeeder extends Seeder
             || (int) $ozet->poligon_sinirsiz !== 0
             || (int) $ozet->ecrimisil_eksik !== 0
             || (int) $ozet->emsal_eksik !== 0
-            || (int) $ozet->turkiye !== 1
+            || (int) $ozet->ankara !== 1
+            || (int) $ozet->merkez_yuzde < 50
             || (int) $ozet->cakisma !== 0
             || (int) $ozet->ornek_dosya !== $ornOnce;
 
@@ -712,8 +740,9 @@ class TasinmazKiraYukSeeder extends Seeder
         }
 
         $this->command?->info(sprintf(
-            'Türkiye geneli %d taşınmaz, kira, değerleme, hisse, ecrimisil ve emsal eklendi. Örnek dosya (ORN-) sayısı: %d.',
+            'Ankara geneli %d taşınmaz, kira, değerleme, hisse, ecrimisil ve emsal eklendi (%%%d şehir merkezinde). Örnek dosya (ORN-) sayısı: %d.',
             $beklenen,
+            (int) $ozet->merkez_yuzde,
             $ornOnce
         ));
     }

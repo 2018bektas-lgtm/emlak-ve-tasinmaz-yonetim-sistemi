@@ -2,6 +2,12 @@
 
 return [
 
+    // Taşınmaz raporunu PDF'e çeviren başsız tarayıcı (Chrome / Edge / Chromium).
+    // Boşsa bilinen kurulum yerlerine bakılır; hiçbiri yoksa rapor yazdırma sayfasıyla açılır.
+    'chrome' => [
+        'yol' => env('CHROME_YOLU'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

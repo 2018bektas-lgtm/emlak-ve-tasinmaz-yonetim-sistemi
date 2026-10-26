@@ -10,13 +10,18 @@ use App\Models\Il;
 use App\Models\Ilce;
 use App\Models\ImarDurumu;
 use App\Models\KayitTuru;
+use App\Models\KiraAlan;
+use App\Models\KiraTasinmaz;
 use App\Models\Mahalle;
 use App\Models\MevcutKullanimSekli;
 use App\Models\MuhasebeKayit;
 use App\Models\Resim;
 use App\Models\Tasinmaz;
 use App\Models\TasinmazKoordinat;
+use App\Support\CevreAnalizi;
 use App\Support\HaritaGorunum;
+use App\Support\RaporHaritasi;
+use App\Support\SahaAnalizi;
 use App\Support\TasinmazKolonlari;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +29,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -1130,6 +1137,290 @@ class TasinmazController extends Controller
         ]);
     }
 
+    /**
+     * Haritada parsele tıklanınca sağdan açılan bilgi paneli (HTML parçası).
+     *
+     * Popup yalnızca ada/parsel/nitelik gösteriyordu; panel detay sayfasıyla
+     * aynı ilişkileri yükler ve bölüm bölüm (açılır) sunar. Biçimlendirme ve
+     * yetki kontrolleri Blade'de kalsın diye JSON değil HTML döner.
+     */
+    public function haritaPanel(int $id): View
+    {
+        return view('panel.tasinmazlar._harita-panel', $this->ayrintiliVeri(Tasinmaz::query()->findOrFail($id)));
+    }
+
+    /**
+     * Bilgi panelinin Çevresel Analiz bölümü. Panelden ayrı istenir: dış
+     * servisler (ABB, OpenStreetMap) ilk seferde 10-40 sn sürebiliyor, panelin
+     * geri kalanı bunu beklemesin. Sonuç önbelleğe girer; rapor da onu kullanır.
+     */
+    public function haritaCevre(int $id): View
+    {
+        // OSM 45 sn, yedek sunucu 30 sn bekleyebilir; PHP'nin 30 sn'lik web sınırı yetmez.
+        set_time_limit(120);
+        $tasinmaz = Tasinmaz::query()->with('koordinat')->findOrFail($id);
+
+        return view('panel.tasinmazlar._cevre-panel', [
+            'cevre' => CevreAnalizi::analiz($tasinmaz),
+        ]);
+    }
+
+    /**
+     * Bilgi panelinin resmî imar, risk-kısıt ve altyapı-arazi bölümleri.
+     * Çevre analizi gibi ayrı istenir; ABB servisleri ilk seferde birkaç saniye sürer.
+     */
+    public function haritaSaha(int $id): View
+    {
+        set_time_limit(90);
+        $tasinmaz = Tasinmaz::query()->with(['koordinat', 'imar.imarDurumu:id,ad'])->findOrFail($id);
+
+        return view('panel.tasinmazlar._saha-panel', [
+            'tasinmaz' => $tasinmaz,
+            'saha' => SahaAnalizi::analiz($tasinmaz),
+        ]);
+    }
+
+    /**
+     * Sunum biçiminde taşınmaz raporu (A4 yatay, yazdırılıp PDF kaydedilir).
+     *
+     * Liste PDF'i gibi tarayıcının yazdırma motorunu kullanır; uydu, imar ve
+     * konum görselleri ArcGIS export uçlarından tek parça gelir, parsel sınırı
+     * üstlerine SVG ile çizilir (bkz. RaporHaritasi).
+     */
+    public function rapor(int $mahalleTkgmId, string $ada, string $parsel): View
+    {
+        set_time_limit(120);
+        return view('panel.tasinmazlar.rapor', $this->raporVerisi($this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel)) + [
+            'pdfIndirilir' => $this->chromeYolu() !== null,
+        ]);
+    }
+
+    /**
+     * Raporu sunucuda PDF'e çevirip indirir (başsız Chrome / Edge).
+     *
+     * Tarayıcının "PDF olarak kaydet"i yüzlerce harita karosu olan bu sayfada
+     * zaman zaman çöküp 0 baytlık dosya yazıyordu. Burada sayfa önce HTML'e
+     * çizilir, başsız tarayıcı görseller gelene kadar bekleyip PDF basar.
+     * Sunucuda Chrome yoksa yazdırma sayfasına düşülür.
+     */
+    public function raporPdf(int $mahalleTkgmId, string $ada, string $parsel): Response
+    {
+        // Analizler önbellekte değilse onların süresi + Chrome'un 10-15 sn'si;
+        // 30 sn'lik web sınırında istek yarıda kesiliyordu.
+        set_time_limit(180);
+        $tasinmaz = $this->tasinmazBulVeYetkilendir($mahalleTkgmId, $ada, $parsel);
+        $chrome = $this->chromeYolu();
+        if ($chrome === null) {
+            return redirect()->to($tasinmaz->rota('rapor', ['yazdir' => 1]));
+        }
+
+        $dizin = storage_path('app/rapor-gecici/'.Str::uuid());
+        File::ensureDirectoryExists($dizin);
+        app()->terminating(fn () => File::deleteDirectory($dizin));
+
+        $html = view('panel.tasinmazlar.rapor', $this->raporVerisi($tasinmaz) + ['pdfModu' => true])->render();
+        File::put($dizin.'/rapor.html', $html);
+        $pdf = $dizin.'/rapor.pdf';
+
+        $sonuc = Process::timeout(120)->env($this->tarayiciOrtami())->run([
+            $chrome,
+            '--headless=new',
+            '--disable-gpu',
+            '--no-sandbox',
+            '--no-pdf-header-footer',
+            // Senkron, bildirim kaydı gibi arka plan işleri rapora gerekmez.
+            '--disable-background-networking',
+            '--disable-sync',
+            '--no-first-run',
+            // Görsellerin gelmesi için sanal süre; karolar bitince erken biter.
+            '--virtual-time-budget=30000',
+            // Sunucuda açık bir tarayıcının profiliyle çakışmasın.
+            '--user-data-dir='.$dizin.'/profil',
+            '--print-to-pdf='.$pdf,
+            'file:///'.str_replace('\\', '/', $dizin.'/rapor.html'),
+        ]);
+
+        if (! File::exists($pdf) || File::size($pdf) === 0) {
+            report(new \RuntimeException('Taşınmaz raporu PDF üretilemedi: '.Str::limit($sonuc->errorOutput(), 500)));
+
+            return redirect()->to($tasinmaz->rota('rapor', ['yazdir' => 1]));
+        }
+
+        $ad = 'tasinmaz-raporu-'.Str::slug(($tasinmaz->mahalle?->ad ?? 'mahalle').'-'.$tasinmaz->ada.'-'.$tasinmaz->parsel).'.pdf';
+
+        return response()->download($pdf, $ad, ['Content-Type' => 'application/pdf']);
+    }
+
+    /**
+     * Başsız tarayıcıya verilecek işletim sistemi değişkenleri.
+     *
+     * Symfony Process Windows'ta alt sürecin ortamını getenv() ile $_SERVER'ın
+     * kesişiminden kurar. `php artisan serve` altında $_SERVER'da SystemRoot
+     * yok; Chrome onsuz açılınca Winsock başlamıyor (WSALookupServiceBegin
+     * 10108), hiçbir harita karosu inmiyor ve PDF görselsiz basılıyordu.
+     * Uygulamanın kendi değişkenleri (APP_KEY vb.) bilerek aktarılmaz.
+     *
+     * @return array<string, string>
+     */
+    private function tarayiciOrtami(): array
+    {
+        $adlar = ['SystemRoot', 'windir', 'Path', 'PATHEXT', 'ComSpec', 'TEMP', 'TMP', 'ProgramData',
+            'ProgramFiles', 'ProgramFiles(x86)', 'CommonProgramFiles', 'APPDATA', 'LOCALAPPDATA',
+            'USERPROFILE', 'HOME', 'PATH', 'LANG'];
+
+        return collect($adlar)
+            ->mapWithKeys(fn ($ad) => [$ad => getenv($ad)])
+            ->filter(fn ($deger) => is_string($deger) && $deger !== '')
+            ->all();
+    }
+
+    /** Başsız PDF için tarayıcı: önce CHROME_YOLU, yoksa bilinen kurulum yerleri. */
+    private function chromeYolu(): ?string
+    {
+        $adaylar = array_filter([
+            config('services.chrome.yol'),
+            'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+            'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+        ]);
+
+        foreach ($adaylar as $yol) {
+            if (is_file($yol)) {
+                return $yol;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Raporun verisi: ilişkiler, harita görselleri ve künye.
+     *
+     * @return array<string, mixed>
+     */
+    private function raporVerisi(Tasinmaz $tasinmaz): array
+    {
+        $veri = $this->ayrintiliVeri($tasinmaz);
+        $harita = new RaporHaritasi($veri['tasinmaz']->koordinat?->geoJson());
+
+        // Ölçüler CSS pikseli; A4 yatay 1123 x 794.
+        $veri['gorseller'] = [
+            // Kapakta sol yarı koyu örtünün altında kalır; parsel sağdaki açık alana konur.
+            'kapak' => $this->raporGorseli($harita, 1123, 794, 5, 300, ['hibrit'], 0.72),
+            'yakin' => $this->raporGorseli($harita, 454, 703, 2.2, 70, ['uydu']),
+            'cevre' => $this->raporGorseli($harita, 283, 378, 8, 380, ['hibrit']),
+            // İmar sayfasında harita sağ yarıyı kenardan kenara kaplar; sağ alttaki karta yer açmak için parsel biraz sola alınır.
+            'imar' => $this->raporGorseli($harita, 850, 794, 3.6, 170, ['uydu', 'imar', 'parselasyon'], 0.42),
+            'konum' => $this->raporGorseli($harita, 302, 703, 1, 2600, ['sokak']),
+            // Çevresel analiz: 1 km halkası tamamen görünsün diye 2,4 km genişlik.
+            'analiz' => $this->raporGorseli($harita, 423, 446, 1, 2400, ['sokak']),
+        ];
+
+        // PDF indirmesi takılmasın diye OSM'e kısa süre tanınır; panel açıldıysa sonuç zaten önbellekte.
+        $veri['cevre'] = CevreAnalizi::analiz($tasinmaz, 20);
+        $veri['saha'] = SahaAnalizi::analiz($tasinmaz);
+        $g = &$veri['gorseller']['analiz'];
+        if ($g && $veri['cevre'] && ! isset($veri['cevre']['hata'])) {
+            $g['halkalar'] = [500 => $harita->metrePiksel(500, $g['kutu'], $g['w']), 1000 => $harita->metrePiksel(1000, $g['kutu'], $g['w'])];
+            $g['tesisler'] = [];
+            foreach ($veri['cevre']['kategoriler'] as $kod => $k) {
+                foreach ($k['noktalar'] as [$lat, $lng]) {
+                    [$x, $y] = RaporHaritasi::piksel($lat, $lng, $g['kutu'], $g['w'], $g['h']);
+                    $g['tesisler'][] = ['x' => $x, 'y' => $y, 'renk' => $k['renk'], 'kod' => $kod];
+                }
+            }
+        }
+        unset($g);
+
+        $veri['noktaMi'] = $harita->noktaMi();
+        $veri['olusturma'] = now();
+        $veri['hazirlayan'] = auth()->user();
+
+        return $veri;
+    }
+
+    /**
+     * Bir rapor görselinin katman adresleri, parsel yolu ve ölçeği.
+     *
+     * @param  list<string>  $katmanlar
+     * @return array<string, mixed>|null
+     */
+    private function raporGorseli(RaporHaritasi $harita, int $w, int $h, float $kat, float $enAzMetre, array $katmanlar, float $yatay = 0.5): ?array
+    {
+        $kutu = $harita->kutu($w, $h, $kat, $enAzMetre, $yatay);
+        if (! $kutu) {
+            return null;
+        }
+
+        return [
+            'w' => $w,
+            'h' => $h,
+            'katmanlar' => collect($katmanlar)->mapWithKeys(fn ($k) => [
+                $k => RaporHaritasi::karolar(RaporHaritasi::KAYNAKLAR[$k][0], $kutu, $w, RaporHaritasi::KAYNAKLAR[$k][1]),
+            ])->all(),
+            'kutu' => $kutu,
+            'yol' => $harita->svgYolu($kutu, $w, $h),
+            'merkez' => $harita->merkezPiksel($kutu, $w, $h),
+            'olcek' => $harita->olcek($kutu),
+        ];
+    }
+
+    /**
+     * Bilgi paneli ve raporun ortak verisi: detay sayfasının ilişkileri ve
+     * taşınmaza bağlı kira kayıtları.
+     *
+     * @return array{tasinmaz: Tasinmaz, kiraAlanlari: \Illuminate\Support\Collection, kiraDosyalari: \Illuminate\Support\Collection}
+     */
+    private function ayrintiliVeri(Tasinmaz $tasinmaz): array
+    {
+        $id = $tasinmaz->id;
+        $tasinmaz->load([
+            'il:id,ad',
+            'ilce:id,ad',
+            'mahalle:id,ad,tkgm_id,ilce_id',
+            'koordinat',
+            'imar.imarDurumu:id,ad',
+            'tapu',
+            'kategori.muhasebeKayit:id,ad,kod',
+            'kategori.kayitTuru:id,ad,kod',
+            'ekbilgi',
+            'hisseler',
+            'yapilar',
+            'resimler',
+            'meclisKararlari',
+            'lojmanlar.aktifTahsisler',
+            'ecrimisiller.tutanaklar:id,isgalci_id,isgal_baslangic_tarihi,isgal_bitis_tarihi',
+            'hisseBasvurulari:id,tasinmaz_id,grup_no,ad_soyad,durum',
+            'degerlemeler:id,tasinmaz_id,tip,bb_no,toplam_bedel,birim_fiyat,rapor_no,rapor_tarihi',
+        ]);
+
+        $kiraAlanlari = KiraAlan::query()
+            ->with(['dosya:id,dosya_no', 'dosya.kiracilar'])
+            ->where('tasinmaz_id', $id)
+            ->orderByDesc('aktif_mi')
+            ->orderByDesc('bitis_tarihi')
+            ->get();
+
+        $kiraDosyalari = KiraTasinmaz::query()
+            ->with('dosya:id,dosya_no,dolu_bos,sozlesme_aktif_mi')
+            ->where('tasinmaz_id', $id)
+            ->get()
+            ->pluck('dosya')
+            ->filter()
+            ->unique('id')
+            ->values();
+
+        return [
+            'tasinmaz' => $tasinmaz,
+            'kiraAlanlari' => $kiraAlanlari,
+            'kiraDosyalari' => $kiraDosyalari,
+        ];
+    }
+
     public function geojson(Request $request): JsonResponse
     {
         // Filtre parametresi: ?ids=1,2,3 — sadece belirtilen taşınmazları döner
@@ -1171,7 +1462,7 @@ class TasinmazController extends Controller
         // Parsel sınırının okunmadığı zoom'larda kayıt az olsa da kümelenir,
         // yoksa ilçe ve şehir ölçeğinde harita boş görünüyor.
         $zoom = HaritaGorunum::zoom($request);
-        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, $zoom, HaritaGorunum::DETAY_ZOOM))) {
+        if ($bbox && ($kume = HaritaGorunum::kumeler($koordinatlar, $bbox, $zoom, HaritaGorunum::DETAY_ZOOM, HaritaGorunum::SIK_HUCRE_PX))) {
             return response()->json(['type' => 'FeatureCollection', 'kumeli' => true] + $kume);
         }
 

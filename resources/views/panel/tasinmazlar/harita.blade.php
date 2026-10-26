@@ -110,7 +110,7 @@
             display: none !important;
         }
     </style>
-    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=9">
+    <link rel="stylesheet" href="{{ asset('css/tasinmaz-harita.css') }}?v=25">
 @endpush
 
 @section('content')
@@ -247,21 +247,17 @@
                     Parsel
                 </span>
                 <span class="hrm-lejant-oge">
-                    <span class="hrm-lejant-swatch" style="background:rgba(240,134,24,.82);border-color:#e86a18;border-radius:50%;"></span>
+                    <span class="hrm-lejant-swatch" style="background:#1e3a8a;border-color:#fff;border-radius:50%;box-shadow:0 0 0 1px rgba(2,6,23,.25);"></span>
                     Küme
                 </span>
             </div>
             <div class="hrm-kume-lejant">
                 <span class="hrm-kume-lejant-baslik">Küme yoğunluğu</span>
-                <div class="hrm-kume-lejant-skala" aria-hidden="true">
-                    <span class="hrm-kume-nokta" style="--kn-cap:10px;--kn-renk:250,190,84"></span>
-                    <span class="hrm-kume-nokta" style="--kn-cap:13px;--kn-renk:246,163,32"></span>
-                    <span class="hrm-kume-nokta" style="--kn-cap:16px;--kn-renk:240,134,24"></span>
-                    <span class="hrm-kume-nokta" style="--kn-cap:19px;--kn-renk:232,106,24"></span>
-                    <span class="hrm-kume-nokta" style="--kn-cap:22px;--kn-renk:214,80,28"></span>
-                    <span class="hrm-kume-nokta" style="--kn-cap:25px;--kn-renk:189,60,34"></span>
+                <div class="hrm-mc-lejant" aria-hidden="true">
+                    <span class="hrm-mc-oge"><span class="hrm-mc-nokta" style="--mc-cap:14px"></span>2–9</span>
+                    <span class="hrm-mc-oge"><span class="hrm-mc-nokta" style="--mc-cap:18px"></span>10–99</span>
+                    <span class="hrm-mc-oge"><span class="hrm-mc-nokta" style="--mc-cap:23px"></span>100+</span>
                 </div>
-                <div class="hrm-kume-lejant-uc"><span>2 taşınmaz</span><span>5.000+</span></div>
                 <p class="hrm-kume-lejant-not">Rozete tıklayın, küme açılır. Yakınlaştıkça parsel sınırlarına döner.</p>
             </div>
         </div>
@@ -301,6 +297,54 @@
                 <span class="hrm-opaklik-deger" data-hedef="hrm-ov-imar-op">75%</span>
                 <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="75" data-hedef="hrm-ov-imar-op" title="Varsayılana döndür">↺</button>
             </div>
+        </div>
+
+        {{-- İmar Durumu: aynı plan, türe göre süzülebilir (bkz. harita-esri.js, imarTurSecimiKur) --}}
+        <div class="hrm-katman-kart" data-katman-kart="imar-tur" data-grup="abb-imar" data-ad="imar durumu tür kullanım konut ticaret park plan adası uipfiltreicinmekansal">
+            <div class="hrm-katman-ust">
+                <span class="hrm-katman-ikon" style="background:linear-gradient(135deg,#f59e0b,#ec4899 55%,#3b82f6);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></svg>
+                </span>
+                <div class="hrm-katman-meta">
+                    <span class="hrm-katman-ad">İmar Durumu (türe göre)</span>
+                    <span class="hrm-katman-alt" id="hrm-imar-tur-ozet">Yürürlükteki plan · resmî renkler · 12+ zoom</span>
+                </div>
+                <label class="hrm-switch" title="Katmanı aç/kapat">
+                    <input type="checkbox" id="hrm-ov-imar-tur">
+                    <span class="hrm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="hrm-katman-alt-satir">
+                <span class="hrm-opaklik-label">Opaklık</span>
+                <input type="range" id="hrm-ov-imar-tur-op" min="10" max="100" value="70" class="hrm-range">
+                <span class="hrm-opaklik-deger" data-hedef="hrm-ov-imar-tur-op">70%</span>
+                <button type="button" class="hrm-opaklik-sifirla" data-varsayilan="70" data-hedef="hrm-ov-imar-tur-op" title="Varsayılana döndür">↺</button>
+            </div>
+            <details class="hrm-imar-tur-detay" id="hrm-imar-tur-detay">
+                <summary>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+                    <span>Türlere göre süz</span>
+                    <em id="hrm-imar-secili-sayi">Tümü seçili</em>
+                    <svg class="ok" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </summary>
+
+                <span class="hrm-imar-etiket">Hızlı seçim</span>
+                <div class="hrm-imar-cipler" id="hrm-imar-cipler"></div>
+
+                <div class="hrm-imar-tur-arac">
+                    <label class="hrm-imar-ara">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                        <input type="search" id="hrm-imar-tur-ara" placeholder="Tür ara… (konut, park, sağlık)" autocomplete="off">
+                    </label>
+                    <button type="button" data-imar-tur="hepsi" title="Tüm türleri göster">Tümü</button>
+                    <button type="button" data-imar-tur="hicbiri" title="Seçimi temizle">Temizle</button>
+                </div>
+                <label class="hrm-imar-yalniz">
+                    <input type="checkbox" id="hrm-imar-yalniz-secili">
+                    <span>Yalnız seçilileri listele</span>
+                </label>
+                <div class="hrm-imar-tur-liste" id="hrm-imar-tur-liste"></div>
+            </details>
         </div>
 
         <div class="hrm-katman-kart" data-katman-kart="parselasyon" data-grup="abb-imar" data-ad="parselasyon kadastro parselaktif baskentcbs cached">
@@ -592,6 +636,24 @@
     {{-- Rozetin üzerine gelince imlecin yanında beliren balon --}}
     <div class="hrm-kume-ipucu" id="hrm-kume-ipucu" role="status" hidden></div>
 
+    {{-- İmar Durumu katmanı açıkken seçili türlerin renk açıklaması (bkz. imarTurSecimiKur) --}}
+    <div class="hrm-imar-lejant" id="hrm-imar-lejant" hidden></div>
+
+    {{-- Parsele tıklanınca sağdan açılan bilgi paneli; içerik _harita-panel'den gelir --}}
+    <aside class="hrm-tsb" id="hrm-tsb" aria-label="Taşınmaz bilgi paneli" hidden>
+        <div class="hrm-tsb-bar" data-drag-handle title="Taşımak için sürükleyin · çift tıklayınca yerine döner">
+            <span class="hrm-tsb-tut" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="8" cy="18" r="1"/><circle cx="16" cy="6" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="16" cy="18" r="1"/></svg>
+            </span>
+            <span class="hrm-tsb-bar-baslik">Taşınmaz Bilgisi</span>
+            <button type="button" id="hrm-tsb-hepsi" title="Tüm bölümleri aç / kapat">Tümünü aç</button>
+            <button type="button" class="hrm-tsb-kapat" id="hrm-tsb-kapat" aria-label="Paneli kapat" title="Kapat (Esc)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="hrm-tsb-govde" id="hrm-tsb-govde"></div>
+    </aside>
+
     <div id="hrm-map" class="hrm-map"></div>
 </div>
 @endsection
@@ -615,7 +677,9 @@
         tkgmNokta:     @json(url('/panel/ajax/tkgm-parsel')),
         tkgmAdaParsel: @json(url('/panel/ajax/tkgm-parsel-adaparsel')),
         secilenSayi:   @json(is_array($secilenIdler) ? count($secilenIdler) : null),
+        tasinmazPanel: @json(url('/panel/ajax/tasinmaz-panel')),
+        imarTurleri:   @json(route('panel.ajax.imar-turleri')),
     };
 </script>
-<script src="{{ asset('js/harita-esri.js') }}?v=87"></script>
+<script src="{{ asset('js/harita-esri.js') }}?v=104"></script>
 @endpush

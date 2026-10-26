@@ -126,6 +126,10 @@
                 TKGM
             </a>
         @endif
+        <a href="{{ $tasinmaz->rota('rapor-pdf') }}" class="btn-cancel td-hero-btn" title="Uydu ve imar görselli sunum raporu (PDF)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
+            Rapor (PDF)
+        </a>
         <button type="button" class="btn-cancel td-hero-btn" onclick="window.print()" title="Sayfayı yazdır">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
             Yazdır

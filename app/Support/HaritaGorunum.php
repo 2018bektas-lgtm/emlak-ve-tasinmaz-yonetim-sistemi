@@ -50,6 +50,15 @@ final class HaritaGorunum
      */
     private const HUCRE_PX = 150;
 
+    /**
+     * Taşınmaz haritasının hücresi: değerleme projesindeki Leaflet
+     * markercluster görünümü (sabit 40px rozet, 50px birleştirme yarıçapı).
+     * Izgara bunun altında kalır ki istemci yakın hücreleri yarıçapa göre
+     * birleştirebilsin (bkz. harita-esri.js, kumeleriBirlestir); ekranda
+     * hücre sınırına göre değil yakınlığa göre kümeler oluşur.
+     */
+    public const SIK_HUCRE_PX = 60;
+
     /** @return array{0: float, 1: float, 2: float, 3: float}|null [minLng, minLat, maxLng, maxLat] */
     public static function bbox(Request $request): ?array
     {
@@ -79,11 +88,12 @@ final class HaritaGorunum
      *
      * @param  Builder<TasinmazKoordinat>  $koordinatlar  süzgeçleri uygulanmış sorgu
      * @param  int|null  $enAzZoom  bu zoom'un altında kayıt sayısına bakmadan kümele
+     * @param  int|null  $hucrePx  hücrenin ekrandaki boyu; verilmezse HUCRE_PX
      * @return array{toplam: int, features: list<array<string, mixed>>}|null
      */
-    public static function kumeler(Builder $koordinatlar, array $bbox, int $zoom, ?int $enAzZoom = null): ?array
+    public static function kumeler(Builder $koordinatlar, array $bbox, int $zoom, ?int $enAzZoom = null, ?int $hucrePx = null): ?array
     {
-        $hucre = 360 / (2 ** $zoom) / 256 * self::HUCRE_PX;
+        $hucre = 360 / (2 ** $zoom) / 256 * ($hucrePx ?? self::HUCRE_PX);
 
         // Tek sorgu. Önceden alandaki kayıt sayısı için ayrı bir COUNT(*)
         // çalışıyordu; aynı işi iki kez yapıyordu ve 100 bin kayıtta harita

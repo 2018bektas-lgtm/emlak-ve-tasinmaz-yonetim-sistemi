@@ -83,70 +83,119 @@
         // daha uzakta istek atılmaz. İmar 15+, parselasyon 16+, yapı 17+, numarataj 19+.
         const ABB_KARE_SEVIYE = TileInfo.create({ size: 256, numLODs: 20, spatialReference: { wkid: 3857 } });
 
-        // baskentcbs aynı anda gelen çok isteği 429 ile kesiyor. 429 cevabında
-        // CORS başlığı olmadığı için tarayıcı bunu "CORS hatası" diye gösteriyor.
-        // WebTileLayer başarısız kareyi her karede yeniden istediğinden sınır
-        // bir kez dolunca istek hiç durmuyordu. Burada en fazla 3 istek aynı
-        // anda çıkar, başarısız kare bir kez bekleyip yeniden dener, olmazsa
-        // boş döner (SDK'nın sonsuz yeniden denemesi devreye girmez).
-        const ABB_AYNI_ANDA = 3;
+        // baskentcbs Cloudflare arkasında; kısa sürede çok istek gelince 429
+        // veriyor. 429 cevabında CORS başlığı olmadığı için tarayıcı bunu
+        // "CORS hatası" diye gösteriyor ve sayfa durum kodunu göremiyor; bu
+        // yüzden her başarısız resim "sunucu yavaşla diyor" diye yorumlanır.
+        //
+        // İki şerit var: hazır karolar (~0,3 sn) ve sunucuda çizilen export
+        // resimleri (imar türleri 0,5–7 sn); yavaş export'lar karoları
+        // bekletmesin. Hız sunucunun tepkisine göre ayarlanır: hata gelince
+        // iki şerit birden bir süre durur (1,5 sn'den 12 sn'ye katlanarak) ve
+        // aynı anda tek isteğe iner, başarılı istekler arttıkça yeniden açılır.
+        // Her isteğin zaman aşımı var; takılan istek şeridi kilitlemez.
+        function serit(enFazla) {
+            return { enFazla: enFazla, ayniAnda: enFazla, kuyruk: [], aktif: 0, basari: 0 };
+        }
+        const KARO_SERIDI = serit(4);
+        const EXPORT_SERIDI = serit(2);
+        const SERITLER = [KARO_SERIDI, EXPORT_SERIDI];
+        const KARO_SURESI = 15000;
+        const EXPORT_SURESI = 30000;
+        const ONBELLEK_SINIRI = 600;
         const kareOnbellek = new Map();
-        const kuyruk = [];
-        let kuyrukAktif = 0;
+        const sunucu = { bekleBitis: 0, ceza: 0, saat: null, ardisikBasari: 0 };
 
-        function kuyrukBosalt() {
-            while (kuyrukAktif < ABB_AYNI_ANDA && kuyruk.length) {
-                const is = kuyruk.shift();
+        function sunucuHata() {
+            sunucu.ceza = Math.min(12000, sunucu.ceza ? sunucu.ceza * 2 : 1500);
+            sunucu.bekleBitis = Date.now() + sunucu.ceza;
+            sunucu.ardisikBasari = 0;
+            SERITLER.forEach(function (s) { s.ayniAnda = 1; s.basari = 0; });
+        }
+
+        function sunucuBasari(s) {
+            if (++s.basari >= 6 && s.ayniAnda < s.enFazla) { s.ayniAnda++; s.basari = 0; }
+            if (++sunucu.ardisikBasari >= 30) sunucu.ceza = 0;
+        }
+
+        function kuyrukBosalt(s) {
+            const kalan = sunucu.bekleBitis - Date.now();
+            if (kalan > 0) {
+                if (!sunucu.saat) {
+                    sunucu.saat = setTimeout(function () {
+                        sunucu.saat = null;
+                        SERITLER.forEach(kuyrukBosalt);
+                    }, kalan);
+                }
+                return;
+            }
+            while (s.aktif < s.ayniAnda && s.kuyruk.length) {
+                const is = s.kuyruk.shift();
                 if (is.sinyal && is.sinyal.aborted) {
                     is.reject(new DOMException('İptal', 'AbortError'));
                     continue;
                 }
-                kuyrukAktif++;
-                is.calistir().then(is.resolve, is.reject).then(function () {
-                    kuyrukAktif--;
-                    setTimeout(kuyrukBosalt, 80);
+                s.aktif++;
+                is.calistir().then(function (img) {
+                    sunucuBasari(s);
+                    is.resolve(img);
+                }, function (hata) {
+                    if (!hata || hata.name !== 'AbortError') sunucuHata();
+                    is.reject(hata);
+                }).then(function () {
+                    s.aktif--;
+                    kuyrukBosalt(s);
                 });
             }
         }
 
-        function sirayaAl(calistir, sinyal) {
+        function sirayaAl(s, calistir, sinyal) {
             return new Promise(function (resolve, reject) {
-                kuyruk.push({ calistir: calistir, sinyal: sinyal, resolve: resolve, reject: reject });
-                kuyrukBosalt();
+                s.kuyruk.push({ calistir: calistir, sinyal: sinyal, resolve: resolve, reject: reject });
+                kuyrukBosalt(s);
             });
         }
 
-        function imgYukle(adres, sinyal) {
+        function imgYukle(adres, sinyal, sure) {
             return new Promise(function (resolve, reject) {
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
-                const vazgec = function () { img.src = ''; reject(new DOMException('İptal', 'AbortError')); };
+                let saat = null;
+                const bitir = function () {
+                    clearTimeout(saat);
+                    if (sinyal) sinyal.removeEventListener('abort', vazgec);
+                };
+                const vazgec = function () { bitir(); img.src = ''; reject(new DOMException('İptal', 'AbortError')); };
                 if (sinyal) {
                     if (sinyal.aborted) { vazgec(); return; }
                     sinyal.addEventListener('abort', vazgec, { once: true });
                 }
-                img.onload = function () {
-                    if (sinyal) sinyal.removeEventListener('abort', vazgec);
-                    resolve(img);
-                };
-                img.onerror = function () {
-                    if (sinyal) sinyal.removeEventListener('abort', vazgec);
-                    reject(new Error('kare'));
-                };
+                saat = setTimeout(function () { bitir(); img.src = ''; reject(new Error('zaman aşımı')); }, sure);
+                img.onload = function () { bitir(); resolve(img); };
+                img.onerror = function () { bitir(); reject(new Error('kare')); };
                 img.src = adres;
             });
         }
 
-        function kareYukle(adres, sinyal) {
+        // secenek.export: export şeridi ve süresi; export'ta yeniden deneme
+        // katmanın kendisinde (bkz. AbbExportKatman). Karolar iki kez daha
+        // denenir; şerit o sırada beklemede olduğu için deneme, sunucunun
+        // soğuma süresinden sonra çıkar.
+        function kareYukle(adres, sinyal, secenek) {
             const hazir = kareOnbellek.get(adres);
             if (hazir) return hazir;
-            const istek = sirayaAl(function () { return imgYukle(adres, sinyal); }, sinyal).catch(function (hata) {
-                if (hata && hata.name === 'AbortError') throw hata;
-                return new Promise(function (resolve) { setTimeout(resolve, 1200); })
-                    .then(function () { return sirayaAl(function () { return imgYukle(adres, sinyal); }, sinyal); });
-            });
-            const saklanan = istek.then(function (img) { return img; });
+            const exportMu = !!(secenek && secenek.export);
+            const s = exportMu ? EXPORT_SERIDI : KARO_SERIDI;
+            const sure = exportMu ? EXPORT_SURESI : KARO_SURESI;
+            const dene = function () { return sirayaAl(s, function () { return imgYukle(adres, sinyal, sure); }, sinyal); };
+            const yeniden = function (hata) {
+                if (exportMu || (hata && hata.name === 'AbortError')) throw hata;
+                return dene();
+            };
+            const saklanan = dene().catch(yeniden).catch(yeniden);
             kareOnbellek.set(adres, saklanan);
+            // Map ekleme sırasını korur: en eski kayıtlar atılır
+            while (kareOnbellek.size > ONBELLEK_SINIRI) kareOnbellek.delete(kareOnbellek.keys().next().value);
             saklanan.catch(function () {
                 if (kareOnbellek.get(adres) === saklanan) kareOnbellek.delete(adres);
             });
@@ -167,8 +216,20 @@
             },
             fetchTile: function (level, row, col, options) {
                 const sinyal = options && options.signal;
+                const katman = this;
                 return kareYukle(this.getTileUrl(level, row, col), sinyal).catch(function (hata) {
                     if (hata && hata.name === 'AbortError') throw hata;
+                    // Alınamayan karo boş kalmasın: sunucu soğuyunca katman
+                    // yenilenir (başarılı karolar önbellekten gelir). Sunucu hiç
+                    // cevap vermiyorsa dakikada en fazla 3 kez.
+                    if (!katman._tamirSaat && (katman._tamir || 0) < 3) {
+                        if (!katman._tamir) setTimeout(function () { katman._tamir = 0; }, 60000);
+                        katman._tamir = (katman._tamir || 0) + 1;
+                        katman._tamirSaat = setTimeout(function () {
+                            katman._tamirSaat = null;
+                            if (katman.visible) katman.refresh();
+                        }, Math.max(4000, sunucu.bekleBitis - Date.now() + 1000));
+                    }
                     return bosKare();
                 });
             },
@@ -224,7 +285,8 @@
         const gorunum = { view: null };
 
         const AbbExportKatman = BaseDynamicLayer.createSubclass({
-            properties: { servis: null, katmanNo: '0' },
+            // tanim: ArcGIS layerDefs (sunucu tarafı süzgeç); boşsa katmanın tamamı çizilir
+            properties: { servis: null, katmanNo: '0', tanim: null },
             fetchImage: function (extent, width, height) {
                 const gorunen = gorunum.view;
                 if (gorunen && !gorunen.stationary && this._son) {
@@ -244,7 +306,7 @@
                 const sigdir = Math.min(1, 4096 / Math.max(w, h));
                 w = Math.max(1, Math.round(w * sigdir));
                 h = Math.max(1, Math.round(h * sigdir));
-                const adres = this.servis + '/export?' + new URLSearchParams({
+                const parametreler = {
                     bbox: [extent.xmin, extent.ymin, extent.xmax, extent.ymax].map(function (v) { return v.toFixed(2); }).join(','),
                     bboxSR: '3857',
                     imageSR: '3857',
@@ -254,14 +316,48 @@
                     transparent: 'true',
                     layers: 'show:' + this.katmanNo,
                     f: 'image',
-                }).toString();
+                };
+                if (this.tanim) parametreler.layerDefs = this.tanim;
+                const adres = this.servis + '/export?' + new URLSearchParams(parametreler).toString();
                 const katman = this;
-                return kareYukle(adres, null).then(function (img) {
+                // Yeni görüntü istenince bu katmanın bekleyen eski isteği
+                // bırakılır; eskimiş resimler şeridi meşgul etmesin.
+                // Aynı görüntü yeniden istenirse (ör. durunca yenileme) süren
+                // istek beklenir, iptal edilmez.
+                if (katman._iptal && katman._bekleyenAdres !== adres) katman._iptal.abort();
+                if (!katman._iptal || katman._iptal.signal.aborted) {
+                    katman._iptal = new AbortController();
+                    katman._bekleyenAdres = adres;
+                }
+                const iptal = katman._iptal;
+                clearTimeout(katman._tekrarSaat);
+                if (katman._hataAdres !== adres) katman._hata = 0;
+                // Bekleyen istek sayısı; yukleniyor(true/false) bildirimi
+                // (İmar Durumu lejantı "güncelleniyor" gösterir).
+                katman._bekleyen = (katman._bekleyen || 0) + 1;
+                if (katman.yukleniyor) katman.yukleniyor(true);
+                return kareYukle(adres, iptal.signal, { export: true }).then(function (img) {
                     katman._son = img;
+                    katman._hata = 0;
                     return img;
                 }).catch(function (hata) {
                     if (hata && hata.name === 'AbortError') throw hata;
-                    return katman._son || bosKare();
+                    // Sunucu yavaş/429: birkaç saniye sonra kendiliğinden yeniden
+                    // dene (en fazla 3 kez); yoksa katman bir sonraki kaydırmaya
+                    // kadar boş kalıyordu.
+                    katman._hataAdres = adres;
+                    katman._hata = (katman._hata || 0) + 1;
+                    if (katman._hata <= 3) {
+                        katman._tekrarSaat = setTimeout(function () {
+                            if (katman.visible) katman.refresh();
+                        }, 2500 * katman._hata);
+                    }
+                    // Eski resim başka bir kapsama ait; yanlış yerde çizilmesin
+                    return bosKare();
+                }).finally(function () {
+                    if (katman._iptal === iptal) katman._iptal = null;
+                    katman._bekleyen--;
+                    if (katman.yukleniyor) katman.yukleniyor(katman._bekleyen > 0);
                 });
             },
         });
@@ -276,6 +372,15 @@
                 visible: false,
             });
         }
+
+        /* İmar Durumu: aynı plan, türe göre süzülebilir. uip_esri3 önbellekli karo
+         * olduğu için süzülemiyor; bu katman ise ABB'nin "uipfiltreicinMekansal"
+         * plan adalarını sunucuda, resmî renkleriyle ve layerDefs süzgeciyle
+         * çizer. Yalnız yürürlükteki plan (etkinmi = 0; domain ters kodlu). */
+        const IMAR_TUR_KATMAN_NO = '19';
+        const IMAR_YURURLUKTE = 'etkinmi = 0';
+        const imarTurKatman = abbDinamik('ABB · İmar Durumu', BASKENTCBS + '/plan/uipfiltreicinMekansal/MapServer', IMAR_TUR_KATMAN_NO, { opacity: 0.70, minScale: 200000 });
+        imarTurKatman.tanim = JSON.stringify({ [IMAR_TUR_KATMAN_NO]: IMAR_YURURLUKTE });
 
         const belediyeKatman = abbDinamik('ABB · Belediye Taşınmazları', BASKENTCBS + '/tasinmaz/tasinmazservice/MapServer', 0, { opacity: 0.80 });
         const abbIlceKatman = abbDinamik('ABB · İlçe Sınırı', ADRES_SERVIS, 4, { opacity: 0.80 });
@@ -436,11 +541,113 @@
             return { sembol: sembol, cap: cap };
         }
 
+        /* Taşınmaz haritasının rozetleri: tek renk, sade.
+         *
+         * Önce değerleme projesindeki markercluster görünümü (yeşil/sarı/
+         * turuncu yarı saydam halkalar, siyah sayı) denendi; uydu altlığında
+         * renkler soluk kalıyor, sayı zemine karışıyordu. Yerine kurumsal
+         * lacivert dolu daire geldi: kalın beyaz kenar her zeminde ayırır,
+         * altındaki yumuşak gölge rozeti altlıktan kaldırır. Yoğunluk renkle
+         * değil üç kademeli boyutla okunur. Diğer haritalar kademeli rozette.
+         */
+        const MC_RENK = [30, 58, 138];
+        // Ekranda bundan yakın kümeler birleşir (markercluster'ın maxClusterRadius'u).
+        const MC_BIRLESTIR_PX = 64;
+        const MC_KADEME = [
+            { alt: 1,   cap: 32, yazi: 12 },
+            { alt: 10,  cap: 40, yazi: 13 },
+            { alt: 100, cap: 52, yazi: 15 },
+        ];
+
+        const mcSembolOnbellek = new Map();
+
+        function mcKademesi(adet) {
+            let kademe = MC_KADEME[0];
+            MC_KADEME.forEach(function (k) { if (adet >= k.alt) kademe = k; });
+            return kademe;
+        }
+
+        function mcSembolu(adet) {
+            const kademe = mcKademesi(adet);
+            let sembol = mcSembolOnbellek.get(kademe.alt);
+            if (!sembol) {
+                const pt = kademe.cap * 0.75;
+                sembol = {
+                    type: 'cim',
+                    data: {
+                        type: 'CIMSymbolReference',
+                        symbol: {
+                            type: 'CIMPointSymbol',
+                            symbolLayers: [
+                                // Çerçeve -5..5: 4.4 yarıçap + 0.6 kontur = tam çap.
+                                cimDaire(pt, 4.4, [
+                                    { type: 'CIMSolidStroke', enable: true, width: 0.75, color: [255, 255, 255, 255] },
+                                    { type: 'CIMSolidFill', enable: true, color: MC_RENK.concat(245) },
+                                ]),
+                                // Gölge: rozetten biraz geniş, saydam koyu disk.
+                                cimDaire(pt * 1.14, 5, [{ type: 'CIMSolidFill', enable: true, color: [2, 6, 23, 70] }]),
+                            ],
+                        },
+                    },
+                };
+                mcSembolOnbellek.set(kademe.alt, sembol);
+            }
+            return sembol;
+        }
+
+        // Tek kalan kayıt: aynı lacivertte iğne. SEM_IGNE aşağıda tanımlı,
+        // bu yüzden ilk kullanımda üretilir.
+        let mcIgne = null;
+        function mcIgnesi() {
+            return mcIgne || (mcIgne = Object.assign({}, SEM_IGNE, { color: MC_RENK.concat(0.97) }));
+        }
+
+        /* Sunucu ızgara hücresi döndürür; hücre sınırına denk gelen iki yığın
+         * yan yana iki rozet olur ve üst üste biner. markercluster ise
+         * yakınlığa göre kümeler. Aynı sonucu almak için ekranda
+         * MC_BIRLESTIR_PX'ten yakın kümeler birleştirilir: kalabalık olan
+         * önce yerleşir, yakınındakiler ona katılır, konum adede göre
+         * ağırlıklı ortalamaya kayar. Ekranda birkaç yüz hücre olduğu için
+         * kaba kuvvet yeterli. */
+        function kumeleriBirlestir(kumeler) {
+            const sirali = kumeler.slice().sort(function (a, b) { return b.properties.adet - a.properties.adet; });
+            const gruplar = [];
+            sirali.forEach(function (f) {
+                const c = f.geometry.coordinates;
+                const ekran = view.toScreen(new Point({ longitude: c[0], latitude: c[1], spatialReference: WGS84 }));
+                if (!ekran) return;
+                const p = f.properties;
+                const yakin = gruplar.find(function (g) {
+                    return Math.hypot(g.x - ekran.x, g.y - ekran.y) < MC_BIRLESTIR_PX;
+                });
+                if (!yakin) {
+                    gruplar.push({ x: ekran.x, y: ekran.y, lng: c[0], lat: c[1], adet: p.adet, bbox: p.bbox.slice() });
+                    return;
+                }
+                const toplam = yakin.adet + p.adet;
+                yakin.lng = (yakin.lng * yakin.adet + c[0] * p.adet) / toplam;
+                yakin.lat = (yakin.lat * yakin.adet + c[1] * p.adet) / toplam;
+                yakin.adet = toplam;
+                yakin.bbox = [
+                    Math.min(yakin.bbox[0], p.bbox[0]), Math.min(yakin.bbox[1], p.bbox[1]),
+                    Math.max(yakin.bbox[2], p.bbox[2]), Math.max(yakin.bbox[3], p.bbox[3]),
+                ];
+            });
+            return gruplar.map(function (g) {
+                return {
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: [g.lng, g.lat] },
+                    properties: { kume: true, adet: g.adet, bbox: g.bbox },
+                };
+            });
+        }
+
 
         const harita = new EsriMap({
             basemap: altlikBasemap(aktifAltlikId),
             layers: [
                 imarKatman,
+                imarTurKatman,
                 parselasyonKatman,
                 belediyeKatman,
                 abbIlceKatman,
@@ -942,6 +1149,222 @@
         katmanKontrolKur('hrm-ov-parsel', 'hrm-ov-parsel-op', parselKatman);
         katmanKontrolKur('hrm-ov-emsal', 'hrm-ov-emsal-op', emsalKatman);
         katmanKontrolKur('hrm-ov-imar', 'hrm-ov-imar-op', imarKatman);
+        katmanKontrolKur('hrm-ov-imar-tur', 'hrm-ov-imar-tur-op', imarTurKatman);
+
+        /* İmar Durumu tür seçimi.
+         *
+         * 276 tür tek tek aranmasın diye üstte kategori çipleri var (Konut,
+         * Ticaret, Yeşil Alan…): çip, adı anahtar kelimeyle eşleşen türleri
+         * topluca seçer ya da bırakır. Altta renk kutulu, aranabilir liste.
+         * Seçim katmanın layerDefs süzgecine çevrilir ve harita üstündeki
+         * lejantta gösterilir. Liste ilk açılışta bir kez istenir; seçim
+         * tarayıcıda hatırlanır (ad listesi; null = hepsi, süzgeç yok).
+         */
+        const IMAR_KATEGORILER = [
+            // Adlar kelimeyle eşleşiyor; haric, kelimeyi taşıyan ama o kategoriye
+            // girmeyen türleri ayıklar ("KONUT DIŞI ÇALIŞMA ALANI" konut değil,
+            // OTOPARK/PARKE YOL yeşil alan değil, akaryakıt "istasyonu" ulaşım değil).
+            { ad: 'Konut', ifade: /KONUT/, haric: /KONUT DIŞI/ },
+            { ad: 'Ticaret', ifade: /TİCARET|İŞ MERKEZ|ÇARŞI|PAZAR|AKARYAKIT|KONUT DIŞI KENTSEL/, haric: /DEPOLAMA/ },
+            { ad: 'Yeşil Alan', ifade: /PARK|YEŞİL|REKREA|AĞAÇLANDIRMA|MESİRE|BOTANİK|DİNLENME|MEZARLIK/, haric: /OTOPARK|BİSİKLET|KAMYON|TIR|MAKİNE PARK|PARKE/ },
+            { ad: 'Eğitim', ifade: /EĞİTİM|OKUL|ÜNİVERSİTE|YURT|KREŞ/ },
+            { ad: 'Sağlık', ifade: /SAĞLIK|HASTANE/, haric: /TATİL/ },
+            { ad: 'Sosyal-Kültür', ifade: /SOSYAL|KÜLTÜR|DİNİ|İBADET|SPOR|FUAR/, haric: /TURİZM MERKEZİ/ },
+            { ad: 'Sanayi', ifade: /SANAYİ|DEPOLAMA|ATÖLYE|LOJİSTİK|KÜÇÜK SAN/, haric: /ENERJİ|SU DEPO|ATIK|İÇME SUYU/ },
+            { ad: 'Ulaşım', ifade: /OTOPARK|YOL|İSTASYON|TERMİNAL|GAR|HAVAALANI|TRAFİK|DEMİRYOLU|METRO/, haric: /AKARYAKIT/ },
+            { ad: 'Teknik Altyapı', ifade: /ALTYAPI|ATIK|ARITMA|TRAFO|ENERJİ|SU DEPO|SU YÜZEY/, haric: /SOSYAL/ },
+            { ad: 'Kamu', ifade: /RESMİ|KAMU|BELEDİYE|ASKERİ|EMNİYET|İDARİ|KURUM/ },
+        ];
+
+        // "SAĞLIK TESİSİ ALANI" → "Sağlık Tesisi Alanı" (I/ı ve İ/i Türkçe kuralıyla)
+        function imarAdBicimi(ad) {
+            return ad.toLocaleLowerCase('tr-TR').replace(/(^|[\s(\-\/,])(\p{L})/gu, function (_, on, harf) {
+                return on + harf.toLocaleUpperCase('tr-TR');
+            });
+        }
+
+        function imarTurSecimiKur() {
+            const liste = document.getElementById('hrm-imar-tur-liste');
+            const kutu = document.getElementById('hrm-ov-imar-tur');
+            if (!liste || !kutu || !API.imarTurleri) return;
+            const arama = document.getElementById('hrm-imar-tur-ara');
+            const ozet = document.getElementById('hrm-imar-tur-ozet');
+            const cipler = document.getElementById('hrm-imar-cipler');
+            const seciliSayac = document.getElementById('hrm-imar-secili-sayi');
+            const yalnizSecili = document.getElementById('hrm-imar-yalniz-secili');
+            const lejant = document.getElementById('hrm-imar-lejant');
+            // Seçim değişince yeni görüntü sunucuda çizilirken (0,5–5 sn)
+            // lejantta gösterge döner; yoksa "seçtim ama gelmedi" sanılıyordu.
+            imarTurKatman.yukleniyor = function (suruyor) {
+                if (lejant) lejant.classList.toggle('is-yukleniyor', suruyor);
+            };
+            const SAKLA = 'etys-imar-turleri';
+            let turler = null;
+            let secili = null; // null = hepsi
+            let zamanlayici = null;
+            try {
+                const k = JSON.parse(localStorage.getItem(SAKLA) || 'null');
+                if (Array.isArray(k)) secili = new Set(k);
+            } catch (e) { /* tercih okunamazsa hepsi */ }
+
+            const seciliMi = function (t) { return secili === null || secili.has(t.ad); };
+            const kategoriTurleri = function (k) {
+                return turler.filter(function (t) {
+                    const ad = t.ad.toLocaleUpperCase('tr-TR');
+                    return k.ifade.test(ad) && !(k.haric && k.haric.test(ad));
+                });
+            };
+
+            function tanimUygula() {
+                let kosul = IMAR_YURURLUKTE;
+                if (secili !== null) {
+                    const kodlar = [];
+                    turler.forEach(function (t) { if (secili.has(t.ad)) kodlar.push.apply(kodlar, t.kodlar); });
+                    // Hiçbiri seçili değilse katman boş kalır
+                    kosul += kodlar.length ? ' AND altkullanim IN (' + kodlar.join(',') + ')' : ' AND 1 = 0';
+                }
+                imarTurKatman.tanim = JSON.stringify({ [IMAR_TUR_KATMAN_NO]: kosul });
+                imarTurKatman._son = null;
+                imarTurKatman.refresh();
+                try { localStorage.setItem(SAKLA, JSON.stringify(secili === null ? null : Array.from(secili))); } catch (e) { /* önemsiz */ }
+            }
+
+            function zamanla() {
+                clearTimeout(zamanlayici);
+                zamanlayici = setTimeout(tanimUygula, 350);
+                durumCiz();
+            }
+
+            // Sayaçlar, çip durumları ve harita lejantı
+            function durumCiz() {
+                if (!turler) return;
+                const n = secili === null ? turler.length : secili.size;
+                const hepsi = n === turler.length;
+                if (ozet) ozet.textContent = hepsi ? 'Tüm türler · ' + turler.length : n + ' / ' + turler.length + ' tür seçili';
+                if (seciliSayac) seciliSayac.textContent = hepsi ? 'Tümü seçili' : n + ' seçili';
+                if (cipler) {
+                    cipler.querySelectorAll('[data-kategori]').forEach(function (c) {
+                        const ts = kategoriTurleri(IMAR_KATEGORILER[+c.dataset.kategori]);
+                        c.classList.toggle('is-aktif', !hepsi && ts.length > 0 && ts.every(seciliMi));
+                    });
+                }
+                lejantCiz();
+            }
+
+            function lejantCiz() {
+                if (!lejant) return;
+                const acik = kutu.checked && turler && turler.length;
+                lejant.hidden = !acik;
+                if (!acik) return;
+                const ts = secili === null ? null : turler.filter(seciliMi);
+                const gosterilen = ts ? ts.slice(0, 9) : [];
+                lejant.innerHTML = '<div class="hrm-imar-lejant-bas"><b>İmar Durumu<em class="hrm-imar-lejant-yuk">Güncelleniyor</em></b><span>'
+                    + (ts ? ts.length + ' tür' : 'Tüm türler') + ' · yürürlükteki plan</span></div>'
+                    + (ts === null
+                        ? '<p>Plan, resmî renkleriyle gösteriliyor. Katmanlar panelinden tür seçerek süzebilirsiniz.</p>'
+                        : (ts.length
+                            ? '<ul>' + gosterilen.map(function (t) {
+                                return '<li><i style="background:' + kacis(t.renk) + '"></i>' + kacis(imarAdBicimi(t.ad)) + '</li>';
+                            }).join('') + '</ul>' + (ts.length > 9 ? '<p>+ ' + (ts.length - 9) + ' tür daha</p>' : '')
+                            : '<p>Hiçbir tür seçili değil.</p>'));
+            }
+
+            function ciz() {
+                const q = (arama && arama.value || '').trim().toLocaleUpperCase('tr-TR');
+                const sadeceSecili = yalnizSecili && yalnizSecili.checked;
+                const gorunen = turler.filter(function (t) {
+                    if (sadeceSecili && !seciliMi(t)) return false;
+                    return !q || t.ad.toLocaleUpperCase('tr-TR').indexOf(q) !== -1;
+                });
+                liste.innerHTML = gorunen.map(function (t) {
+                    const isaretli = seciliMi(t);
+                    return '<label class="hrm-imar-tur' + (isaretli ? ' is-secili' : '') + '">'
+                        + '<input type="checkbox" value="' + kacis(t.ad) + '"' + (isaretli ? ' checked' : '') + '>'
+                        + '<i style="background:' + kacis(t.renk) + '"></i><span>' + kacis(imarAdBicimi(t.ad)) + '</span></label>';
+                }).join('') || '<p class="hrm-imar-bos">' + (sadeceSecili ? 'Seçili tür yok.' : 'Eşleşen tür yok.') + '</p>';
+            }
+
+            function ciplerCiz() {
+                if (!cipler) return;
+                cipler.innerHTML = IMAR_KATEGORILER.map(function (k, i) {
+                    const ts = kategoriTurleri(k);
+                    if (!ts.length) return '';
+                    // Çipin rengi: kategorinin ilk türünün resmî rengi
+                    return '<button type="button" class="hrm-imar-cip" data-kategori="' + i + '" style="--cip:' + kacis(ts[0].renk) + '">'
+                        + '<i></i>' + kacis(k.ad) + '<b>' + ts.length + '</b></button>';
+                }).join('');
+            }
+
+            async function yukle() {
+                if (turler) return;
+                turler = [];
+                liste.innerHTML = '<p class="hrm-imar-bos">Türler yükleniyor…</p>';
+                try {
+                    const yanit = await fetch(API.imarTurleri, { headers: { Accept: 'application/json' } });
+                    if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                    turler = await yanit.json();
+                } catch (e) {
+                    turler = null;
+                    liste.innerHTML = '<p class="hrm-imar-bos">Türler alınamadı (' + kacis(e.message) + ').</p>';
+                    return;
+                }
+                if (secili !== null) {
+                    // Kayıtlı seçimde artık olmayan türler ayıklanır
+                    const adlar = new Set(turler.map(function (t) { return t.ad; }));
+                    // (adlar artık büyük harfle birleşik geliyor; eski kayıtlar da eşlenir)
+                    secili = new Set(Array.from(secili).map(function (a) {
+                        return a.replace(/\s+/g, ' ').toLocaleUpperCase('tr-TR');
+                    }).filter(function (a) { return adlar.has(a); }));
+                }
+                ciplerCiz();
+                ciz();
+                tanimUygula();
+                durumCiz();
+            }
+
+            liste.addEventListener('change', function (e) {
+                if (!e.target.matches('input[type="checkbox"]') || !turler) return;
+                if (secili === null) secili = new Set(turler.map(function (t) { return t.ad; }));
+                if (e.target.checked) secili.add(e.target.value); else secili.delete(e.target.value);
+                e.target.closest('.hrm-imar-tur').classList.toggle('is-secili', e.target.checked);
+                if (secili.size === turler.length) secili = null;
+                zamanla();
+            });
+
+            if (cipler) cipler.addEventListener('click', function (e) {
+                const cip = e.target.closest('[data-kategori]');
+                if (!cip || !turler) return;
+                const ts = kategoriTurleri(IMAR_KATEGORILER[+cip.dataset.kategori]);
+                if (cip.classList.contains('is-aktif')) {
+                    ts.forEach(function (t) { secili.delete(t.ad); });
+                } else {
+                    // "Hepsi" durumundan çipe basmak: yalnız o kategori kalır
+                    if (secili === null) secili = new Set();
+                    ts.forEach(function (t) { secili.add(t.ad); });
+                }
+                if (secili.size === turler.length) secili = null;
+                ciz();
+                zamanla();
+            });
+
+            if (arama) arama.addEventListener('input', function () { if (turler) ciz(); });
+            if (yalnizSecili) yalnizSecili.addEventListener('change', function () { if (turler) ciz(); });
+            document.querySelectorAll('[data-imar-tur]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    if (!turler) return;
+                    secili = btn.dataset.imarTur === 'hepsi' ? null : new Set();
+                    ciz();
+                    zamanla();
+                });
+            });
+
+            // Liste katman açılınca ya da bölüm genişletilince yüklenir
+            if (kutu.checked) yukle();
+            kutu.addEventListener('change', function () { if (kutu.checked) yukle(); lejantCiz(); });
+            const ac = document.getElementById('hrm-imar-tur-detay');
+            if (ac) ac.addEventListener('toggle', function () { if (ac.open) yukle(); });
+        }
+        imarTurSecimiKur();
         katmanKontrolKur('hrm-ov-parselasyon', 'hrm-ov-parselasyon-op', parselasyonKatman);
         katmanKontrolKur('hrm-ov-belediye', 'hrm-ov-belediye-op', belediyeKatman);
         katmanKontrolKur('hrm-ov-abb-ilce', 'hrm-ov-abb-ilce-op', abbIlceKatman);
@@ -1180,8 +1603,33 @@
         function kumeGrafikleri(f) {
             const p = f.properties;
             const konum = new Point({ longitude: f.geometry.coordinates[0], latitude: f.geometry.coordinates[1], spatialReference: WGS84 });
-            const gorunus = kumeGorunumu(p.adet);
             const ozellik = { kume: true, adet: p.adet, bbox: p.bbox };
+
+            if (MOD === 'tasinmaz') {
+                // Tek kalan kayıt küme değil işarettir. Tıklamak yine kümeyi
+                // açar: oraya yakınlaşır, parsel görünür.
+                if (p.adet === 1) {
+                    return [new Graphic({ geometry: konum, attributes: ozellik, symbol: mcIgnesi() })];
+                }
+                return [
+                    new Graphic({ geometry: konum, attributes: ozellik, symbol: mcSembolu(p.adet) }),
+                    new Graphic({
+                        geometry: konum,
+                        attributes: ozellik,
+                        symbol: {
+                            type: 'text',
+                            // Kısaltma ("27B") kalın yazıda "278" okunuyordu; sayı tam
+                            // yazılır, beş hane ve üstünde yazı küçülür ki rozete sığsın.
+                            text: p.adet.toLocaleString('tr-TR'),
+                            color: [255, 255, 255, 1],
+                            verticalAlignment: 'middle', horizontalAlignment: 'center',
+                            font: { size: (p.adet >= 10000 ? 11 : mcKademesi(p.adet).yazi) + 'px', weight: 'bold', family: 'sans-serif' },
+                        },
+                    }),
+                ];
+            }
+
+            const gorunus = kumeGorunumu(p.adet);
             const yazi = p.adet >= 1000
                 ? (p.adet / 1000).toLocaleString('tr-TR', { maximumFractionDigits: p.adet >= 10000 ? 0 : 1 }) + 'B'
                 : String(p.adet);
@@ -1246,11 +1694,13 @@
                     attributes: p,
                 });
             }
+            // Popup yok: tıklanınca sağdaki bilgi paneli açılır (bkz. tsbAc).
+            // Panel adresi tanımlı değilse eski popup'a düşülür.
             return new Graphic({
                 geometry: geom,
                 symbol: geom.type === 'point' ? SEM_NOKTA : SEM_PARSEL,
                 attributes: p,
-                popupTemplate: {
+                popupTemplate: API.tasinmazPanel ? null : {
                     title: (p.ada || '—') + ' / ' + (p.parsel || '—'),
                     content: function () { return tasinmazPopup(p); },
                 },
@@ -1284,8 +1734,11 @@
             if (kontrol !== yuklemeKontrol) return;
             if (kiraTumunuYukle) tumExtent = null;
 
+            let ogeler = fc.features || [];
+            if (MOD === 'tasinmaz' && fc.kumeli) ogeler = kumeleriBirlestir(ogeler);
+
             const grafikler = [];
-            (fc.features || []).forEach(function (f) {
+            ogeler.forEach(function (f) {
                 if (f.properties && f.properties.kume) {
                     kumeGrafikleri(f).forEach(function (g) { grafikler.push(g); });
                     return;
@@ -1329,6 +1782,8 @@
             parselKatman.removeAll();
             parselKatman.addMany(grafikler);
             cizilenZoom = view.zoom;
+            // Bilgi paneli açıksa seçili parselin vurgusu yeni grafiğe taşınır.
+            if (MOD === 'tasinmaz') tsbVurguYenile();
 
             sayiEl.textContent = (fc.toplam !== undefined ? fc.toplam : grafikler.length).toLocaleString('tr-TR');
             if (tumunu && tumExtent && grafikler.length && parselKatman.visible) {
@@ -2528,7 +2983,7 @@
 
         // Adres parametresi ?katman=imar,parselasyon,yapi: o ABB katmanlarını aç
         const ADRES_KATMAN = {
-            imar: 'hrm-ov-imar', parselasyon: 'hrm-ov-parselasyon', belediye: 'hrm-ov-belediye',
+            imar: 'hrm-ov-imar', imardurumu: 'hrm-ov-imar-tur', parselasyon: 'hrm-ov-parselasyon', belediye: 'hrm-ov-belediye',
             ilce: 'hrm-ov-abb-ilce', mahalle: 'hrm-ov-abb-mahalle', yapi: 'hrm-ov-abb-yapi', numarataj: 'hrm-ov-abb-numarataj',
         };
         (ADRES.get('katman') || '').split(',').forEach(function (k) {
@@ -2586,10 +3041,179 @@
             view.goTo({ target: grafik.geometry, zoom: view.zoom + 2.5 }).catch(function () {});
         }
 
+        /* ---- Taşınmaz bilgi paneli ----
+         *
+         * Parsele (ya da iğnesine) tıklanınca popup yerine sağdan panel açılır.
+         * İçerik sunucuda Blade ile üretilir (TasinmazController::haritaPanel):
+         * detay sayfasıyla aynı ilişkiler, bölüm bölüm açılır. Seçili parsel
+         * vurgulu kalır; harita yeniden yüklenince vurgu yeni grafiğe taşınır.
+         */
+        const tsbEl = document.getElementById('hrm-tsb');
+        const tsbGovde = document.getElementById('hrm-tsb-govde');
+        const tsbHepsiBtn = document.getElementById('hrm-tsb-hepsi');
+        const TSB_AKTIF = MOD === 'tasinmaz' && !!API.tasinmazPanel && !!tsbEl;
+        let tsbSeciliId = null;
+        let tsbVurgu = null;
+        let tsbKontrol = null;
+
+        function tsbParsel(sonuc) {
+            const r = sonuc.results.find(function (x) {
+                const a = x.graphic && x.graphic.attributes;
+                return a && !a.kume && a.id;
+            });
+            return r ? r.graphic : null;
+        }
+
+        function tsbVurguYenile() {
+            if (tsbVurgu) { tsbVurgu.remove(); tsbVurgu = null; }
+            if (!tsbSeciliId || !parselLV) return;
+            const g = parselKatman.graphics.find(function (x) {
+                return x.attributes && x.attributes.id === tsbSeciliId && x.geometry.type !== 'point';
+            }) || parselKatman.graphics.find(function (x) {
+                return x.attributes && x.attributes.id === tsbSeciliId;
+            });
+            try { if (g) tsbVurgu = parselLV.highlight(g); } catch (e) { /* vurgu şart değil */ }
+        }
+
+        function tsbHepsiEtiketi() {
+            const bolumler = tsbGovde.querySelectorAll('.tsb-bolum');
+            const hepsiAcik = bolumler.length && Array.prototype.every.call(bolumler, function (d) { return d.open; });
+            tsbHepsiBtn.textContent = hepsiAcik ? 'Tümünü kapat' : 'Tümünü aç';
+            return hepsiAcik;
+        }
+
+        // Bölüm başlıklarından hızlı geçiş çipleri: tıklanınca bölüm açılır
+        // ve panel oraya kayar. Boş bölümler soluk kalır ama erişilebilir.
+        function tsbNavKur() {
+            const nav = tsbGovde.querySelector('[data-tsb-nav]');
+            if (!nav) return;
+            nav.innerHTML = '';
+            tsbGovde.querySelectorAll('.tsb-bolum').forEach(function (bolum) {
+                const ad = bolum.querySelector('.tsb-bolum-ad');
+                const say = bolum.querySelector('.tsb-say');
+                if (!ad || !say) return;
+                const cip = document.createElement('button');
+                cip.type = 'button';
+                cip.className = 'tsb-nav-cip' + (say.classList.contains('is-bos') ? ' is-bos' : '');
+                cip.innerHTML = kacis(ad.textContent.trim()) + '<b>' + kacis(say.textContent.trim()) + '</b>';
+                cip.addEventListener('click', function () {
+                    bolum.open = true;
+                    tsbGovde.scrollTo({ top: bolum.offsetTop - 8, behavior: 'smooth' });
+                });
+                nav.appendChild(cip);
+            });
+        }
+
+        /* Çevresel analiz ile resmî imar / risk / altyapı bölümleri panelden ayrı
+         * gelir: dış servisler ilk seferde 10-40 sn sürebiliyor, panelin geri
+         * kalanı beklemesin. İkisi paralel istenir; bu sürede başka parsele
+         * geçilirse gelen yanıtlar atılır. */
+        let tsbAyriKontrol = null;
+        function tsbAyriYukle(id) {
+            if (tsbAyriKontrol) tsbAyriKontrol.abort();
+            const kontrol = tsbAyriKontrol = new AbortController();
+            tsbGovde.querySelectorAll('[data-tsb-cevre], [data-tsb-saha]').forEach(async function (yer) {
+                const adres = yer.dataset.tsbCevre || yer.dataset.tsbSaha;
+                try {
+                    const yanit = await fetch(adres, { headers: { Accept: 'text/html' }, signal: kontrol.signal });
+                    if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                    const html = await yanit.text();
+                    if (kontrol !== tsbAyriKontrol || tsbSeciliId !== id || !yer.isConnected) return;
+                    yer.outerHTML = html;
+                    tsbNavKur();
+                    tsbHepsiEtiketi();
+                } catch (e) {
+                    if (e.name === 'AbortError' || !yer.isConnected) return;
+                    const bekle = yer.querySelector('.tsb-cevre-bekle') || yer;
+                    bekle.innerHTML = '<div><b>Veri alınamadı</b><small>' + kacis(e.message) + '</small></div>';
+                    yer.classList.remove('is-yukleniyor');
+                }
+            });
+        }
+
+        function tsbKapat() {
+            if (tsbAyriKontrol) tsbAyriKontrol.abort();
+            if (!TSB_AKTIF) return;
+            if (tsbKontrol) tsbKontrol.abort();
+            tsbEl.hidden = true;
+            tsbSeciliId = null;
+            tsbVurguYenile();
+        }
+
+        async function tsbAc(grafik) {
+            const id = grafik.attributes.id;
+            tsbSeciliId = id;
+            tsbVurguYenile();
+            tsbEl.hidden = false;
+            tsbGovde.innerHTML = '<div class="hrm-tsb-yukleniyor">Taşınmaz bilgileri getiriliyor…</div>';
+            tsbGovde.scrollTop = 0;
+
+            if (tsbKontrol) tsbKontrol.abort();
+            const kontrol = tsbKontrol = new AbortController();
+            try {
+                const yanit = await fetch(API.tasinmazPanel + '/' + id,
+                    { headers: { Accept: 'text/html' }, signal: kontrol.signal });
+                if (!yanit.ok) throw new Error('HTTP ' + yanit.status);
+                const html = await yanit.text();
+                if (kontrol !== tsbKontrol) return;
+                tsbGovde.innerHTML = html;
+                tsbNavKur();
+                tsbHepsiEtiketi();
+                tsbAyriYukle(id);
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                tsbGovde.innerHTML = '<div class="hrm-tsb-hata">Bilgiler alınamadı (' + kacis(e.message) + ').</div>';
+                return;
+            }
+
+            const yakinlas = tsbGovde.querySelector('[data-tsb-yakinlas]');
+            if (yakinlas) {
+                yakinlas.addEventListener('click', function () {
+                    const hedef = grafik.geometry.type === 'point'
+                        ? { target: grafik.geometry, zoom: Math.max(view.zoom, 19) }
+                        : grafik.geometry.extent.clone().expand(3);
+                    view.goTo(hedef).catch(function () {});
+                });
+            }
+        }
+
+        if (TSB_AKTIF) {
+            document.getElementById('hrm-tsb-kapat').addEventListener('click', tsbKapat);
+            tsbHepsiBtn.addEventListener('click', function () {
+                const ac = !tsbHepsiEtiketi();
+                tsbGovde.querySelectorAll('.tsb-bolum').forEach(function (d) { d.open = ac; });
+                tsbHepsiEtiketi();
+            });
+            // Rapor sunucuda PDF'e basılır (10-20 sn); bu sürede düğme meşgul görünür.
+            tsbGovde.addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-tsb-pdf]');
+                if (!btn) return;
+                if (btn.classList.contains('is-mesgul')) { e.preventDefault(); return; }
+                const yazi = btn.querySelector('span');
+                btn.classList.add('is-mesgul');
+                if (yazi) yazi.textContent = 'Rapor hazırlanıyor…';
+                setTimeout(function () {
+                    btn.classList.remove('is-mesgul');
+                    if (yazi) yazi.textContent = 'Taşınmaz Raporu İndir (PDF)';
+                }, 25000);
+            });
+            // details'in toggle olayı kabarcıklanmaz; yakalama aşamasında dinlenir.
+            tsbGovde.addEventListener('toggle', tsbHepsiEtiketi, true);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !tsbEl.hidden) tsbKapat();
+            });
+        }
+
         view.on('click', async function (evt) {
             const sonuc = await view.hitTest(evt, { include: [parselKatman] });
             const rozet = kumeRozeti(sonuc);
-            if (rozet) kumeyiAc(rozet.graphic);
+            if (rozet) { kumeyiAc(rozet.graphic); return; }
+            if (!TSB_AKTIF) return;
+            // Bilgi Sorgu açıkken tıklama TKGM/e-İmar sorgusunun işi.
+            const sorguBtn = document.getElementById('hrm-bilgi-btn');
+            if (sorguBtn && sorguBtn.classList.contains('is-aktif')) return;
+            const parsel = tsbParsel(sonuc);
+            if (parsel) tsbAc(parsel);
         });
 
         const ipucuEl = document.getElementById('hrm-kume-ipucu');
@@ -2623,7 +3247,12 @@
             ipucuMesgul = true;
             view.hitTest(evt, { include: [parselKatman] }).then(function (sonuc) {
                 const rozet = kumeRozeti(sonuc);
-                if (!rozet) { ipucuGizle(); return; }
+                if (!rozet) {
+                    ipucuGizle();
+                    // Parsel tıklanabilir: el imleci.
+                    if (TSB_AKTIF && tsbParsel(sonuc)) mapEl.classList.add('hrm-cursor-kume');
+                    return;
+                }
                 if (kumeVurgu) { kumeVurgu.remove(); kumeVurgu = null; }
                 try { if (parselLV) kumeVurgu = parselLV.highlight(rozet.graphic); } catch (e) { /* vurgu şart değil */ }
                 ipucuGoster(rozet.graphic, evt.x, evt.y);
@@ -2691,15 +3320,19 @@
         });
 
         // Sürüklenebilir paneller
-        document.querySelectorAll('.hrm-float-panel [data-drag-handle]').forEach(function (tut) {
-            const panel = tut.closest('.hrm-float-panel');
+        // Taşınmaz bilgi paneli de aynı tutamakla taşınır; düğmeler sürüklemeyi başlatmaz.
+        document.querySelectorAll('.hrm-float-panel [data-drag-handle], .hrm-tsb [data-drag-handle]').forEach(function (tut) {
+            const panel = tut.closest('.hrm-float-panel, .hrm-tsb');
             let sx = 0, sy = 0, bl = 0, bt = 0, suruklu = false;
 
             tut.addEventListener('mousedown', function (e) {
-                if (e.target.closest('.hrm-panel-kapat')) return;
+                if (e.target.closest('.hrm-panel-kapat, button, a')) return;
                 const kutu = panel.getBoundingClientRect();
                 suruklu = true;
                 sx = e.clientX; sy = e.clientY; bl = kutu.left; bt = kutu.top;
+                // Bilgi paneli üstten ve alttan sabitli; serbest kalınca
+                // içeriği kadar uzamasın diye o anki yüksekliği korunur.
+                if (panel.classList.contains('hrm-tsb')) panel.style.height = kutu.height + 'px';
                 panel.style.right = 'auto';
                 panel.style.bottom = 'auto';
                 document.body.style.userSelect = 'none';
@@ -2718,6 +3351,14 @@
                 suruklu = false;
                 document.body.style.userSelect = '';
             });
+
+            // Bilgi panelinde çift tıklama varsayılan yerine (sağa) döndürür.
+            if (panel.classList.contains('hrm-tsb')) {
+                tut.addEventListener('dblclick', function (e) {
+                    if (e.target.closest('button, a')) return;
+                    ['left', 'top', 'right', 'bottom', 'height'].forEach(function (k) { panel.style[k] = ''; });
+                });
+            }
         });
 
         /* =========================================================

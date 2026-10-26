@@ -108,6 +108,10 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         $kayitRotalari = function (string $kok, string $adSoneki) use ($slugKisit) {
             Route::get($kok, [TasinmazController::class, 'show'])
                 ->middleware('izin:tasinmaz.goruntule')->where($slugKisit)->name('detay'.$adSoneki);
+            Route::get($kok.'/rapor', [TasinmazController::class, 'rapor'])
+                ->middleware('izin:tasinmaz.goruntule')->where($slugKisit)->name('rapor'.$adSoneki);
+            Route::get($kok.'/rapor.pdf', [TasinmazController::class, 'raporPdf'])
+                ->middleware('izin:tasinmaz.goruntule')->where($slugKisit)->name('rapor-pdf'.$adSoneki);
             Route::get($kok.'/duzenle', [TasinmazController::class, 'edit'])
                 ->middleware('izin:tasinmaz.duzenle')->where($slugKisit)->name('duzenle'.$adSoneki);
             Route::put($kok, [TasinmazController::class, 'update'])
@@ -537,11 +541,25 @@ Route::middleware(['auth', 'yetki.yukle'])->prefix('panel')->name('panel.')->gro
         Route::get('tasinmaz-geojson', [TasinmazController::class, 'geojson'])
             ->middleware('izin:harita.goruntule')
             ->name('tasinmaz-geojson');
+        Route::get('tasinmaz-saha/{id}', [TasinmazController::class, 'haritaSaha'])
+            ->middleware('izin:harita.goruntule')
+            ->whereNumber('id')
+            ->name('tasinmaz-saha');
+        Route::get('tasinmaz-cevre/{id}', [TasinmazController::class, 'haritaCevre'])
+            ->middleware('izin:harita.goruntule')
+            ->whereNumber('id')
+            ->name('tasinmaz-cevre');
+        Route::get('tasinmaz-panel/{id}', [TasinmazController::class, 'haritaPanel'])
+            ->middleware('izin:harita.goruntule')
+            ->whereNumber('id')
+            ->name('tasinmaz-panel');
         Route::get('tasinmaz-ara', [TasinmazController::class, 'ara'])
             ->middleware('izin:tasinmaz.goruntule')
             ->name('tasinmaz-ara');
         Route::get('eimar-identify', [EimarController::class, 'identify'])
             ->name('eimar-identify');
+        Route::get('imar-turleri', [EimarController::class, 'turler'])
+            ->name('imar-turleri');
         Route::get('abb-proxy', [AbbProxyController::class, 'katman'])
             ->name('abb-proxy');
     });
